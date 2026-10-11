@@ -49,20 +49,22 @@ export function validateDraftFields(input: RepairDraftFields): void {
       input.durationMinutes > repairFieldLimits.durationMinutesMax)
   )
     errors.durationMinutes = [
-      `维修时长须为 ${repairFieldLimits.durationMinutesMin}–${repairFieldLimits.durationMinutesMax} 分钟`,
+      `维修时长须为 ${repairFieldLimits.durationMinutesMin}–${repairFieldLimits.durationMinutesMax} 分钟的整数`,
     ];
   if (input.ownerName != null && input.ownerName.length > repairFieldLimits.ownerNameMaxLength)
     errors.ownerName = [`机主姓名不能超过 ${repairFieldLimits.ownerNameMaxLength} 字`];
   // 草稿允许不填电话（与日期 / 时长同思路）；填了就必须是合法的 11 位手机号。
   if (input.ownerPhone != null && !CN_MOBILE_PATTERN.test(input.ownerPhone))
-    errors.ownerPhone = ["请输入 11 位中国大陆手机号"];
+    errors.ownerPhone = ["机主电话须为 11 位中国大陆手机号"];
   if (input.content != null && input.content.length > repairFieldLimits.contentMaxLength)
     errors.content = [`维修内容不能超过 ${repairFieldLimits.contentMaxLength} 字`];
   if (input.remark != null && input.remark.length > repairFieldLimits.remarkMaxLength)
     errors.remark = [`备注不能超过 ${repairFieldLimits.remarkMaxLength} 字`];
   if (input.result != null && !isRepairResult(input.result)) errors.result = ["维修结果无效"];
   if (Object.keys(errors).length)
-    throw new AppError("VALIDATION_FAILED", "维修记录字段无效", { fieldErrors: errors });
+    throw new AppError("VALIDATION_FAILED", Object.values(errors).flat().join("；"), {
+      fieldErrors: errors,
+    });
 }
 
 export function validateSubmission(record: {
@@ -90,20 +92,20 @@ export function validateSubmission(record: {
     record.durationMinutes > repairFieldLimits.durationMinutesMax
   )
     errors.durationMinutes = [
-      `维修时长须为 ${repairFieldLimits.durationMinutesMin}–${repairFieldLimits.durationMinutesMax} 分钟`,
+      `维修时长须为 ${repairFieldLimits.durationMinutesMin}–${repairFieldLimits.durationMinutesMax} 分钟的整数`,
     ];
   if (!record.categoryId) errors.categoryId = ["请选择故障分类"];
   // 机主姓名 / 电话改为提交必填（issue #79 第 6 项）：旧字段「维修内容」与照片不再是提交门槛。
   if (!record.ownerName) errors.ownerName = ["请填写机主姓名"];
   if (!record.ownerPhone) errors.ownerPhone = ["请填写机主电话"];
   else if (!CN_MOBILE_PATTERN.test(record.ownerPhone))
-    errors.ownerPhone = ["请输入 11 位中国大陆手机号"];
+    errors.ownerPhone = ["机主电话须为 11 位中国大陆手机号"];
   // `content` 不再是提交必填（旧记录仍可能带着历史正文），但上限校验保留。
   if (record.content != null && record.content.length > repairFieldLimits.contentMaxLength)
     errors.content = [`维修内容不能超过 ${repairFieldLimits.contentMaxLength} 字`];
   if (!isRepairResult(record.result)) errors.result = ["维修结果缺失"];
   if (Object.keys(errors).length)
-    throw new AppError("REPAIR_SUBMISSION_INCOMPLETE", "请补全维修记录后再提交", {
+    throw new AppError("REPAIR_SUBMISSION_INCOMPLETE", Object.values(errors).flat().join("；"), {
       fieldErrors: errors,
     });
 }

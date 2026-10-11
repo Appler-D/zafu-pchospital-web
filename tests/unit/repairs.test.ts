@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError, ApiErrorCode } from "../../src/lib/api/errors";
+import { apiFailure } from "../../src/lib/api/response";
 import { detectImageType } from "../../src/features/repairs/repair-photo-service";
 import { isRepairTransitionAllowed } from "../../src/features/repairs/repair-state";
 import {
@@ -9,7 +10,12 @@ import {
   validateSubmission,
 } from "../../src/features/repairs/repair-validation";
 import { repairFieldLimits } from "../../src/config/repairs";
-import { RepairResult, RepairStatus, RepairTimelineEventType } from "../../src/types/contracts";
+import {
+  RepairResult,
+  RepairStatus,
+  RepairTimelineEventType,
+  type RepairDraftFields,
+} from "../../src/types/contracts";
 import { parseRepairListStatus } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
@@ -182,6 +188,102 @@ test("维修日期上下限在保存草稿时就生效，而不是等到提交",
   // 边界：下限当天与今天都合法。
   validateDraftFields({ repairDate: repairFieldLimits.repairDateMin });
   validateDraftFields({ repairDate: new Date().toISOString().slice(0, 10) });
+});
+
+test("草稿字段错误直接说明字段与原因，仅读取 message 的表单也能定位", () => {
+  const cases: Array<[RepairDraftFields, keyof RepairDraftFields, string]> = [
+    [{ repairDate: "无效日期" }, "repairDate", "维修日期格式无效"],
+    [{ repairDate: "2019-12-31" }, "repairDate", "维修日期不得早于 2020-01-01"],
+    [{ repairDate: "9999-12-31" }, "repairDate", "维修日期不能晚于今天"],
+    ...[0, 10081, 45.5].map(
+      (durationMinutes): [RepairDraftFields, keyof RepairDraftFields, string] => [
+        { durationMinutes },
+        "durationMinutes",
+        "维修时长须为 1–10080 分钟的整数",
+      ],
+    ),
+    [{ ownerName: "名".repeat(41) }, "ownerName", "机主姓名不能超过 40 字"],
+    [{ ownerPhone: "1380013800" }, "ownerPhone", "机主电话须为 11 位中国大陆手机号"],
+    [{ content: "字".repeat(10001) }, "content", "维修内容不能超过 10000 字"],
+    [{ remark: "字".repeat(2001) }, "remark", "备注不能超过 2000 字"],
+    [{ result: "INVALID" as RepairResult }, "result", "维修结果无效"],
+  ];
+  for (const [input, field, message] of cases) {
+    assert.throws(
+      () => validateDraftFields(input),
+      (error) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.code, "VALIDATION_FAILED");
+        assert.equal(error.message, message);
+        assert.deepEqual(error.fieldErrors, { [field]: [message] });
+        return true;
+      },
+      field,
+    );
+  }
+});
+
+test("多项草稿错误在 API message 中一起返回，并保留字段映射", async () => {
+  let error: unknown;
+  try {
+    validateDraftFields({ durationMinutes: 0, ownerPhone: "123", remark: "字".repeat(2001) });
+  } catch (caught) {
+    error = caught;
+  }
+  assert.ok(error instanceof AppError);
+  const response = apiFailure(error, "req_repair_validation");
+  assert.equal(response.status, 400);
+  const body = await response.json();
+  assert.equal(body.success, false);
+  assert.equal(body.error.code, "VALIDATION_FAILED");
+  assert.equal(
+    body.error.message,
+    "维修时长须为 1–10080 分钟的整数；机主电话须为 11 位中国大陆手机号；备注不能超过 2000 字",
+  );
+  assert.deepEqual(body.error.fieldErrors, {
+    durationMinutes: ["维修时长须为 1–10080 分钟的整数"],
+    ownerPhone: ["机主电话须为 11 位中国大陆手机号"],
+    remark: ["备注不能超过 2000 字"],
+  });
+});
+
+test("提交缺项与非法电话的 message 同样说明具体字段", () => {
+  const complete = {
+    repairDate: new Date("2026-09-15T00:00:00.000Z"),
+    durationMinutes: 45,
+    categoryId: "category",
+    ownerName: "张三",
+    ownerPhone: "13800138000",
+    content: null,
+    result: "COMPLETED",
+  };
+  const cases = [
+    [{ repairDate: null }, "请填写维修日期"],
+    [{ durationMinutes: null }, "请填写维修时长"],
+    [{ categoryId: null }, "请选择故障分类"],
+    [{ ownerName: null }, "请填写机主姓名"],
+    [{ ownerPhone: null }, "请填写机主电话"],
+    [{ ownerPhone: "12345678901" }, "机主电话须为 11 位中国大陆手机号"],
+    [{ result: null }, "维修结果缺失"],
+    [{ ownerName: null, ownerPhone: null }, "请填写机主姓名；请填写机主电话"],
+  ] as const;
+  for (const [patch, message] of cases) {
+    assert.throws(
+      () => validateSubmission({ ...complete, ...patch }),
+      (error) => {
+        assert.ok(error instanceof AppError);
+        assert.equal(error.code, "REPAIR_SUBMISSION_INCOMPLETE");
+        assert.equal(error.message, message);
+        assert.equal(
+          Object.values(error.fieldErrors ?? {})
+            .flat()
+            .join("；"),
+          message,
+        );
+        return true;
+      },
+    );
+  }
 });
 test("图片魔数拒绝伪造 MIME 并识别 JPEG PNG WebP", () => {
   assert.equal(detectImageType(Uint8Array.from([0xff, 0xd8, 0xff, 0x00])), "image/jpeg");
