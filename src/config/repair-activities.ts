@@ -77,7 +77,7 @@ export const memberRepairActivitiesCopy = {
   list: {
     title: "维修活动",
     label: "Activities",
-    lead: "选择一场活动标记出勤，再为到场客户签到、排队与接待落单。",
+    lead: "选择一场活动标记出勤，再为到场客户签到、排队与接待。",
     empty: "暂时没有可接待的维修活动。",
     loadFailed: "活动列表加载失败，请稍后重试。",
     openBoard: "进入工作台",
@@ -120,7 +120,7 @@ export const memberRepairActivitiesCopy = {
     checkInCancel: "取消",
     selectHint: "勾选左侧报名后点「签到入队」。",
     selectNone: "请先勾选至少一条报名。",
-    serve: "接待落单",
+    serve: "接待",
     serving: "落单中…",
     serveSuccess: "接待完成，请填写维修记录。",
     withdraw: "撤回",
