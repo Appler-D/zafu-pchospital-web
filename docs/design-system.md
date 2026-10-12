@@ -393,6 +393,12 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 成员维修页使用 `.repair-page` 对齐页头与正文，卡片内容统一用 `.repair-panel` 添加内边距；
 桌面端基础信息双列，手机端单列，均沿用 `Card` 和语义间距令牌。
 
+维修参与人员选择统一用 `ui/RepairParticipantPicker.tsx`，成员编辑器与后台共用。
+`.repair-participants__selected` 固定高度为 `--s-7 + --s-5`，人员标签单行排列，
+人数较多时在区内横向滚动；添加、移除或达到上限都不改变下方表单的位置。
+创建人用强调色淡底与「创建人」文字标识；其他人员将 `Button` 的移除入口合并进标签，
+点击区域保留 46px。添加入口复用 `.field__input` 原生下拉框，标题旁常驻已选人数与上限。
+
 M4 稳定视觉模式（均在 `globals.css` `@layer components`，无 `box-shadow`，圆角只用 `--r-base` / `--r-mid` / `999px`）：
 
 | 类                                                                   | 用途                                       |

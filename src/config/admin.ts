@@ -537,16 +537,6 @@ export const adminCopy = {
       submit: "保存修改",
       saved: "记录已更新，审核状态未改变。",
       categoryInactive: "已停用的分类不能作为新值。",
-      // 参与维修人员（issue #114）：与成员编辑器同语义 —— 创建人固定，其余可增删，
-      // 提交时整体替换（`participantIds` 不含创建人本人）。
-      participantsLabel: "参与维修人员",
-      participantsCreatorTag: "创建人",
-      participantsHint:
-        "创建人固定保留；可添加其他参与成员，误添加的可移除。维修时长对全部参与者生效。",
-      participantsAddPlaceholder: "选择成员添加…",
-      participantsNoOptions: "暂无可添加的成员",
-      participantsRemove: "移除",
-      participantsLimit: "已到达上限",
     },
     removePanel: {
       title: "软删除记录",

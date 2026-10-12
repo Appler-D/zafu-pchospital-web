@@ -8,6 +8,7 @@ import { RepairRecordComments } from "@/components/admin/RepairRecordComments";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage, AdminToastTone } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
+import { RepairParticipantPicker } from "@/components/ui/RepairParticipantPicker";
 import { adminCopy, adminShared } from "@/config/admin";
 import { repairFieldLimits, repairResultLabels, repairStatusLabels } from "@/config/repairs";
 import { adminFetch } from "@/features/admin/admin-client";
@@ -216,12 +217,6 @@ export function RepairAdminActions({
       setRemoving(false);
     }
   }
-
-  // 候选 = 候选名单里既不是创建人、也还没加入的人；到上限或没有候选时禁用选择器。
-  const addableMembers = memberOptions.filter(
-    (option) => option.id !== record.member.id && !extras.some((item) => item.id === option.id),
-  );
-  const participantsFull = extras.length + 1 >= repairFieldLimits.participantMaxCount;
 
   return (
     <AdminModal
@@ -436,48 +431,14 @@ export function RepairAdminActions({
             </select>
           </label>
         </div>
-        {/* 与成员编辑器保持相同的固定高度、内部滚动；下方正文输入框不随人数移动。 */}
-        <div className="field">
-          <span className="field__label">{copy.edit.participantsLabel}</span>
-          <div className="gap-s-2 flex h-32 min-w-0 flex-wrap content-start items-center overflow-y-auto overscroll-contain">
-            <span className="member-tag">
-              {record.member.name}（{copy.edit.participantsCreatorTag}）
-            </span>
-            {extras.map((participant) => (
-              <span className="gap-s-2 flex items-center" key={participant.id}>
-                <span className="member-tag">{participant.name}</span>
-                <Button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => removeParticipant(participant.id)}
-                >
-                  {copy.edit.participantsRemove}
-                </Button>
-              </span>
-            ))}
-          </div>
-          <select
-            className="field__input"
-            value=""
-            disabled={busy || participantsFull || addableMembers.length === 0}
-            onChange={(event) => addParticipant(event.target.value)}
-            aria-label={copy.edit.participantsAddPlaceholder}
-          >
-            <option value="" disabled>
-              {participantsFull
-                ? copy.edit.participantsLimit
-                : addableMembers.length === 0
-                  ? copy.edit.participantsNoOptions
-                  : copy.edit.participantsAddPlaceholder}
-            </option>
-            {addableMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-          <span className="field__hint">{copy.edit.participantsHint}</span>
-        </div>
+        <RepairParticipantPicker
+          creatorId={record.member.id}
+          participants={[record.member, ...extras]}
+          options={memberOptions}
+          disabled={busy}
+          onAdd={addParticipant}
+          onRemove={removeParticipant}
+        />
         <label className="field">
           <span className="field__label">维修内容</span>
           <textarea

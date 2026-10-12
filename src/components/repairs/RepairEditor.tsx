@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } 
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { RepairParticipantPicker } from "@/components/ui/RepairParticipantPicker";
 import {
   defaultRepairResult,
   formatBytes,
@@ -285,11 +286,6 @@ export function RepairEditor({
   const photoHint = repairEditorCopy.photoHint
     .replace("{size}", formatBytes(record.photoLimits.maxBytes))
     .replace("{count}", String(record.photoLimits.maxFiles));
-  // 参与维修人员（issue #114）：候选 = 活跃成员里还没加入的人；到上限或没有候选时禁用选择器。
-  const addableMembers = memberOptions.filter(
-    (option) => !record.participants.some((participant) => participant.id === option.id),
-  );
-  const participantsFull = record.participants.length >= repairFieldLimits.participantMaxCount;
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
@@ -406,53 +402,14 @@ export function RepairEditor({
               </span>
             </label>
           </div>
-          {/* 已选区域固定高度并内部滚动，添加 / 移除参与者不会移动下方表单。 */}
-          <div className="field">
-            <span className="field__label">{repairEditorCopy.participantsLabel}</span>
-            <div className="gap-s-2 flex h-32 min-w-0 flex-wrap content-start items-center overflow-y-auto overscroll-contain">
-              {record.participants.map((participant) => {
-                const isCreator = participant.id === record.member.id;
-                return (
-                  <span className="gap-s-2 flex items-center" key={participant.id}>
-                    <span className="member-tag">
-                      {participant.name}
-                      {isCreator ? `（${repairEditorCopy.participantsCreatorTag}）` : ""}
-                    </span>
-                    {isCreator ? null : (
-                      <Button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => removeParticipant(participant.id)}
-                      >
-                        {repairEditorCopy.participantsRemove}
-                      </Button>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-            <select
-              className="field__input"
-              value=""
-              disabled={busy || participantsFull || addableMembers.length === 0}
-              onChange={(event) => addParticipant(event.target.value)}
-              aria-label={repairEditorCopy.participantsAddPlaceholder}
-            >
-              <option value="" disabled>
-                {participantsFull
-                  ? repairEditorCopy.participantsLimit
-                  : addableMembers.length === 0
-                    ? repairEditorCopy.participantsNoOptions
-                    : repairEditorCopy.participantsAddPlaceholder}
-              </option>
-              {addableMembers.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
-            <span className="field__hint">{repairEditorCopy.participantsHint}</span>
-          </div>
+          <RepairParticipantPicker
+            creatorId={record.member.id}
+            participants={record.participants}
+            options={memberOptions}
+            disabled={busy}
+            onAdd={addParticipant}
+            onRemove={removeParticipant}
+          />
           <p className="field__hint">
             {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}
           </p>
