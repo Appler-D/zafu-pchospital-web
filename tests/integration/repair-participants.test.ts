@@ -283,6 +283,85 @@ dbTest("编辑：去重、剔除创建人本人、显式空数组清空、undefi
 
 /* ------------------------------------------------------------ 校验 */
 
+dbTest("人数上限：建档、成员编辑与管理端编辑允许 8 名协作者，拒绝第 9 名", async () => {
+  const creator = await createMember("上限创建人");
+  const extras = await Promise.all(
+    Array.from({ length: 9 }, (_, index) => createMember(`上限协作者${index}`)),
+  );
+  const participantIds = extras.slice(0, 8).map((row) => row.profileId);
+  const overflowIds = extras.map((row) => row.profileId);
+  const expectedIds = [creator.profileId, ...participantIds];
+
+  await expectCode(
+    () =>
+      repairService.createDraft(
+        { idempotencyKey: randomUUID(), participantIds: overflowIds },
+        creator.actor,
+      ),
+    "VALIDATION_FAILED",
+  );
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), participantIds },
+    creator.actor,
+  );
+  assert.deepEqual(
+    draft.participants.map((row) => row.id),
+    expectedIds,
+  );
+
+  await expectCode(
+    () =>
+      repairService.update(
+        draft.id,
+        { version: draft.version, participantIds: overflowIds },
+        creator.actor,
+      ),
+    "VALIDATION_FAILED",
+  );
+  await expectCode(
+    () =>
+      repairAdminService.updateRecord(
+        draft.id,
+        { version: draft.version, reason: "人数上限校验", participantIds: overflowIds },
+        adminActor,
+      ),
+    "VALIDATION_FAILED",
+  );
+  assert.deepEqual(
+    (await participantRows(draft.id)).map((row) => row.memberProfileId),
+    expectedIds,
+  );
+  assert.equal(
+    (await getDb().repairRecord.findUniqueOrThrow({ where: { id: draft.id } })).version,
+    draft.version,
+  );
+
+  const reduced = await repairService.update(
+    draft.id,
+    { version: draft.version, participantIds: participantIds.slice(0, 7) },
+    creator.actor,
+  );
+  assert.equal(reduced.participants.length, 8);
+  const restored = await repairService.update(
+    draft.id,
+    { version: reduced.version, participantIds },
+    creator.actor,
+  );
+  assert.deepEqual(
+    restored.participants.map((row) => row.id),
+    expectedIds,
+  );
+  const adminUpdated = await repairAdminService.updateRecord(
+    draft.id,
+    { version: restored.version, reason: "满员名单可保存", participantIds },
+    adminActor,
+  );
+  assert.deepEqual(
+    adminUpdated.participants.map((row) => row.id),
+    expectedIds,
+  );
+});
+
 dbTest("校验：不存在的成员、软删除成员、超上限一律拒绝", async () => {
   const creator = await createMember("校验甲");
   const ghost = await createMember("校验乙");

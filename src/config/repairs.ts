@@ -100,7 +100,7 @@ export const repairFieldLimits = {
   /** 维修日期下限：早于它的基本是年份打错（1026 年、202 年这类）。 */
   repairDateMin: "2020-01-01",
   /** 参与维修人员总数上限（含创建人本人，issue #114）。 */
-  participantMaxCount: 10,
+  participantMaxCount: 9,
 } as const;
 export const repairEditorCopy = {
   activitySubmitSuccess: "提交成功，一秒后返回活动页面。",
@@ -113,7 +113,7 @@ export const repairEditorCopy = {
   participantsAddPlaceholder: "选择成员添加…",
   participantsNoOptions: "暂无可添加的成员",
   participantsRemove: "移除",
-  participantsLimit: "最多 {max} 人（含创建人）",
+  participantsLimit: "已到达上限",
   /** 表单是「先存草稿、再提交」两步，必填只针对提交那一刻。 */
   requiredNote: "标注「必填」的字段在提交审核前必须填齐；草稿可以先保存。",
   /** 新建流程没有草稿（issue #72），提示改说提交口径。 */

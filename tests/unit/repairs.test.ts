@@ -385,10 +385,11 @@ test("参与人员（issue #114）：归一去空白去重保序，超限报错�
   assert.equal(isBlankDraftFields({ participantIds: ["m2"] }), false);
   // 上限含创建人本人：额外成员数组最多 participantMaxCount - 1 个。
   const max = repairFieldLimits.participantMaxCount;
+  assert.equal(max, 9, "创建人加 8 名协作者，总人数上限固定为 9 人");
   const extras = (count: number) => Array.from({ length: count }, (_, index) => `m${index + 2}`);
-  validateDraftFields({ participantIds: extras(max - 1) });
+  validateDraftFields({ participantIds: extras(8) });
   assert.throws(
-    () => validateDraftFields({ participantIds: extras(max) }),
+    () => validateDraftFields({ participantIds: extras(9) }),
     (error) =>
       error instanceof AppError &&
       error.code === "VALIDATION_FAILED" &&

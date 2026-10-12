@@ -222,10 +222,6 @@ export function RepairAdminActions({
     (option) => option.id !== record.member.id && !extras.some((item) => item.id === option.id),
   );
   const participantsFull = extras.length + 1 >= repairFieldLimits.participantMaxCount;
-  const participantsLimitText = copy.edit.participantsLimit.replace(
-    "{max}",
-    String(repairFieldLimits.participantMaxCount),
-  );
 
   return (
     <AdminModal
@@ -469,7 +465,7 @@ export function RepairAdminActions({
           >
             <option value="" disabled>
               {participantsFull
-                ? participantsLimitText
+                ? copy.edit.participantsLimit
                 : addableMembers.length === 0
                   ? copy.edit.participantsNoOptions
                   : copy.edit.participantsAddPlaceholder}

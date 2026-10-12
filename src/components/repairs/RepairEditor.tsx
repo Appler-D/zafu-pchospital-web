@@ -290,10 +290,6 @@ export function RepairEditor({
     (option) => !record.participants.some((participant) => participant.id === option.id),
   );
   const participantsFull = record.participants.length >= repairFieldLimits.participantMaxCount;
-  const participantsLimitText = repairEditorCopy.participantsLimit.replace(
-    "{max}",
-    String(repairFieldLimits.participantMaxCount),
-  );
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
@@ -444,7 +440,7 @@ export function RepairEditor({
             >
               <option value="" disabled>
                 {participantsFull
-                  ? participantsLimitText
+                  ? repairEditorCopy.participantsLimit
                   : addableMembers.length === 0
                     ? repairEditorCopy.participantsNoOptions
                     : repairEditorCopy.participantsAddPlaceholder}
@@ -455,10 +451,7 @@ export function RepairEditor({
                 </option>
               ))}
             </select>
-            <span className="field__hint">
-              {repairEditorCopy.participantsHint}
-              {participantsLimitText}。
-            </span>
+            <span className="field__hint">{repairEditorCopy.participantsHint}</span>
           </div>
           <p className="field__hint">
             {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}

@@ -546,7 +546,7 @@ export const adminCopy = {
       participantsAddPlaceholder: "选择成员添加…",
       participantsNoOptions: "暂无可添加的成员",
       participantsRemove: "移除",
-      participantsLimit: "最多 {max} 人（含创建人）",
+      participantsLimit: "已到达上限",
     },
     removePanel: {
       title: "软删除记录",

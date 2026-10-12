@@ -573,12 +573,13 @@ DELETE /api/v1/member/notifications/:id
   `participantIds?: string[]`：**不含创建人本人**的成员档案 id 列表；缺省 = 不动，
   显式数组 = 整体替换（服务端去重、剔除创建人本人、保持提交顺序）。建档
   `POST /api/v1/repairs` 同样接受该字段。
-- 校验：额外成员最多 9 个（总数含创建人 ≤ `repairFieldLimits.participantMaxCount = 10`，
+- 校验：额外成员最多 8 个（总数含创建人 ≤ `repairFieldLimits.participantMaxCount = 9`，
   超限 400 `VALIDATION_FAILED`，报错文案含上限）；不存在的成员 400 `VALIDATION_FAILED`，
   软删除成员不得新增为参与者，但完整名单中保留已有关联不阻止普通编辑；移除后不能重新添加。
   数组中的非字符串元素一律 400 `VALIDATION_FAILED`，不得转换为空名单；ID 去空白、统一小写后去重。
 - 候选名单复用 `GET /api/v1/repair-members`（`ACTIVE` 且未软删除的成员）；编辑器以
   「＋」选择器添加、chip 旁「移除」删除，创建人 chip 固定不可移除。
+  页面不预先显示人数上限，满 9 人时选择器禁用并显示「已到达上限」；移除协作者后可继续添加。
 - 审核通知：`POST /api/v1/admin/repairs/:id/reviews`（含批量审核）的通知收件人从「创建人」
   改为**全部参与者**，审核人本人若是参与者则剔除自己；通知表结构与类型不变。
   通知列表、标已读响应与工作台摘要均继承现有记录可见性；通知事件保留，但当前收件人不可读取
