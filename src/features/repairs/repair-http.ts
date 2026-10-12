@@ -105,7 +105,9 @@ function nullableString(value: unknown): string | null | undefined {
 function nullableStringArray(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new AppError("VALIDATION_FAILED", "participantIds 必须是数组");
-  return value.map((item) => (typeof item === "string" ? item : ""));
+  if (value.some((item) => typeof item !== "string"))
+    throw new AppError("VALIDATION_FAILED", "participantIds 含非字符串元素");
+  return value as string[];
 }
 function nullableNumber(value: unknown): number | null | undefined {
   return value === undefined ? undefined : value === null || value === "" ? null : Number(value);

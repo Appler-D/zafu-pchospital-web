@@ -45,7 +45,7 @@ export const memberDashboardService: MemberDashboardServiceContract = {
         now: new Date(),
         recentLimit: MEMBER_RECENT_REPAIR_LIMIT,
       }),
-      settleCommunity(summarizeNotifications(row.id)),
+      settleCommunity(summarizeNotifications(row.id, actor)),
       settleCommunity(summarizeFavorites(row.id)),
       settleCommunity(rankingService.getTermPreview(row.id, actor)),
     ]);

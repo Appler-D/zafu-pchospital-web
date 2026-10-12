@@ -13,11 +13,16 @@ import {
 import { repairReviewService } from "../../src/features/repairs/repair-review-service";
 import { repairService } from "../../src/features/repairs/repair-service";
 import { repairFieldLimits } from "../../src/config/repairs";
+import {
+  notificationService,
+  summarizeNotifications,
+} from "../../src/features/community/notification-service";
 import { AppError, type ApiErrorCode } from "../../src/lib/api/errors";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
 import type { AuthorizedActor } from "../../src/types/contracts";
 import { integrationTestsEnabled } from "./db-guard";
+import { callRoute, sessionCookie } from "./http-harness";
 
 /* 集成测试的统一闸门：指向非测试库时**在加载阶段就抛错**（`db-guard.ts` 里写了两次
    实际事故）。未开启时返回 false，各文件照常走 test.skip。 */
@@ -142,6 +147,9 @@ async function cleanupFixtures(): Promise<void> {
     where: { targetType: "RepairRecord", targetId: { in: recordIds } },
   });
   await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
+  await db.authSession.deleteMany({ where: { userId: { in: userIds } } });
+  await db.passwordCredential.deleteMany({ where: { userId: { in: userIds } } });
+  await db.userRole.deleteMany({ where: { userId: { in: userIds } } });
   await db.memberProfile.deleteMany({ where: { id: { in: profileIds } } });
   await db.user.deleteMany({ where: { id: { in: userIds } } });
 }
@@ -464,3 +472,217 @@ dbTest("管理端 memberId 筛选：创建人之外的参与者也命中", async
     false,
   );
 });
+
+dbTest("成员与管理端 HTTP PATCH 拒绝非字符串参与者，名单与版本均不变", async () => {
+  const creator = await createMember("HTTP甲");
+  const extra = await createMember("HTTP乙");
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), participantIds: [extra.profileId] },
+    creator.actor,
+  );
+  const { PATCH: memberPatch } = await import("../../src/app/api/v1/repairs/[id]/route");
+  const { PATCH: adminPatch } = await import("../../src/app/api/v1/admin/repairs/[id]/route");
+  const memberCookie = await sessionCookie(creator.userId, "MEMBER");
+  const adminCookie = await sessionCookie(ADMIN_USER_ID);
+  for (const [handler, cookie, path] of [
+    [memberPatch, memberCookie, "repairs"],
+    [adminPatch, adminCookie, "admin/repairs"],
+  ] as const) {
+    for (const participantIds of [[123], [extra.profileId, null], [true], [{}]]) {
+      const response = await callRoute(handler, `http://localhost/api/v1/${path}/${draft.id}`, {
+        method: "PATCH",
+        headers: { cookie },
+        params: { id: draft.id },
+        body: { version: draft.version, reason: "非法名单校验", participantIds },
+      });
+      assert.equal(response.status, 400);
+      assert.equal((response.json.error as { code: string }).code, "VALIDATION_FAILED");
+      assert.equal(
+        (await getDb().repairRecord.findUniqueOrThrow({ where: { id: draft.id } })).version,
+        draft.version,
+      );
+      assert.deepEqual(
+        (await participantRows(draft.id)).map((row) => row.memberProfileId),
+        [creator.profileId, extra.profileId],
+      );
+    }
+  }
+});
+
+dbTest("保留软删除的历史参与者可正常编辑，移除后不得重新新增", async () => {
+  const creator = await createMember("历史甲");
+  const extra = await createMember("历史乙");
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), participantIds: [extra.profileId] },
+    creator.actor,
+  );
+  await getDb().memberProfile.update({
+    where: { id: extra.profileId },
+    data: { deletedAt: new Date() },
+  });
+  const memberEdit = await repairService.update(
+    draft.id,
+    {
+      version: draft.version,
+      durationMinutes: 45,
+      participantIds: [extra.profileId.toUpperCase()],
+    },
+    creator.actor,
+  );
+  const adminEdit = await repairAdminService.updateRecord(
+    draft.id,
+    {
+      version: memberEdit.version,
+      durationMinutes: 60,
+      participantIds: [extra.profileId],
+      reason: "仅调整时长",
+    },
+    adminActor,
+  );
+  assert.equal(adminEdit.durationMinutes, 60);
+  assert.deepEqual(
+    adminEdit.participants.map((row) => row.id),
+    [creator.profileId, extra.profileId],
+  );
+  const cleared = await repairAdminService.updateRecord(
+    draft.id,
+    {
+      version: adminEdit.version,
+      participantIds: [],
+      reason: "移除历史关联",
+    },
+    adminActor,
+  );
+  for (const edit of [
+    () =>
+      repairService.update(
+        draft.id,
+        { version: cleared.version, participantIds: [extra.profileId] },
+        creator.actor,
+      ),
+    () =>
+      repairAdminService.updateRecord(
+        draft.id,
+        { version: cleared.version, participantIds: [extra.profileId], reason: "不得重新新增" },
+        adminActor,
+      ),
+  ])
+    await expectCode(edit, "VALIDATION_FAILED");
+});
+
+dbTest("UUID 大小写混用在建档与两个编辑入口都只落一条参与关系", async () => {
+  const creator = await createMember("UUID甲");
+  const extra = await createMember("UUID乙");
+  const participantIds = [
+    creator.profileId.toUpperCase(),
+    extra.profileId.toUpperCase(),
+    extra.profileId,
+  ];
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), participantIds },
+    creator.actor,
+  );
+  const edited = await repairService.update(
+    draft.id,
+    { version: draft.version, participantIds },
+    creator.actor,
+  );
+  const adminEdited = await repairAdminService.updateRecord(
+    draft.id,
+    {
+      version: edited.version,
+      participantIds,
+      reason: "UUID 归一",
+    },
+    adminActor,
+  );
+  assert.deepEqual(
+    adminEdited.participants.map((row) => row.id),
+    [creator.profileId, extra.profileId],
+  );
+  assert.equal((await participantRows(draft.id)).length, 2);
+});
+
+dbTest("另一端新增参与者后保存标记，旧表单版本必须冲突且不得删除新增成员", async () => {
+  const creator = await createMember("并发甲");
+  const extra = await createMember("并发乙");
+  const draft = await repairService.createDraft({ idempotencyKey: randomUUID() }, creator.actor);
+  await repairService.update(
+    draft.id,
+    { version: draft.version, participantIds: [extra.profileId] },
+    creator.actor,
+  );
+  await repairAdminService.updateFlags(
+    draft.id,
+    { isTypical: true, isDifficult: false },
+    adminActor,
+  );
+  await expectCode(
+    () =>
+      repairAdminService.updateRecord(
+        draft.id,
+        {
+          version: draft.version,
+          durationMinutes: 45,
+          participantIds: [],
+          reason: "旧快照编辑",
+        },
+        adminActor,
+      ),
+    "REPAIR_VERSION_CONFLICT",
+  );
+  assert.deepEqual(
+    (await participantRows(draft.id)).map((row) => row.memberProfileId),
+    [creator.profileId, extra.profileId],
+  );
+});
+
+dbTest(
+  "退回通知保留事件，额外参与者的列表、已读响应与工作台摘要不返回不可见链接或正文",
+  async () => {
+    const creator = await createMember("退回甲");
+    const extra = await createMember("退回乙");
+    const draft = await repairService.createDraft(
+      { idempotencyKey: randomUUID(), participantIds: [extra.profileId] },
+      creator.actor,
+    );
+    const filled = await repairService.update(
+      draft.id,
+      {
+        version: draft.version,
+        repairDate: new Date().toISOString().slice(0, 10),
+        durationMinutes: 40,
+        categoryId: await categoryId(),
+        ownerName: "测试机主",
+        ownerPhone: "13800139114",
+        remark: "不可见的退回备注",
+      },
+      creator.actor,
+    );
+    await repairService.submit(
+      draft.id,
+      { version: filled.version, idempotencyKey: randomUUID() },
+      creator.actor,
+    );
+    await repairReviewService.review(
+      draft.id,
+      { decision: "REJECTED", note: "补充信息", idempotencyKey: randomUUID() },
+      adminActor,
+    );
+    await expectCode(() => repairQueryService.getById(draft.id, extra.actor), "REPAIR_NOT_FOUND");
+    const extraList = await notificationService.list({ page: 1, pageSize: 20 }, extra.actor);
+    assert.equal(extraList.items.length, 1);
+    const notification = extraList.items[0];
+    assert.equal(notification.type, "REPAIR_REJECTED");
+    const marked = await notificationService.markRead(notification.id, extra.actor);
+    const summary = await summarizeNotifications(extra.profileId, extra.actor);
+    for (const view of [notification, marked, summary.latest[0]]) {
+      assert.equal(view.repairRecordId, null);
+      assert.equal(view.repairExcerpt, null);
+      assert.equal(view.commentId, null);
+    }
+    const ownerList = await notificationService.list({ page: 1, pageSize: 20 }, creator.actor);
+    assert.equal(ownerList.items[0].repairRecordId, draft.id);
+    assert.equal(ownerList.items[0].repairExcerpt, "不可见的退回备注");
+  },
+);

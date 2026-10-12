@@ -410,11 +410,10 @@ export function RepairEditor({
               </span>
             </label>
           </div>
-          {/* 参与维修人员（issue #114）：创建人固定第一行、不可移除；「＋」从活跃成员里选人。
-              加行是本操作自身的意图，行列表常驻（创建人恒在），不存在「点了才知道多了什么」的位移。 */}
+          {/* 已选区域固定高度并内部滚动，添加 / 移除参与者不会移动下方表单。 */}
           <div className="field">
             <span className="field__label">{repairEditorCopy.participantsLabel}</span>
-            <div className="gap-s-2 flex flex-wrap items-center">
+            <div className="gap-s-2 flex h-32 min-w-0 flex-wrap content-start items-center overflow-y-auto overscroll-contain">
               {record.participants.map((participant) => {
                 const isCreator = participant.id === record.member.id;
                 return (

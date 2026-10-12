@@ -97,12 +97,16 @@ export const repairAdminService: RepairAdminServiceContract = {
         if (!category.isActive) throw new AppError("REPAIR_CATEGORY_INACTIVE", "所选分类已停用");
       }
     }
-    if (fields.participantIds?.length) await assertParticipantsExist(fields.participantIds);
     // 参与人员（issue #114）：管理员同样可整体替换；创建人（记录归属）恒保留在首位。
     const desiredParticipants =
       fields.participantIds === undefined
         ? null
         : composeParticipantIds(before.memberProfileId, fields.participantIds);
+    if (desiredParticipants)
+      await assertParticipantsExist(
+        desiredParticipants,
+        before.participants.map((row) => row.memberProfileId),
+      );
     const participantsChanged =
       desiredParticipants !== null &&
       desiredParticipants.join(",") !==

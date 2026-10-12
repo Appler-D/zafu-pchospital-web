@@ -139,7 +139,8 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
     数组 = 整体替换）经 `composeParticipantIds`（创建人恒在首位、去重）落库并修正 `sort_order`。
 - 上限 `repairFieldLimits.participantMaxCount = 10`（含创建人，额外成员 ≤ 9）；候选名单来自
   `GET /api/v1/repair-members`（`ACTIVE` 且未软删除）。存在性校验（`assertParticipantsExist`）
-  只排除软删除成员，停用（非 ACTIVE）成员不主动新增、但历史参与行不受影响。
+  仅对新增关联排除软删除成员；保留已有参与行不阻止普通编辑，移除后不能重新新增软删除成员。
+  ID 去空白、统一小写后去重，非字符串输入拒绝；停用（非 ACTIVE）成员不主动新增、但历史参与行不受影响。
 - **统计口径切换**：全部正式统计从「记录归属」改为「参与关系」。涉及成员列表计数
   （`member-repository.approvedRepairStats`）、排行榜（`rankedBaseSql` 窗口函数）、
   分类分布与月度趋势（`aggregateCategoryDistribution` / `aggregateMonthlyTrend`）、
@@ -149,6 +150,8 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 - 审核结果通知（`createReviewNotification`）发给**全部参与者**（创建人恒在其中），
   审核人本人若是参与者则跳过自己那条；管理端列表的 `memberId` 筛选与 `query` 姓名搜索
   按「参与过」匹配。
+  通知事件不授予记录读取权限：通知列表、标已读与工作台摘要按详情同一权限判断，对不可见记录
+  返回空引用与空摘要（`repairRecordId` / `commentId` / `repairExcerpt` 为 `null`），不提供详情链接。
 - 展示：`RepairView.participants: { id, name }[]`（创建人恒在首位，服务端防御性重排）；
   导出新增「参与成员」列（全部参与者「、」连接）。
 

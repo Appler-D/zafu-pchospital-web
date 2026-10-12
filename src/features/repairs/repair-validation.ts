@@ -22,7 +22,7 @@ export function normalizeDraftFields(input: RepairDraftFields): RepairDraftField
 }
 
 /**
- * 参与人员（不含创建人本人）的归一：去空白、去重、保持提交顺序。
+ * 参与人员（不含创建人本人）的归一：去空白、统一小写、去重、保持提交顺序。
  *
  * 不做数量截断 —— 超限由 `validateDraftFields` 报错，静默丢弃会让用户以为「加上了」。
  * 创建人本人若混在数组里由调用方（service）剔除：纯函数不知道「我是谁」。
@@ -31,8 +31,9 @@ function normalizeParticipantIds(value: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of value) {
-    if (typeof raw !== "string") continue;
-    const id = raw.trim();
+    if (typeof raw !== "string")
+      throw new AppError("VALIDATION_FAILED", "participantIds 含非字符串元素");
+    const id = raw.trim().toLowerCase();
     if (!id || seen.has(id)) continue;
     seen.add(id);
     result.push(id);

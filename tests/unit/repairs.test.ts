@@ -18,7 +18,7 @@ import {
   RepairTimelineEventType,
   type RepairDraftFields,
 } from "../../src/types/contracts";
-import { parseRepairListStatus } from "../../src/features/repairs/repair-http";
+import { draftInput, parseRepairListStatus } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
 
@@ -401,6 +401,36 @@ test("composeParticipantIds：创建人恒在首位，重复 id 只保留一次"
   // 额外成员里混入创建人本人或重复：去重后仍只有一条，且创建人在首位。
   assert.deepEqual(composeParticipantIds("m1", ["m2", "m1", "m2"]), ["m1", "m2"]);
   assert.deepEqual(composeParticipantIds("m1", []), ["m1"]);
+});
+
+test("参与者 HTTP 入参拒绝非字符串元素，不能把非法名单变成清空操作", () => {
+  for (const participantIds of [[123], ["m2", null], [true], [{}], null, "m2"]) {
+    assert.throws(
+      () => draftInput({ participantIds }),
+      (error) => error instanceof AppError && error.code === "VALIDATION_FAILED",
+    );
+  }
+  assert.equal(draftInput({}).participantIds, undefined);
+  assert.deepEqual(draftInput({ participantIds: [] }).participantIds, []);
+  assert.deepEqual(draftInput({ participantIds: ["m2"] }).participantIds, ["m2"]);
+  assert.throws(
+    () => normalizeDraftFields({ participantIds: [123] as unknown as string[] }),
+    (error) => error instanceof AppError && error.code === "VALIDATION_FAILED",
+  );
+});
+
+test("参与者 UUID 大小写在归一与创建人去重时统一", () => {
+  const creator = "aabbccdd-0000-4000-8000-000000000001";
+  const extra = "aabbccdd-0000-4000-8000-000000000002";
+  const fields = normalizeDraftFields({
+    participantIds: [extra.toUpperCase(), ` ${extra} `, creator.toUpperCase()],
+  });
+  assert.deepEqual(fields.participantIds, [extra, creator]);
+  assert.deepEqual(composeParticipantIds(creator, fields.participantIds!), [creator, extra]);
+  assert.deepEqual(composeParticipantIds(creator.toUpperCase(), [creator, extra.toUpperCase()]), [
+    creator,
+    extra,
+  ]);
 });
 
 test("参与者展示（issue #114）：toRepairView 按参与行映射姓名并把创建人排到首位", () => {

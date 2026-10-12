@@ -575,11 +575,15 @@ DELETE /api/v1/member/notifications/:id
   `POST /api/v1/repairs` 同样接受该字段。
 - 校验：额外成员最多 9 个（总数含创建人 ≤ `repairFieldLimits.participantMaxCount = 10`，
   超限 400 `VALIDATION_FAILED`，报错文案含上限）；不存在的成员 400 `VALIDATION_FAILED`，
-  软删除成员不得新增为参与者。
+  软删除成员不得新增为参与者，但完整名单中保留已有关联不阻止普通编辑；移除后不能重新添加。
+  数组中的非字符串元素一律 400 `VALIDATION_FAILED`，不得转换为空名单；ID 去空白、统一小写后去重。
 - 候选名单复用 `GET /api/v1/repair-members`（`ACTIVE` 且未软删除的成员）；编辑器以
   「＋」选择器添加、chip 旁「移除」删除，创建人 chip 固定不可移除。
 - 审核通知：`POST /api/v1/admin/repairs/:id/reviews`（含批量审核）的通知收件人从「创建人」
   改为**全部参与者**，审核人本人若是参与者则剔除自己；通知表结构与类型不变。
+  通知列表、标已读响应与工作台摘要均继承现有记录可见性；通知事件保留，但当前收件人不可读取
+  记录时，`repairRecordId`、`commentId` 与 `repairExcerpt` 返回 `null`，界面不展示详情跳转。
+  额外参与者仍不能读取他人草稿 / 待审 / 退回记录；创建人与持 `repair:review` 者保留详情入口。
 - 统计口径：全部正式统计（成员列表计数、排行榜、分类分布、月度趋势、成员摘要）改为按
   **参与关系**——每名参与者各计一次、时长取记录上的同一值；列表可见性不变（本人创建任意
   状态 + 全部已通过）；管理端列表 `memberId` 筛选与 `query` 姓名搜索按「参与过」匹配。

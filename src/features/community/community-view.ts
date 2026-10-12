@@ -1,3 +1,4 @@
+import { canReadRepair } from "@/features/repairs/repair-policy";
 import type {
   AuthorizedActor,
   FavoriteView,
@@ -105,18 +106,25 @@ type NotificationRow = {
   createdAt: Date;
   readAt: Date | null;
   actor: MemberNameSource | null;
-  record: { content: string | null; remark: string | null } | null;
+  record: {
+    content: string | null;
+    remark: string | null;
+    status: string;
+    deletedAt: Date | null;
+    memberProfile: { userId: string };
+  } | null;
 };
 
-export function toNotificationView(row: NotificationRow): NotificationView {
+export function toNotificationView(row: NotificationRow, actor: AuthorizedActor): NotificationView {
+  const visibleRecord = row.record && canReadRepair(actor, row.record) ? row.record : null;
   return {
     id: row.id,
     type: row.type as NotificationView["type"],
     status: row.status as NotificationView["status"],
-    repairRecordId: row.repairRecordId,
-    commentId: row.commentId,
+    repairRecordId: visibleRecord ? row.repairRecordId : null,
+    commentId: visibleRecord ? row.commentId : null,
     actor: row.actor ? memberRef(row.actor) : null,
-    repairExcerpt: row.record ? excerptText(row.record) : null,
+    repairExcerpt: visibleRecord ? excerptText(visibleRecord) : null,
     createdAt: row.createdAt.toISOString(),
     readAt: row.readAt?.toISOString() ?? null,
   };

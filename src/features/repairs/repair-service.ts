@@ -80,12 +80,16 @@ export const repairService: RepairServiceContract = {
       throw new AppError("REPAIR_VERSION_CONFLICT", "记录已被更新，请刷新后重试");
     const fields = normalizeDraftFields(input);
     validateDraftFields(fields);
-    if (fields.participantIds?.length) await assertParticipantsExist(fields.participantIds);
     // 参与人员的变更单独 diff（它是关系数据，不在记录行上），以 "participants" 记入时间线。
     const desiredParticipants =
       fields.participantIds === undefined
         ? null
         : composeParticipantIds(record.memberProfileId, fields.participantIds);
+    if (desiredParticipants)
+      await assertParticipantsExist(
+        desiredParticipants,
+        record.participants.map((row) => row.memberProfileId),
+      );
     const participantsChanged =
       desiredParticipants !== null &&
       desiredParticipants.join(",") !==
@@ -238,16 +242,23 @@ export function composeParticipantIds(
   creatorMemberProfileId: string,
   extras: readonly string[],
 ): string[] {
-  return [...new Set([creatorMemberProfileId, ...extras])];
+  return [...new Set([creatorMemberProfileId, ...extras].map((id) => id.trim().toLowerCase()))];
 }
 
-/** 校验参与成员确实存在（软删除的排除）；重复由 `composeParticipantIds` 先去重。 */
-export async function assertParticipantsExist(memberProfileIds: readonly string[]): Promise<void> {
-  if (memberProfileIds.length === 0) return;
+/** 仅新增关联要求成员未软删除；保留历史参与者不阻止普通编辑。 */
+export async function assertParticipantsExist(
+  memberProfileIds: readonly string[],
+  existingMemberProfileIds: readonly string[] = [],
+): Promise<void> {
+  const existing = new Set(existingMemberProfileIds.map((id) => id.toLowerCase()));
+  const added = [...new Set(memberProfileIds.map((id) => id.toLowerCase()))].filter(
+    (id) => !existing.has(id),
+  );
+  if (added.length === 0) return;
   const count = await getDb().memberProfile.count({
-    where: { id: { in: [...memberProfileIds] }, deletedAt: null },
+    where: { id: { in: added }, deletedAt: null },
   });
-  if (count !== memberProfileIds.length)
+  if (count !== added.length)
     throw new AppError("VALIDATION_FAILED", "参与维修人员中有不存在的成员，请刷新页面后重试");
 }
 

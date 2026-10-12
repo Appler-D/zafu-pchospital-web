@@ -58,6 +58,8 @@ export function RepairAdminActions({
   const [brokenPhotos, setBrokenPhotos] = useState<string[]>([]);
   /** 参与维修人员（issue #114）的候选名单：取不到时只少一个「添加」入口，不影响其余动作。 */
   const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
+  /** 编辑字段与版本绑定同一快照；标记、审核或列表刷新不能替旧表单抬高版本。 */
+  const [editRecord, setEditRecord] = useState(record);
   /** 额外参与者（不含创建人）：提交时整体替换；创建人固定展示在第一位。 */
   const [extras, setExtras] = useState(() =>
     record.participants
@@ -106,22 +108,24 @@ export function RepairAdminActions({
     setExtras((current) => current.filter((item) => item.id !== memberProfileId));
   }
 
-  async function call(
+  async function call<T = unknown>(
     path: string,
     init: { method?: string; body?: unknown },
     successText: string,
     tone: AdminToastTone = "success",
+    onSuccess?: (data: T) => void,
   ): Promise<boolean> {
     setBusy(true);
     setProblem("");
     setToast(null);
-    const result = await adminFetch<unknown>(path, init);
+    const result = await adminFetch<T>(path, init);
     setBusy(false);
     if (!result.ok) {
       setProblem(result.message);
       return false;
     }
     setToast({ text: successText, tone });
+    onSuccess?.(result.data);
     onChanged();
     return true;
   }
@@ -151,7 +155,7 @@ export function RepairAdminActions({
   async function submitEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    await call(
+    await call<RepairView>(
       `/api/v1/admin/repairs/${record.id}`,
       {
         method: "PATCH",
@@ -166,11 +170,16 @@ export function RepairAdminActions({
           remark: data.remark || null,
           // 参与者（issue #114）：不含创建人本人，服务端整体替换并保证创建人在首位。
           participantIds: extras.map((item) => item.id),
-          version: record.version,
+          version: editRecord.version,
           reason: data.reason ?? "",
         },
       },
       copy.edit.saved,
+      "success",
+      (saved) => {
+        setEditRecord(saved);
+        setExtras(saved.participants.filter((participant) => participant.id !== saved.member.id));
+      },
     );
   }
 
@@ -364,7 +373,7 @@ export function RepairAdminActions({
               name="repairDate"
               min={repairFieldLimits.repairDateMin}
               max={shanghaiToday()}
-              defaultValue={record.repairDate ?? ""}
+              defaultValue={editRecord.repairDate ?? ""}
             />
           </label>
           <label className="field">
@@ -374,7 +383,7 @@ export function RepairAdminActions({
               type="text"
               name="ownerName"
               maxLength={repairFieldLimits.ownerNameMaxLength}
-              defaultValue={record.ownerName ?? ""}
+              defaultValue={editRecord.ownerName ?? ""}
             />
           </label>
           <label className="field">
@@ -385,7 +394,7 @@ export function RepairAdminActions({
               inputMode="numeric"
               name="ownerPhone"
               maxLength={11}
-              defaultValue={record.ownerPhone ?? ""}
+              defaultValue={editRecord.ownerPhone ?? ""}
             />
           </label>
           <label className="field">
@@ -396,7 +405,7 @@ export function RepairAdminActions({
               name="durationMinutes"
               min={1}
               max={10080}
-              defaultValue={record.durationMinutes ?? ""}
+              defaultValue={editRecord.durationMinutes ?? ""}
             />
           </label>
           <label className="field">
@@ -404,7 +413,7 @@ export function RepairAdminActions({
             <select
               className="field__input"
               name="categoryId"
-              defaultValue={record.category?.id ?? ""}
+              defaultValue={editRecord.category?.id ?? ""}
             >
               <option value="">未分类</option>
               {/* 记录当前分类即使已停用也要列出来，否则无法「保持原值」。 */}
@@ -413,14 +422,15 @@ export function RepairAdminActions({
                   {category.name}
                 </option>
               ))}
-              {record.category && !categories.some((item) => item.id === record.category?.id) ? (
-                <option value={record.category.id}>{record.category.name}（已停用）</option>
+              {editRecord.category &&
+              !categories.some((item) => item.id === editRecord.category?.id) ? (
+                <option value={editRecord.category.id}>{editRecord.category.name}（已停用）</option>
               ) : null}
             </select>
           </label>
           <label className="field">
             <span className="field__label">{copy.table.result}</span>
-            <select className="field__input" name="result" defaultValue={record.result ?? ""}>
+            <select className="field__input" name="result" defaultValue={editRecord.result ?? ""}>
               <option value="">未填写</option>
               {RepairResult.map((result) => (
                 <option key={result} value={result}>
@@ -430,11 +440,10 @@ export function RepairAdminActions({
             </select>
           </label>
         </div>
-        {/* 参与维修人员（issue #114）：创建人固定第一行、不可移除；提交时整体替换。
-            行列表常驻（创建人恒在），添加与移除都只动这一块自身的像素。 */}
+        {/* 与成员编辑器保持相同的固定高度、内部滚动；下方正文输入框不随人数移动。 */}
         <div className="field">
           <span className="field__label">{copy.edit.participantsLabel}</span>
-          <div className="gap-s-2 flex flex-wrap items-center">
+          <div className="gap-s-2 flex h-32 min-w-0 flex-wrap content-start items-center overflow-y-auto overscroll-contain">
             <span className="member-tag">
               {record.member.name}（{copy.edit.participantsCreatorTag}）
             </span>
@@ -479,7 +488,7 @@ export function RepairAdminActions({
             className="field__input min-h-32"
             name="content"
             maxLength={repairFieldLimits.contentMaxLength}
-            defaultValue={record.content ?? ""}
+            defaultValue={editRecord.content ?? ""}
           />
         </label>
         <label className="field">
@@ -488,7 +497,7 @@ export function RepairAdminActions({
             className="field__input min-h-24"
             name="remark"
             maxLength={repairFieldLimits.remarkMaxLength}
-            defaultValue={record.remark ?? ""}
+            defaultValue={editRecord.remark ?? ""}
           />
         </label>
         <label className="field">
