@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } 
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { RepairParticipantPicker } from "@/components/ui/RepairParticipantPicker";
 import {
   defaultRepairResult,
   formatBytes,
@@ -14,7 +15,7 @@ import {
 } from "@/config/repairs";
 import { shanghaiToday } from "@/lib/shanghai-date";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
-import type { RepairCategoryView, RepairDetailView } from "@/types/contracts";
+import type { RepairCategoryView, RepairDetailView, RepairMemberOption } from "@/types/contracts";
 
 /** 点击整块日期输入框都弹出原生日历（默认只有右侧小图标会弹）。 */
 function openDatePicker(event: ReactMouseEvent<HTMLInputElement>) {
@@ -39,6 +40,8 @@ export function RepairEditor({
   const router = useRouter();
   const [record, setRecord] = useState<RepairDetailView>();
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
+  /** 参与维修人员（issue #114）的候选名单：全部活跃成员，从中挑选添加。 */
+  const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden">("loading");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,12 +57,15 @@ export function RepairEditor({
   const load = useCallback(async () => {
     setState("loading");
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetch(`/api/v1/repairs/${recordId}`, { cache: "no-store" }),
         fetch("/api/v1/repair-categories", { cache: "no-store" }),
+        fetch("/api/v1/repair-members", { cache: "no-store" }),
       ]);
       const detail = await a.json();
       const cats = await b.json();
+      const members = await c.json();
+      if (members.success) setMemberOptions(members.data);
       if (!detail.success) {
         setState(
           detail.error.code === "REPAIR_FORBIDDEN" || detail.error.code === "REPAIR_NOT_FOUND"
@@ -108,6 +114,10 @@ export function RepairEditor({
         // 老记录的正文不会被这里清空（issue #79 第 6 项）。
         remark: record.remark,
         result: record.result ?? defaultRepairResult,
+        // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
+        participantIds: record.participants
+          .filter((participant) => participant.id !== record.member.id)
+          .map((participant) => participant.id),
       }),
     });
     const json = await response.json();
@@ -158,6 +168,31 @@ export function RepairEditor({
       setMessage(e instanceof Error ? e.message : "提交失败");
       setBusy(false);
     }
+  }
+  /** 添加参与成员（issue #114）：创建人固定第一行、不可移除；候选里排除已加入的人。 */
+  function addParticipant(memberProfileId: string) {
+    if (!record || !memberProfileId) return;
+    setRecord((current) => {
+      if (!current) return current;
+      const member = memberOptions.find((option) => option.id === memberProfileId);
+      if (!member || current.participants.some((item) => item.id === memberProfileId))
+        return current;
+      if (current.participants.length >= repairFieldLimits.participantMaxCount) return current;
+      return {
+        ...current,
+        participants: [...current.participants, { id: member.id, name: member.name }],
+      };
+    });
+  }
+  function removeParticipant(memberProfileId: string) {
+    setRecord((current) =>
+      current
+        ? {
+            ...current,
+            participants: current.participants.filter((item) => item.id !== memberProfileId),
+          }
+        : current,
+    );
   }
   /** 照片是即时保存的，只合并照片 —— 整块重载会丢掉表单里还没保存的改动。 */
   async function refreshPhotos() {
@@ -367,6 +402,14 @@ export function RepairEditor({
               </span>
             </label>
           </div>
+          <RepairParticipantPicker
+            creatorId={record.member.id}
+            participants={record.participants}
+            options={memberOptions}
+            disabled={busy}
+            onAdd={addParticipant}
+            onRemove={removeParticipant}
+          />
           <p className="field__hint">
             {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}
           </p>

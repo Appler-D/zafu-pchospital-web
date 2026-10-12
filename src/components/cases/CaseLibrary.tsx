@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { casesCopy } from "@/config/cases";
 import { formatDurationMinutes, formatShanghaiDate } from "@/config/member";
-import { repairCopy, repairResultLabels } from "@/config/repairs";
+import { formatRepairParticipants, repairCopy, repairResultLabels } from "@/config/repairs";
 import type { PaginationMeta, RepairCategoryView, RepairView } from "@/types/contracts";
 
 /**
@@ -238,7 +238,7 @@ function CaseCard({ item }: { item: RepairView }) {
           <Link href={href}>{summary ?? copy.missingContent}</Link>
         </p>
         <p className="community-list__excerpt">
-          {formatShanghaiDate(item.repairDate)} · {item.member.name} ·{" "}
+          {formatShanghaiDate(item.repairDate)} · {formatRepairParticipants(item)} ·{" "}
           {item.category?.name ?? copy.uncategorized}
           {item.durationMinutes === null
             ? ""

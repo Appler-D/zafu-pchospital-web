@@ -1,4 +1,5 @@
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
+import { approvedRepairSql } from "@/features/analytics/analytics-repository";
 import { memberFilterWhere } from "@/features/members/member-filter";
 import { memberOrderBy } from "@/features/members/member-sort";
 import { AppError } from "@/lib/api/errors";
@@ -197,23 +198,32 @@ export const memberRepository = {
   },
 };
 
-/** 正式统计口径的维修计数（`APPROVED AND deletedAt IS NULL`），与 M5 保持同一谓词语义。 */
 /** 正式统计口径下的维修次数与总时长（一次聚合取整页，不是逐行查询）。 */
 type RepairStats = { count: number; minutes: number };
 
+/**
+ * 按**参与关系**统计（issue #114）：与排行榜 / 个人摘要同一口径 ——
+ * 一条记录对每名参与者各计一次，时长不分人、取记录上的同一值；
+ * 「有效记录」谓词复用 `approvedRepairSql`，不在这里重写第二份。
+ */
 async function approvedRepairStats(memberProfileIds: string[]): Promise<Map<string, RepairStats>> {
   if (memberProfileIds.length === 0) return new Map();
-  const grouped = await getDb().repairRecord.groupBy({
-    by: ["memberProfileId"],
-    where: { memberProfileId: { in: memberProfileIds }, status: "APPROVED", deletedAt: null },
-    _count: { _all: true },
-    // 时长可能为 NULL（早期记录没填），`_sum` 会忽略它们并可能返回 null。
-    _sum: { durationMinutes: true },
-  });
+  const rows = await getDb().$queryRaw<
+    Array<{ memberProfileId: string; count: unknown; minutes: unknown }>
+  >`
+    SELECT p.member_profile_id AS memberProfileId,
+           COUNT(*) AS count,
+           COALESCE(SUM(rr.duration_minutes), 0) AS minutes
+    FROM repair_record_participants p
+    JOIN repair_records rr ON rr.id = p.repair_record_id
+    WHERE p.member_profile_id IN (${Prisma.join(memberProfileIds)})
+      AND ${approvedRepairSql("rr")}
+    GROUP BY p.member_profile_id
+  `;
   return new Map(
-    grouped.map((row) => [
+    rows.map((row) => [
       row.memberProfileId,
-      { count: row._count._all, minutes: row._sum.durationMinutes ?? 0 },
+      { count: Number(row.count), minutes: Number(row.minutes) },
     ]),
   );
 }

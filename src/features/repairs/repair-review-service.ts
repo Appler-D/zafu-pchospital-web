@@ -65,8 +65,9 @@ export const repairReviewService: RepairReviewServiceContract = {
         { decision: input.decision, note },
         now,
       );
-      const owner = await tx.repairRecord.findUniqueOrThrow({
-        where: { id: recordId },
+      // 审核结果通知全部参与者（issue #114；创建人恒为参与者之一，含在内）。
+      const participants = await tx.repairRecordParticipant.findMany({
+        where: { repairRecordId: recordId },
         select: { memberProfileId: true },
       });
       const actorMember = actor.userId
@@ -77,7 +78,7 @@ export const repairReviewService: RepairReviewServiceContract = {
         : null;
       await createReviewNotification(tx, {
         recordId,
-        ownerMemberProfileId: owner.memberProfileId,
+        recipientMemberProfileIds: participants.map((row) => row.memberProfileId),
         actorMemberProfileId: actorMember?.id ?? null,
         decision: input.decision,
         now,

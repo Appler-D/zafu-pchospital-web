@@ -27,8 +27,11 @@
 import { Prisma } from "@/generated/prisma/client";
 import { AppError } from "@/lib/api/errors";
 import { getDb } from "@/lib/db/client";
-import { toDateOnlyBounds, type UtcRange } from "@/lib/academic-term";
-import { approvedRepairWhere, listMemberRepairSummary } from "@/features/repairs/repair-query-service";
+import type { UtcRange } from "@/lib/academic-term";
+import {
+  approvedRepairWhere,
+  listMemberRepairSummary,
+} from "@/features/repairs/repair-query-service";
 import type { RankingMetric } from "@/types/contracts";
 import { RANKABLE_MEMBER_STATUS } from "./analytics-policy";
 
@@ -117,7 +120,8 @@ export type CategoryAggregateRow = {
 };
 
 /**
- * 按 `categoryId` 在数据库内聚合。
+ * 按 `categoryId` 在数据库内聚合（issue #114 起按**参与关系**统计：
+ * 一条记录对每名参与者各计一次，时长取记录上的同一值）。
  *
  * 分类名称单独查一次，且**不过滤 `deleted_at`**：分类停用后历史记录仍需
  * 显示其历史名称（任务书 §14），统计不得因停用而改名或消失。
@@ -127,16 +131,18 @@ export async function aggregateCategoryDistribution(
   range: UtcRange | null,
 ): Promise<CategoryAggregateRow[]> {
   const db = getDb();
-  const grouped = await db.repairRecord.groupBy({
-    by: ["categoryId"],
-    where: approvedRepairWhere({
-      memberProfileId,
-      // 同 `listMemberRepairSummary`：`repair_date` 是 DATE 列，区间要先换成日期边界。
-      repairDate: range ? toDateOnlyBounds(range) : undefined,
-    }),
-    _count: { _all: true },
-    _sum: { durationMinutes: true },
-  });
+  // 参与行对 (record, member) 唯一，COUNT(*) 即「该成员参与的记录数」，不会重复计数。
+  const grouped = await db.$queryRaw<CategoryAggregateRow[]>`
+    SELECT rr.category_id AS categoryId,
+           COUNT(*) AS approvedCount,
+           COALESCE(SUM(rr.duration_minutes), 0) AS durationMinutes
+    FROM repair_record_participants p
+    JOIN repair_records rr ON rr.id = p.repair_record_id
+    WHERE p.member_profile_id = ${memberProfileId}
+      AND ${approvedRepairSql("rr")}
+      ${rangeSql(range, "rr")}
+    GROUP BY rr.category_id
+  `;
 
   const categoryIds = grouped
     .map((row) => row.categoryId)
@@ -152,8 +158,8 @@ export async function aggregateCategoryDistribution(
   return grouped.map((row) => ({
     categoryId: row.categoryId,
     categoryName: row.categoryId ? (nameById.get(row.categoryId) ?? null) : null,
-    approvedCount: row._count._all,
-    durationMinutes: row._sum.durationMinutes ?? 0,
+    approvedCount: row.approvedCount,
+    durationMinutes: row.durationMinutes,
   }));
 }
 
@@ -166,7 +172,7 @@ export type MonthlyAggregateRow = {
 };
 
 /**
- * 指定区间内按上海自然月聚合。
+ * 指定区间内按上海自然月聚合（issue #114 起按**参与关系**：一条记录对每名参与者各计一次）。
  *
  * `repair_date` 本身已是上海日历日，故**直接取 `%Y-%m`**，不做时区平移。
  */
@@ -178,8 +184,9 @@ export async function aggregateMonthlyTrend(
     SELECT DATE_FORMAT(rr.repair_date, '%Y-%m') AS month,
            COUNT(*) AS approvedCount,
            COALESCE(SUM(rr.duration_minutes), 0) AS durationMinutes
-    FROM repair_records rr
-    WHERE rr.member_profile_id = ${memberProfileId}
+    FROM repair_record_participants p
+    JOIN repair_records rr ON rr.id = p.repair_record_id
+    WHERE p.member_profile_id = ${memberProfileId}
       AND ${approvedRepairSql("rr")}
       ${rangeSql(range, "rr")}
     GROUP BY month
@@ -226,6 +233,9 @@ function metricSql(metric: RankingMetric): {
 /**
  * 聚合子查询：每个成员一行，含竞赛名次（`RANK()` 主指标相同则同名次、后续跳号）。
  *
+ * issue #114 起按**参与关系**聚合：`repair_record_participants` 对 (record, member) 唯一，
+ * 一条记录对每名参与者各计一次（次数 +1、时长取记录上的同一值），不会因多参与重复放大。
+ *
  * ⚠️ **不要在这里按成员过滤**：`RANK()` 必须建立在**全体有效成员**的集合之上。
  * 一旦把 `member_profile_id = ?` 下推进子查询，窗口函数就只剩一行可排，
  * 名次会恒定返回 1 —— 这正是「我的排名」曾经出错的根因。
@@ -233,16 +243,17 @@ function metricSql(metric: RankingMetric): {
 function rankedBaseSql(metric: RankingMetric, range: UtcRange | null): Prisma.Sql {
   const { primary } = metricSql(metric);
   return Prisma.sql`
-    SELECT rr.member_profile_id AS memberProfileId,
+    SELECT p.member_profile_id AS memberProfileId,
            COUNT(*) AS approvedCount,
            COALESCE(SUM(rr.duration_minutes), 0) AS durationMinutes,
            RANK() OVER (ORDER BY ${primary} DESC) AS rankingPosition
     FROM repair_records rr
-    JOIN member_profiles mp ON mp.id = rr.member_profile_id
+    JOIN repair_record_participants p ON p.repair_record_id = rr.id
+    JOIN member_profiles mp ON mp.id = p.member_profile_id
     WHERE ${approvedRepairSql("rr")}
       AND ${rankableMemberSql("mp")}
       ${rangeSql(range, "rr")}
-    GROUP BY rr.member_profile_id
+    GROUP BY p.member_profile_id
   `;
 }
 

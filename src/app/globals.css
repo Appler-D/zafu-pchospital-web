@@ -2400,6 +2400,161 @@ html[data-theme="black-yellow"] {
   .field__input:user-invalid {
     border-color: var(--accent);
   }
+  /* 维修参与人员：固定单行已选区，横向滚动只发生在区内。 */
+  .repair-participants {
+    display: grid;
+    min-width: 0;
+    gap: var(--s-2);
+  }
+  .repair-participants__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+  }
+  .repair-participants__head svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    align-self: center;
+    color: var(--ink-3);
+  }
+  .repair-participants__count {
+    flex: none;
+    font-size: var(--t-xs);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .repair-participants__selected {
+    display: flex;
+    gap: var(--s-2);
+    height: calc(var(--s-7) + var(--s-5));
+    min-width: 0;
+    margin: 0;
+    padding: var(--s-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-base);
+    background: var(--bg);
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .repair-participants__chip {
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: var(--s-7);
+    max-width: 100%;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-base);
+    background: var(--surface-1);
+    color: var(--ink-2);
+  }
+  .repair-participants__chip--creator {
+    border-color: var(--accent-line);
+    background: var(--accent-wash);
+    color: var(--accent-deep);
+  }
+  .repair-participants__identity {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    padding-inline: var(--s-3);
+    font-size: var(--t-sm);
+    font-weight: 650;
+  }
+  .repair-participants__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .repair-participants__creator {
+    flex: none;
+    font-size: var(--t-xs);
+    font-weight: 400;
+  }
+  .repair-participants .btn.repair-participants__remove {
+    justify-content: center;
+    flex: none;
+    width: 46px;
+    height: 46px;
+    min-height: 46px;
+    padding: 0;
+    gap: 0;
+    border-width: 0 0 0 1px;
+  }
+  .repair-participants__search {
+    position: relative;
+    min-width: 0;
+  }
+  .repair-participants__search-icon {
+    position: absolute;
+    inset-inline-start: var(--s-3);
+    inset-block-start: 50%;
+    width: 16px;
+    height: 16px;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+  .repair-participants .field__input.repair-participants__input {
+    padding-inline-start: calc(var(--s-3) * 2 + 16px);
+  }
+  .repair-participants__menu {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: calc(100% + var(--s-1));
+    z-index: 20;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-base);
+    background: var(--surface-1);
+  }
+  .repair-participants__results {
+    margin: 0;
+    padding: var(--s-2) var(--s-3);
+    font-size: var(--t-xs);
+    color: var(--ink-3);
+  }
+  .repair-participants__menu ul {
+    position: relative;
+    max-height: min(16rem, 40vh);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .repair-participants__option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    width: 100%;
+    min-height: 46px;
+    padding: var(--s-2) var(--s-3);
+    border: 0;
+    border-top: 1px solid var(--line-soft);
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--t-base);
+    text-align: start;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .repair-participants__option--active,
+  .repair-participants__option:hover {
+    background: var(--accent-wash);
+    color: var(--accent-deep);
+  }
+  .repair-participants__option svg {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
   .field__hint {
     margin: 0;
     font-size: var(--t-xs);
@@ -2659,6 +2814,9 @@ html[data-theme="black-yellow"] {
     display: grid;
     min-width: 0;
     gap: var(--s-5);
+  }
+  .repair-editor > .repair-panel {
+    overflow: visible;
   }
   .repair-detail__facts {
     display: grid;

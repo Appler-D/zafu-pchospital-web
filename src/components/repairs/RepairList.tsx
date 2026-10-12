@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { repairCopy } from "@/config/repairs";
+import { formatRepairParticipants, repairCopy } from "@/config/repairs";
 import { parseRepairListStatus } from "@/features/repairs/repair-http";
 import type {
   PaginationMeta,
@@ -456,7 +456,7 @@ function RepairRow({
           </span>
         ) : null}
       </td>
-      <td data-label={copy.columns.member}>{item.member.name}</td>
+      <td data-label={copy.columns.member}>{formatRepairParticipants(item)}</td>
       <td data-label={copy.columns.result}>
         {item.result ? (
           <span className="repair-tag repair-tag--result">{resultLabels[item.result]}</span>

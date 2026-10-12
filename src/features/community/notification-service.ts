@@ -6,6 +6,7 @@ import { inSerializableTransaction } from "@/lib/db/transaction";
 import { repairRepository } from "@/features/repairs/repair-repository";
 import { toNotificationView } from "./community-view";
 import type {
+  AuthorizedActor,
   NotificationListResult,
   NotificationServiceContract,
   NotificationView,
@@ -14,7 +15,15 @@ import { MEMBER_DASHBOARD_NOTIFICATION_LIMIT } from "@/types/contracts";
 
 const notificationInclude = {
   actor: { include: { user: { select: { displayName: true } } } },
-  record: { select: { content: true, remark: true } },
+  record: {
+    select: {
+      content: true,
+      remark: true,
+      status: true,
+      deletedAt: true,
+      memberProfile: { select: { userId: true } },
+    },
+  },
 } as const;
 
 function notFound(): never {
@@ -44,7 +53,7 @@ export const notificationService: NotificationServiceContract = {
       }),
     ]);
     return {
-      items: rows.map(toNotificationView),
+      items: rows.map((row) => toNotificationView(row, actor)),
       unreadCount,
       pagination: paginationMeta(input, total),
     };
@@ -71,7 +80,7 @@ export const notificationService: NotificationServiceContract = {
         include: notificationInclude,
       });
     });
-    return toNotificationView(row);
+    return toNotificationView(row, actor);
   },
 
   async markAllRead(actor) {
@@ -97,7 +106,7 @@ export const notificationService: NotificationServiceContract = {
   },
 };
 
-export async function summarizeNotifications(memberProfileId: string) {
+export async function summarizeNotifications(memberProfileId: string, actor: AuthorizedActor) {
   const where = { recipientMemberProfileId: memberProfileId, deletedAt: null };
   const [unreadCount, latest] = await Promise.all([
     getDb().notification.count({ where: { ...where, status: "UNREAD" } }),
@@ -108,5 +117,5 @@ export async function summarizeNotifications(memberProfileId: string) {
       take: MEMBER_DASHBOARD_NOTIFICATION_LIMIT,
     }),
   ]);
-  return { unreadCount, latest: latest.map(toNotificationView) };
+  return { unreadCount, latest: latest.map((row) => toNotificationView(row, actor)) };
 }

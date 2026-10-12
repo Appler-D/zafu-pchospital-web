@@ -110,6 +110,8 @@ async function cleanupFixtures(): Promise<void> {
   await db.repairActivityRegistration.deleteMany({ where: { activityId: { in: activityIds } } });
   await db.repairActivityAttendance.deleteMany({ where: { activityId: { in: activityIds } } });
   if (recordIds.length > 0) {
+    // 参与行（issue #114）先于记录删除：接待落单的记录带创建人参与行。
+    await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
   await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });

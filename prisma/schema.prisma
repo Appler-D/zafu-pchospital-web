@@ -144,6 +144,7 @@ model MemberProfile {
   redemptions   InviteCodeRedemption[]
   provisions    AccountProvision[]
   repairRecords     RepairRecord[]
+  repairParticipations RepairRecordParticipant[]
   userSkills        UserSkill[]
   repairComments    RepairComment[]
   commentMentions   CommentMention[]
@@ -365,6 +366,7 @@ model RepairRecord {
   memberProfile    MemberProfile         @relation(fields: [memberProfileId], references: [id], onDelete: Restrict)
   category         RepairCategory?       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   photos           RepairPhoto[]
+  participants     RepairRecordParticipant[]
   reviews          RepairReview[]
   timeline         RepairTimelineEvent[]
   comments         RepairComment[]
@@ -379,6 +381,24 @@ model RepairRecord {
   @@index([isDifficult, status], map: "repair_records_difficult_status_idx")
   @@index([isTypical, status], map: "repair_records_typical_status_idx")
   @@map("repair_records")
+}
+
+/// 维修记录参与人（issue #114）：一条记录可有多名参与成员；创建人
+/// （`repair_records.member_profile_id`）恒为其中一员、`sort_order = 0`。
+/// 时长不分人：记录上的 `duration_minutes` 对全部参与者生效，本表不存时长。
+model RepairRecordParticipant {
+  id              String        @id @db.Char(36)
+  repairRecordId  String        @map("repair_record_id") @db.Char(36)
+  memberProfileId String        @map("member_profile_id") @db.Char(36)
+  /// 展示顺序：创建人恒为 0，其余按添加顺序 1..N。
+  sortOrder       Int           @default(0) @map("sort_order") @db.Int
+  createdAt       DateTime      @map("created_at") @db.DateTime(3)
+  record          RepairRecord  @relation(fields: [repairRecordId], references: [id], onDelete: Restrict)
+  memberProfile   MemberProfile @relation(fields: [memberProfileId], references: [id], onDelete: Restrict)
+
+  @@unique([repairRecordId, memberProfileId], map: "repair_record_participants_record_member_uq")
+  @@index([memberProfileId, repairRecordId], map: "repair_record_participants_member_record_idx")
+  @@map("repair_record_participants")
 }
 
 model RepairPhoto {

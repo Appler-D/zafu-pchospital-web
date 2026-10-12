@@ -12,6 +12,7 @@ export type ExportColumn<T> = { key: keyof T & string; header: string };
 export const EXPORT_COLUMNS: readonly ExportColumn<RepairExportRow>[] = [
   { key: "repairDate", header: "维修日期" },
   { key: "memberName", header: "维修成员" },
+  { key: "participantNames", header: "参与成员" },
   { key: "ownerName", header: "机主姓名" },
   { key: "ownerPhone", header: "机主电话" },
   { key: "categoryName", header: "故障分类" },

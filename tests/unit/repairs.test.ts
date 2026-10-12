@@ -5,18 +5,20 @@ import { apiFailure } from "../../src/lib/api/response";
 import { detectImageType } from "../../src/features/repairs/repair-photo-service";
 import { isRepairTransitionAllowed } from "../../src/features/repairs/repair-state";
 import {
+  isBlankDraftFields,
   normalizeDraftFields,
   validateDraftFields,
   validateSubmission,
 } from "../../src/features/repairs/repair-validation";
-import { repairFieldLimits } from "../../src/config/repairs";
+import { repairFieldLimits, formatRepairParticipants } from "../../src/config/repairs";
+import { composeParticipantIds } from "../../src/features/repairs/repair-service";
 import {
   RepairResult,
   RepairStatus,
   RepairTimelineEventType,
   type RepairDraftFields,
 } from "../../src/types/contracts";
-import { parseRepairListStatus } from "../../src/features/repairs/repair-http";
+import { draftInput, parseRepairListStatus } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
 
@@ -321,6 +323,18 @@ function recordRow(overrides: Record<string, unknown> = {}) {
       userId: "u1",
       user: { displayName: null },
     },
+    // 参与者（issue #114）：默认只有创建人本人（迁移回填后的常态形状）。
+    participants: [
+      {
+        memberProfileId: "m1",
+        memberProfile: {
+          id: "m1",
+          nickname: null,
+          realName: "张三",
+          user: { displayName: null },
+        },
+      },
+    ],
     repairDate: new Date("2026-09-15T00:00:00.000Z"),
     durationMinutes: 45,
     category: null,
@@ -352,4 +366,109 @@ test("机主电话可见性 fail-closed：默认不下发，显式放行才给�
   // 机主姓名不参与收口：任何调用方都拿得到。
   assert.equal(toRepairView(row).ownerName, "李雷");
   assert.equal(toRepairView(row).ownerPhone === "13800138000", false, "不得下发掩码或完整号");
+});
+
+test("参与人员（issue #114）：归一去空白去重保序，超限报错而不截断", () => {
+  // 归一：去空白、去重、保持提交顺序；不做静默截断（超限交给校验明确报错）。
+  assert.deepEqual(
+    normalizeDraftFields({ participantIds: [" m2 ", "m3", "m2", "  "] }).participantIds,
+    ["m2", "m3"],
+  );
+  assert.deepEqual(normalizeDraftFields({ participantIds: [] }).participantIds, []);
+  assert.equal(
+    normalizeDraftFields({}).participantIds,
+    undefined,
+    "未提交的字段保持 undefined（不动）",
+  );
+  // 「只带了空数组」不算有内容：空建档请求仍可复用旧的空白草稿。
+  assert.equal(isBlankDraftFields({ participantIds: [] }), true);
+  assert.equal(isBlankDraftFields({ participantIds: ["m2"] }), false);
+  // 上限含创建人本人：额外成员数组最多 participantMaxCount - 1 个。
+  const max = repairFieldLimits.participantMaxCount;
+  assert.equal(max, 9, "创建人加 8 名协作者，总人数上限固定为 9 人");
+  const extras = (count: number) => Array.from({ length: count }, (_, index) => `m${index + 2}`);
+  validateDraftFields({ participantIds: extras(8) });
+  assert.throws(
+    () => validateDraftFields({ participantIds: extras(9) }),
+    (error) =>
+      error instanceof AppError &&
+      error.code === "VALIDATION_FAILED" &&
+      error.fieldErrors?.participantIds?.[0] === `参与维修人员最多 ${max} 人（含创建人本人）`,
+  );
+});
+
+test("composeParticipantIds：创建人恒在首位，重复 id 只保留一次", () => {
+  assert.deepEqual(composeParticipantIds("m1", ["m2", "m3"]), ["m1", "m2", "m3"]);
+  // 额外成员里混入创建人本人或重复：去重后仍只有一条，且创建人在首位。
+  assert.deepEqual(composeParticipantIds("m1", ["m2", "m1", "m2"]), ["m1", "m2"]);
+  assert.deepEqual(composeParticipantIds("m1", []), ["m1"]);
+});
+
+test("参与者 HTTP 入参拒绝非字符串元素，不能把非法名单变成清空操作", () => {
+  for (const participantIds of [[123], ["m2", null], [true], [{}], null, "m2"]) {
+    assert.throws(
+      () => draftInput({ participantIds }),
+      (error) => error instanceof AppError && error.code === "VALIDATION_FAILED",
+    );
+  }
+  assert.equal(draftInput({}).participantIds, undefined);
+  assert.deepEqual(draftInput({ participantIds: [] }).participantIds, []);
+  assert.deepEqual(draftInput({ participantIds: ["m2"] }).participantIds, ["m2"]);
+  assert.throws(
+    () => normalizeDraftFields({ participantIds: [123] as unknown as string[] }),
+    (error) => error instanceof AppError && error.code === "VALIDATION_FAILED",
+  );
+});
+
+test("参与者 UUID 大小写在归一与创建人去重时统一", () => {
+  const creator = "aabbccdd-0000-4000-8000-000000000001";
+  const extra = "aabbccdd-0000-4000-8000-000000000002";
+  const fields = normalizeDraftFields({
+    participantIds: [extra.toUpperCase(), ` ${extra} `, creator.toUpperCase()],
+  });
+  assert.deepEqual(fields.participantIds, [extra, creator]);
+  assert.deepEqual(composeParticipantIds(creator, fields.participantIds!), [creator, extra]);
+  assert.deepEqual(composeParticipantIds(creator.toUpperCase(), [creator, extra.toUpperCase()]), [
+    creator,
+    extra,
+  ]);
+});
+
+test("参与者展示（issue #114）：toRepairView 按参与行映射姓名并把创建人排到首位", () => {
+  const row = recordRow({
+    participants: [
+      {
+        memberProfileId: "m2",
+        memberProfile: {
+          id: "m2",
+          nickname: "阿伟",
+          realName: "王五",
+          user: { displayName: null },
+        },
+      },
+      {
+        memberProfileId: "m1",
+        memberProfile: { id: "m1", nickname: null, realName: "张三", user: { displayName: null } },
+      },
+    ],
+  });
+  assert.deepEqual(toRepairView(row).participants, [
+    { id: "m1", name: "张三" },
+    { id: "m2", name: "阿伟" },
+  ]);
+});
+
+test("formatRepairParticipants：全部参与者顿号连接；空数组回退创建人", () => {
+  const view = toRepairView(recordRow());
+  assert.equal(formatRepairParticipants(view), "张三");
+  assert.equal(
+    formatRepairParticipants({
+      ...view,
+      participants: [
+        { id: "m1", name: "张三" },
+        { id: "m2", name: "阿伟" },
+      ],
+    }),
+    "张三、阿伟",
+  );
 });

@@ -9,6 +9,20 @@ export const repairDetailInclude = {
     where: { deletedAt: null },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   },
+  /** 参与维修人员（issue #114）：创建人恒排第一；只取展示名所需的最小字段。 */
+  participants: {
+    include: {
+      memberProfile: {
+        select: {
+          id: true,
+          nickname: true,
+          realName: true,
+          user: { select: { displayName: true } },
+        },
+      },
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+  },
   reviews: { include: { reviewer: true }, orderBy: { createdAt: "asc" } },
   timeline: { include: { actor: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.RepairRecordInclude;

@@ -99,10 +99,26 @@ export const repairFieldLimits = {
   durationMinutesMax: 10080,
   /** 维修日期下限：早于它的基本是年份打错（1026 年、202 年这类）。 */
   repairDateMin: "2020-01-01",
+  /** 参与维修人员总数上限（含创建人本人，issue #114）。 */
+  participantMaxCount: 9,
 } as const;
 export const repairEditorCopy = {
   activitySubmitSuccess: "提交成功，一秒后返回活动页面。",
   requiredMark: "必填",
+  /** 参与维修人员区块（issue #114）：时长不分人，对全部参与者生效。 */
+  participantsLabel: "参与维修人员",
+  participantsCreatorTag: "创建人",
+  participantsHint:
+    "创建人固定保留；可添加其他参与成员，误添加的可移除。维修时长对全部参与者生效。",
+  participantsAddLabel: "输入姓名添加协作者",
+  participantsAddPlaceholder: "输入姓名，选择匹配成员…",
+  participantsMatches: "找到 {count} 位成员，选择即可添加",
+  participantsNoMatches: "未找到匹配成员，请尝试其他姓名",
+  participantsNoOptions: "暂无可添加的成员",
+  participantsRemove: "移除",
+  participantsRemoveLabel: "移除参与成员 {name}",
+  participantsCount: "已选 {count} / {limit} 人",
+  participantsLimit: "已到达上限",
   /** 表单是「先存草稿、再提交」两步，必填只针对提交那一刻。 */
   requiredNote: "标注「必填」的字段在提交审核前必须填齐；草稿可以先保存。",
   /** 新建流程没有草稿（issue #72），提示改说提交口径。 */
@@ -127,6 +143,18 @@ export function formatBytes(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   if (mb >= 1) return `${Number(mb.toFixed(mb >= 10 ? 0 : 1))} MB`;
   return `${Math.round(bytes / 1024)} KB`;
+}
+/**
+ * 参与维修人员的展示名（issue #114）：全部参与者「、」连接；创建人恒在首位（服务端保证）。
+ * 列表、详情、案例卡共用一处写法；参与行缺失（理论不可能）时回退创建人本人。
+ */
+export function formatRepairParticipants(record: {
+  member: { id: string; name: string };
+  participants: Array<{ id: string; name: string }>;
+}): string {
+  return record.participants.length
+    ? record.participants.map((participant) => participant.name).join("、")
+    : record.member.name;
 }
 /** 成员端不填写维修结果，缺省按「已完成」记录；管理员仍可在管理端改成「未完成」。 */
 export const defaultRepairResult: RepairResult = "COMPLETED";

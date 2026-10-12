@@ -5,6 +5,15 @@ import type { AuthorizedActor, RepairDetailView, RepairView } from "@/types/cont
 
 type RecordRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
 
+/** 展示名回退链：昵称 → 真实姓名 → 账号显示名 → 「成员」。 */
+function memberDisplayName(member: {
+  nickname: string | null;
+  realName: string | null;
+  user: { displayName: string | null };
+}): string {
+  return member.nickname || member.realName || member.user.displayName || "成员";
+}
+
 /**
  * `ownerPhone` 的可见性按 fail-closed 处理：默认不下发完整号码（也不下发掩码值，
  * 值为 `null`）—— 只有归属人与 `repair:review` 持有者由调用方显式放行。
@@ -14,14 +23,21 @@ export function toRepairView(
   record: RecordRow,
   options: { canViewOwnerPhone?: boolean } = {},
 ): RepairView {
-  const name =
-    record.memberProfile.nickname ||
-    record.memberProfile.realName ||
-    record.memberProfile.user.displayName ||
-    "成员";
+  const name = memberDisplayName(record.memberProfile);
+  // 参与维修人员（issue #114）：`sort_order` 已保证创建人第一，这里再兜一层防御性重排，
+  // 防止历史数据将来被人工修出「创建人不在首位」的显示异常。
+  const participants = record.participants.map((row) => ({
+    id: row.memberProfileId,
+    name: memberDisplayName(row.memberProfile),
+  }));
+  const creatorIndex = participants.findIndex((item) => item.id === record.memberProfile.id);
+  if (creatorIndex > 0) {
+    participants.unshift(participants.splice(creatorIndex, 1)[0]!);
+  }
   return {
     id: record.id,
     member: { id: record.memberProfile.id, name },
+    participants,
     repairDate: record.repairDate?.toISOString().slice(0, 10) ?? null,
     durationMinutes: record.durationMinutes,
     category: record.category

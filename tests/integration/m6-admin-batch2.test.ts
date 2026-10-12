@@ -110,6 +110,8 @@ async function prepareFixtures(): Promise<void> {
   await db.repairTimelineEvent.deleteMany({ where: { record: records } });
   await db.repairReview.deleteMany({ where: { record: records } });
   await db.repairPhoto.deleteMany({ where: { record: records } });
+  // 参与行（issue #114）先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
+  await db.repairRecordParticipant.deleteMany({ where: { record: records } });
   await db.repairRecord.deleteMany({ where: records });
   await db.userSkill.deleteMany({ where: { memberProfileId: { in: profileIds } } });
   await db.accountProvision.deleteMany({

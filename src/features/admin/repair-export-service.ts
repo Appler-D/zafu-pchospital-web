@@ -89,6 +89,11 @@ async function loadRows(
       ownerName: true,
       ownerPhone: true,
       memberProfile: { select: { realName: true, nickname: true } },
+      // 参与成员（issue #114）：与列表同源，导出「谁做过这条」的完整名单。
+      participants: {
+        select: { memberProfile: { select: { realName: true, nickname: true } } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+      },
       category: { select: { name: true } },
       photos: { where: { deletedAt: null }, select: { id: true }, orderBy: { sortOrder: "asc" } },
     },
@@ -104,6 +109,10 @@ async function loadRows(
   return records.map((record) => ({
     repairDate: record.repairDate?.toISOString().slice(0, 10) ?? "",
     memberName: record.memberProfile.nickname || record.memberProfile.realName,
+    participantNames: record.participants
+      .map((row) => row.memberProfile.nickname || row.memberProfile.realName)
+      .filter(Boolean)
+      .join("、"),
     // 机主信息按数据导出口径原样输出（`data:export` 权限 + 导出审计留痕，不做掩码）。
     ownerName: record.ownerName ?? "",
     ownerPhone: record.ownerPhone ?? "",

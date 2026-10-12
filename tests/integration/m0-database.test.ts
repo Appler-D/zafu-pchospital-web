@@ -56,6 +56,8 @@ before(async () => {
   await db.repairTimelineEvent.deleteMany();
   await db.repairReview.deleteMany();
   await db.repairPhoto.deleteMany();
+  // 参与行（issue #114）引用 repair_records 且是 RESTRICT：必须先于记录清空。
+  await db.repairRecordParticipant.deleteMany();
   await db.repairRecord.deleteMany();
   await db.repairHistoryPending.deleteMany();
   await db.repairCategory.deleteMany();
