@@ -17,6 +17,7 @@ import { RepairResult } from "@/types/contracts";
 import type {
   RepairCategoryView,
   RepairDetailView,
+  RepairMemberOption,
   RepairPhotoView,
   RepairView,
 } from "@/types/contracts";
@@ -43,8 +44,8 @@ export function RepairAdminActions({
   onChanged: () => void;
 }) {
   const copy = adminCopy.repairs;
-  const [problem, setProblem] = useState("");
-  /** 一次性成功反馈：走顶部浮层（层级高于本窗口）；错误留在窗口内。 */
+  const [problem, setProblem] =
+    useState(""); /** 一次性成功反馈：走顶部浮层（层级高于本窗口）；错误留在窗口内。 */
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -55,6 +56,14 @@ export function RepairAdminActions({
   const [photos, setPhotos] = useState<RepairPhotoView[] | null>(null);
   /** 已经确定读不出字节的照片 id（文件被清理、存储路径变更等）。 */
   const [brokenPhotos, setBrokenPhotos] = useState<string[]>([]);
+  /** 参与维修人员（issue #114）的候选名单：取不到时只少一个「添加」入口，不影响其余动作。 */
+  const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
+  /** 额外参与者（不含创建人）：提交时整体替换；创建人固定展示在第一位。 */
+  const [extras, setExtras] = useState(() =>
+    record.participants
+      .filter((participant) => participant.id !== record.member.id)
+      .map((participant) => ({ id: participant.id, name: participant.name })),
+  );
   const idempotencyKey = useRef(createIdempotencyKey());
 
   useEffect(() => {
@@ -69,6 +78,33 @@ export function RepairAdminActions({
       cancelled = true;
     };
   }, [record.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      // 成员候选与成员编辑器同一个接口；纯管理员账号（无成员档案）拿不到名册时静默降级。
+      const result = await adminFetch<RepairMemberOption[]>("/api/v1/repair-members");
+      if (!cancelled && result.ok) setMemberOptions(result.data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function addParticipant(memberProfileId: string) {
+    if (!memberProfileId) return;
+    const member = memberOptions.find((option) => option.id === memberProfileId);
+    if (!member) return;
+    setExtras((current) => {
+      if (current.some((item) => item.id === memberProfileId)) return current;
+      if (current.length + 1 >= repairFieldLimits.participantMaxCount) return current;
+      return [...current, { id: member.id, name: member.name }];
+    });
+  }
+
+  function removeParticipant(memberProfileId: string) {
+    setExtras((current) => current.filter((item) => item.id !== memberProfileId));
+  }
 
   async function call(
     path: string,
@@ -128,6 +164,8 @@ export function RepairAdminActions({
           content: data.content || null,
           result: data.result || null,
           remark: data.remark || null,
+          // 参与者（issue #114）：不含创建人本人，服务端整体替换并保证创建人在首位。
+          participantIds: extras.map((item) => item.id),
           version: record.version,
           reason: data.reason ?? "",
         },
@@ -169,6 +207,16 @@ export function RepairAdminActions({
       setRemoving(false);
     }
   }
+
+  // 候选 = 候选名单里既不是创建人、也还没加入的人；到上限或没有候选时禁用选择器。
+  const addableMembers = memberOptions.filter(
+    (option) => option.id !== record.member.id && !extras.some((item) => item.id === option.id),
+  );
+  const participantsFull = extras.length + 1 >= repairFieldLimits.participantMaxCount;
+  const participantsLimitText = copy.edit.participantsLimit.replace(
+    "{max}",
+    String(repairFieldLimits.participantMaxCount),
+  );
 
   return (
     <AdminModal
@@ -381,6 +429,49 @@ export function RepairAdminActions({
               ))}
             </select>
           </label>
+        </div>
+        {/* 参与维修人员（issue #114）：创建人固定第一行、不可移除；提交时整体替换。
+            行列表常驻（创建人恒在），添加与移除都只动这一块自身的像素。 */}
+        <div className="field">
+          <span className="field__label">{copy.edit.participantsLabel}</span>
+          <div className="gap-s-2 flex flex-wrap items-center">
+            <span className="member-tag">
+              {record.member.name}（{copy.edit.participantsCreatorTag}）
+            </span>
+            {extras.map((participant) => (
+              <span className="gap-s-2 flex items-center" key={participant.id}>
+                <span className="member-tag">{participant.name}</span>
+                <Button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => removeParticipant(participant.id)}
+                >
+                  {copy.edit.participantsRemove}
+                </Button>
+              </span>
+            ))}
+          </div>
+          <select
+            className="field__input"
+            value=""
+            disabled={busy || participantsFull || addableMembers.length === 0}
+            onChange={(event) => addParticipant(event.target.value)}
+            aria-label={copy.edit.participantsAddPlaceholder}
+          >
+            <option value="" disabled>
+              {participantsFull
+                ? participantsLimitText
+                : addableMembers.length === 0
+                  ? copy.edit.participantsNoOptions
+                  : copy.edit.participantsAddPlaceholder}
+            </option>
+            {addableMembers.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          <span className="field__hint">{copy.edit.participantsHint}</span>
         </div>
         <label className="field">
           <span className="field__label">维修内容</span>

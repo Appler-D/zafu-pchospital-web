@@ -14,7 +14,30 @@ export function normalizeDraftFields(input: RepairDraftFields): RepairDraftField
     content: input.content === undefined ? undefined : clean(input.content),
     result: input.result,
     remark: input.remark === undefined ? undefined : clean(input.remark),
+    participantIds:
+      input.participantIds === undefined
+        ? undefined
+        : normalizeParticipantIds(input.participantIds),
   };
+}
+
+/**
+ * 参与人员（不含创建人本人）的归一：去空白、去重、保持提交顺序。
+ *
+ * 不做数量截断 —— 超限由 `validateDraftFields` 报错，静默丢弃会让用户以为「加上了」。
+ * 创建人本人若混在数组里由调用方（service）剔除：纯函数不知道「我是谁」。
+ */
+function normalizeParticipantIds(value: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") continue;
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+  }
+  return result;
 }
 
 /** 建档请求是否完全空白（新建页的 `POST {}`）：空请求可以复用成员已有的空白草稿。 */
@@ -28,7 +51,9 @@ export function isBlankDraftFields(input: RepairDraftFields): boolean {
     blank(input.ownerPhone) &&
     blank(input.content) &&
     blank(input.result) &&
-    blank(input.remark)
+    blank(input.remark) &&
+    // 加了人就不再是「空白请求」：不能拿它去复用一条连人都没有的旧草稿。
+    (input.participantIds?.length ?? 0) === 0
   );
 }
 
@@ -61,6 +86,14 @@ export function validateDraftFields(input: RepairDraftFields): void {
   if (input.remark != null && input.remark.length > repairFieldLimits.remarkMaxLength)
     errors.remark = [`备注不能超过 ${repairFieldLimits.remarkMaxLength} 字`];
   if (input.result != null && !isRepairResult(input.result)) errors.result = ["维修结果无效"];
+  // 参与人数上限（含创建人本人，issue #114）：数组里只有额外成员，所以上限比总数少 1。
+  if (
+    input.participantIds != null &&
+    input.participantIds.length > repairFieldLimits.participantMaxCount - 1
+  )
+    errors.participantIds = [
+      `参与维修人员最多 ${repairFieldLimits.participantMaxCount} 人（含创建人本人）`,
+    ];
   if (Object.keys(errors).length)
     throw new AppError("VALIDATION_FAILED", Object.values(errors).flat().join("；"), {
       fieldErrors: errors,

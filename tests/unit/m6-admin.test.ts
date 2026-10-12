@@ -72,6 +72,7 @@ test("导出列顺序与 RepairExportRow 的取值一一对应", () => {
   const row: RepairExportRow = {
     repairDate: "2026-09-22",
     memberName: "张三",
+    participantNames: "张三、王五",
     ownerName: "李雷",
     ownerPhone: "13800138000",
     categoryName: "硬件故障",
@@ -85,6 +86,7 @@ test("导出列顺序与 RepairExportRow 的取值一一对应", () => {
   assert.deepEqual(toCells(row), [
     row.repairDate,
     row.memberName,
+    row.participantNames,
     row.ownerName,
     row.ownerPhone,
     row.categoryName,
@@ -119,6 +121,7 @@ test("CSV 输出带 UTF-8 BOM 与 CRLF 行尾（Excel 打开中文不乱码）",
   const row: RepairExportRow = {
     repairDate: "2026-09-22",
     memberName: "李四",
+    participantNames: "李四、赵六",
     ownerName: "",
     ownerPhone: "",
     categoryName: "系统问题",
@@ -140,7 +143,7 @@ test("CSV 输出带 UTF-8 BOM 与 CRLF 行尾（Excel 打开中文不乱码）",
   const lines = text.replace("\uFEFF", "").trimEnd().split("\r\n");
   assert.equal(lines.length, 2);
   assert.equal(lines[0], EXPORT_COLUMNS.map((column) => column.header).join(","));
-  assert.equal(lines[1]!.startsWith("2026-09-22,李四,,,系统问题,未完成,"), true);
+  assert.equal(lines[1]!.startsWith("2026-09-22,李四,李四、赵六,,,系统问题,未完成,"), true);
 });
 
 test("空结果集也要有表头（导出一份只有列名的文件，而不是空文件）", () => {

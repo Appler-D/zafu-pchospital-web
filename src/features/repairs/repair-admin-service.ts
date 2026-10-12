@@ -4,7 +4,14 @@ import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
 import { repairDetailInclude, repairRepository } from "./repair-repository";
-import { changedFields, dataFields, timeline } from "./repair-service";
+import {
+  assertParticipantsExist,
+  changedFields,
+  composeParticipantIds,
+  dataFields,
+  replaceRepairParticipants,
+  timeline,
+} from "./repair-service";
 import { repairReviewService } from "./repair-review-service";
 import { normalizeDraftFields, validateDraftFields } from "./repair-validation";
 import { toRepairView } from "./repair-view";
@@ -90,7 +97,18 @@ export const repairAdminService: RepairAdminServiceContract = {
         if (!category.isActive) throw new AppError("REPAIR_CATEGORY_INACTIVE", "所选分类已停用");
       }
     }
+    if (fields.participantIds?.length) await assertParticipantsExist(fields.participantIds);
+    // 参与人员（issue #114）：管理员同样可整体替换；创建人（记录归属）恒保留在首位。
+    const desiredParticipants =
+      fields.participantIds === undefined
+        ? null
+        : composeParticipantIds(before.memberProfileId, fields.participantIds);
+    const participantsChanged =
+      desiredParticipants !== null &&
+      desiredParticipants.join(",") !==
+        before.participants.map((row) => row.memberProfileId).join(",");
     const changes = changedFields(before, fields);
+    if (participantsChanged) changes.push("participants");
     const now = new Date();
     const updated = await inSerializableTransaction(async (tx) => {
       const result = await tx.repairRecord.updateMany({
@@ -99,6 +117,8 @@ export const repairAdminService: RepairAdminServiceContract = {
       });
       if (result.count !== 1)
         throw new AppError("REPAIR_VERSION_CONFLICT", "记录已被更新，请刷新后重试");
+      if (desiredParticipants)
+        await replaceRepairParticipants(tx, recordId, desiredParticipants, now);
       await timeline(
         tx,
         recordId,
@@ -107,6 +127,9 @@ export const repairAdminService: RepairAdminServiceContract = {
         { fields: changes, byAdmin: true, reason },
         now,
       );
+      // 审计只记录变化过的字段名 + 前后值；"participants" 不在记录行上，
+      // 换成参与者 id 清单，避免把带嵌套对象的整组关系行灌进审计。
+      const changedScalars = changes.filter((key) => key !== "participants");
       await appendAuditLog(tx, {
         actor,
         actorType: "USER",
@@ -115,9 +138,18 @@ export const repairAdminService: RepairAdminServiceContract = {
         targetType: "RepairRecord",
         targetId: recordId,
         result: "SUCCESS",
-        // 只记录变化了的字段名 + 前后值，避免把整行（含长文本）灌进审计。
-        before: pick(before, changes),
-        after: { ...pick(fields, changes), reason, status: before.status },
+        before: {
+          ...pick(before, changedScalars),
+          ...(participantsChanged
+            ? { participantIds: before.participants.map((row) => row.memberProfileId) }
+            : {}),
+        },
+        after: {
+          ...pick(fields, changedScalars),
+          ...(participantsChanged ? { participantIds: desiredParticipants } : {}),
+          reason,
+          status: before.status,
+        },
       });
       return tx.repairRecord.findUniqueOrThrow({
         where: { id: recordId },

@@ -123,6 +123,35 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 - 后续所有正式统计必须统一使用 `status = APPROVED AND deleted_at IS NULL`。查询条件的代码事实来源为
   `approvedRepairWhere()`；M2 分析入口 `listApprovedRepairsForAnalytics()` 与 M3 成员摘要均在其上追加范围条件。
 
+### 维修参与人员（issue #114，Migration `20261012000000_repair_record_participants`，纯增量）
+
+- 新表 `repair_record_participants`（记录 × 成员的**参与关系**，每个组合一行）：
+  `id` / `repair_record_id` / `member_profile_id` / `sort_order`（0 起，创建人恒为 0）/
+  `created_at`；唯一键 `(repair_record_id, member_profile_id)`，两条外键一律 `ON DELETE RESTRICT`。
+  **表上没有时长列** —— 时长是记录级字段，不分人（口径：每名参与者各计一次、时长取记录上的同一值）。
+- `repair_records.member_profile_id` 语义不变，仍是**创建人（主维修人）**；参与关系单独存储，
+  以「创建人恒为 `sort_order = 0` 的参与行」建立不变量（每条记录恒有 ≥1 参与行）。
+- 迁移回填：对存量 `repair_records` 每行插入一条创建人参与行（`sort_order = 0`、
+  `created_at` 取记录创建时间），含软删除记录；统计口径因此**零变化**。
+- 写入路径（创建人参与行恒在）：
+  - 成员建档 `createDraft`、接待落单 `serve`、历史导入、暂存认领：插入创建人一行；
+  - 成员与管理端编辑（`PATCH`）：请求体 `participantIds`（**不含创建人本人**；缺省 = 不动、
+    数组 = 整体替换）经 `composeParticipantIds`（创建人恒在首位、去重）落库并修正 `sort_order`。
+- 上限 `repairFieldLimits.participantMaxCount = 10`（含创建人，额外成员 ≤ 9）；候选名单来自
+  `GET /api/v1/repair-members`（`ACTIVE` 且未软删除）。存在性校验（`assertParticipantsExist`）
+  只排除软删除成员，停用（非 ACTIVE）成员不主动新增、但历史参与行不受影响。
+- **统计口径切换**：全部正式统计从「记录归属」改为「参与关系」。涉及成员列表计数
+  （`member-repository.approvedRepairStats`）、排行榜（`rankedBaseSql` 窗口函数）、
+  分类分布与月度趋势（`aggregateCategoryDistribution` / `aggregateMonthlyTrend`）、
+  成员摘要（`approvedForMember` 改 `participants.some`）。唯一谓词
+  `APPROVED AND deleted_at IS NULL`（`approvedRepairWhere` / `approvedRepairSql`）不变，
+  只是作用在 JOIN 后的记录上。工作队列 / 最近操作 / 收藏摘要仍按**创建人**，列表可见性不变。
+- 审核结果通知（`createReviewNotification`）发给**全部参与者**（创建人恒在其中），
+  审核人本人若是参与者则跳过自己那条；管理端列表的 `memberId` 筛选与 `query` 姓名搜索
+  按「参与过」匹配。
+- 展示：`RepairView.participants: { id, name }[]`（创建人恒在首位，服务端防御性重排）；
+  导出新增「参与成员」列（全部参与者「、」连接）。
+
 ## 活动签到类型修正
 
 - `repair_activity_registrations.issue_type` 继续保存现有四种类型，不新增字段或枚举。

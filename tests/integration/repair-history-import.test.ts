@@ -62,6 +62,8 @@ async function cleanupFixtures(): Promise<void> {
     await db.auditLog.deleteMany({
       where: { targetType: "RepairRecord", targetId: { in: recordIds } },
     });
+    // 参与行先于记录删除（issue #114 起导入记录都带创建人参与行，RESTRICT 会挡住）。
+    await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
   await db.auditLog.deleteMany({ where: { actorUserId: ADMIN_USER_ID } });
@@ -108,6 +110,7 @@ async function cleanupClaimArtifacts(): Promise<void> {
     await db.auditLog.deleteMany({
       where: { targetType: "RepairRecord", targetId: { in: recordIds } },
     });
+    await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
   if (profileIds.length > 0) {
@@ -278,6 +281,14 @@ dbTest("导入直接落 APPROVED，写齐 timeline 与审计；重名拒收行�
   assert.equal(record.categoryId, CATEGORY_ID);
   assert.equal(record.durationMinutes, 45);
   assert.equal(record.deletedAt, null);
+  // 导入记录同样落创建人参与行（issue #114 不变量）：导入按「匹配到的成员」当创建人。
+  assert.deepEqual(
+    await db.repairRecordParticipant.findMany({
+      where: { repairRecordId: record.id },
+      select: { memberProfileId: true, sortOrder: true },
+    }),
+    [{ memberProfileId: MEMBER_PROFILE_ID, sortOrder: 0 }],
+  );
   const events = await db.repairTimelineEvent.findMany({
     where: { repairRecordId: record.id },
     orderBy: { createdAt: "asc" },

@@ -67,6 +67,10 @@ async function prepareFixtures(): Promise<void> {
   await db.repairPhoto.deleteMany({
     where: { record: { memberProfile: { realName: { startsWith: "M4 " } } } },
   });
+  // 参与行（issue #114）先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
+  await db.repairRecordParticipant.deleteMany({
+    where: { record: { memberProfile: { realName: { startsWith: "M4 " } } } },
+  });
   await db.repairRecord.deleteMany({
     where: { memberProfile: { realName: { startsWith: "M4 " } } },
   });

@@ -14,7 +14,7 @@ import {
 } from "@/config/repairs";
 import { shanghaiToday } from "@/lib/shanghai-date";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
-import type { RepairCategoryView, RepairDetailView } from "@/types/contracts";
+import type { RepairCategoryView, RepairDetailView, RepairMemberOption } from "@/types/contracts";
 
 /** 点击整块日期输入框都弹出原生日历（默认只有右侧小图标会弹）。 */
 function openDatePicker(event: ReactMouseEvent<HTMLInputElement>) {
@@ -39,6 +39,8 @@ export function RepairEditor({
   const router = useRouter();
   const [record, setRecord] = useState<RepairDetailView>();
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
+  /** 参与维修人员（issue #114）的候选名单：全部活跃成员，从中挑选添加。 */
+  const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden">("loading");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,12 +56,15 @@ export function RepairEditor({
   const load = useCallback(async () => {
     setState("loading");
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetch(`/api/v1/repairs/${recordId}`, { cache: "no-store" }),
         fetch("/api/v1/repair-categories", { cache: "no-store" }),
+        fetch("/api/v1/repair-members", { cache: "no-store" }),
       ]);
       const detail = await a.json();
       const cats = await b.json();
+      const members = await c.json();
+      if (members.success) setMemberOptions(members.data);
       if (!detail.success) {
         setState(
           detail.error.code === "REPAIR_FORBIDDEN" || detail.error.code === "REPAIR_NOT_FOUND"
@@ -108,6 +113,10 @@ export function RepairEditor({
         // 老记录的正文不会被这里清空（issue #79 第 6 项）。
         remark: record.remark,
         result: record.result ?? defaultRepairResult,
+        // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
+        participantIds: record.participants
+          .filter((participant) => participant.id !== record.member.id)
+          .map((participant) => participant.id),
       }),
     });
     const json = await response.json();
@@ -158,6 +167,31 @@ export function RepairEditor({
       setMessage(e instanceof Error ? e.message : "提交失败");
       setBusy(false);
     }
+  }
+  /** 添加参与成员（issue #114）：创建人固定第一行、不可移除；候选里排除已加入的人。 */
+  function addParticipant(memberProfileId: string) {
+    if (!record || !memberProfileId) return;
+    setRecord((current) => {
+      if (!current) return current;
+      const member = memberOptions.find((option) => option.id === memberProfileId);
+      if (!member || current.participants.some((item) => item.id === memberProfileId))
+        return current;
+      if (current.participants.length >= repairFieldLimits.participantMaxCount) return current;
+      return {
+        ...current,
+        participants: [...current.participants, { id: member.id, name: member.name }],
+      };
+    });
+  }
+  function removeParticipant(memberProfileId: string) {
+    setRecord((current) =>
+      current
+        ? {
+            ...current,
+            participants: current.participants.filter((item) => item.id !== memberProfileId),
+          }
+        : current,
+    );
   }
   /** 照片是即时保存的，只合并照片 —— 整块重载会丢掉表单里还没保存的改动。 */
   async function refreshPhotos() {
@@ -251,6 +285,15 @@ export function RepairEditor({
   const photoHint = repairEditorCopy.photoHint
     .replace("{size}", formatBytes(record.photoLimits.maxBytes))
     .replace("{count}", String(record.photoLimits.maxFiles));
+  // 参与维修人员（issue #114）：候选 = 活跃成员里还没加入的人；到上限或没有候选时禁用选择器。
+  const addableMembers = memberOptions.filter(
+    (option) => !record.participants.some((participant) => participant.id === option.id),
+  );
+  const participantsFull = record.participants.length >= repairFieldLimits.participantMaxCount;
+  const participantsLimitText = repairEditorCopy.participantsLimit.replace(
+    "{max}",
+    String(repairFieldLimits.participantMaxCount),
+  );
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
@@ -366,6 +409,57 @@ export function RepairEditor({
                 {repairEditorCopy.ownerPhoneHint}
               </span>
             </label>
+          </div>
+          {/* 参与维修人员（issue #114）：创建人固定第一行、不可移除；「＋」从活跃成员里选人。
+              加行是本操作自身的意图，行列表常驻（创建人恒在），不存在「点了才知道多了什么」的位移。 */}
+          <div className="field">
+            <span className="field__label">{repairEditorCopy.participantsLabel}</span>
+            <div className="gap-s-2 flex flex-wrap items-center">
+              {record.participants.map((participant) => {
+                const isCreator = participant.id === record.member.id;
+                return (
+                  <span className="gap-s-2 flex items-center" key={participant.id}>
+                    <span className="member-tag">
+                      {participant.name}
+                      {isCreator ? `（${repairEditorCopy.participantsCreatorTag}）` : ""}
+                    </span>
+                    {isCreator ? null : (
+                      <Button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => removeParticipant(participant.id)}
+                      >
+                        {repairEditorCopy.participantsRemove}
+                      </Button>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+            <select
+              className="field__input"
+              value=""
+              disabled={busy || participantsFull || addableMembers.length === 0}
+              onChange={(event) => addParticipant(event.target.value)}
+              aria-label={repairEditorCopy.participantsAddPlaceholder}
+            >
+              <option value="" disabled>
+                {participantsFull
+                  ? participantsLimitText
+                  : addableMembers.length === 0
+                    ? repairEditorCopy.participantsNoOptions
+                    : repairEditorCopy.participantsAddPlaceholder}
+              </option>
+              {addableMembers.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+            <span className="field__hint">
+              {repairEditorCopy.participantsHint}
+              {participantsLimitText}。
+            </span>
           </div>
           <p className="field__hint">
             {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}

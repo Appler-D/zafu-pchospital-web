@@ -562,3 +562,29 @@ DELETE /api/v1/member/notifications/:id
   占位「未填写备注」。
 
 新增错误码：`ACTIVITY_SERVE_DRAFT_PENDING`(409)。
+
+### 维修参与人员（issue #114）
+
+**Migration `20261012000000_repair_record_participants`（纯增量）+ 契约扩展：**
+
+- `RepairView` / `RepairDetailView` 新增 `participants: { id, name }[]` —— 按 `sort_order` 升序、
+  创建人恒在首位（服务端防御性重排）；`member` 字段语义不变（创建人 / 主维修人）。
+- `PATCH /api/v1/repairs/:id` 与管理端 `PATCH /api/v1/admin/repairs/:id` 的字段集增加
+  `participantIds?: string[]`：**不含创建人本人**的成员档案 id 列表；缺省 = 不动，
+  显式数组 = 整体替换（服务端去重、剔除创建人本人、保持提交顺序）。建档
+  `POST /api/v1/repairs` 同样接受该字段。
+- 校验：额外成员最多 9 个（总数含创建人 ≤ `repairFieldLimits.participantMaxCount = 10`，
+  超限 400 `VALIDATION_FAILED`，报错文案含上限）；不存在的成员 400 `VALIDATION_FAILED`，
+  软删除成员不得新增为参与者。
+- 候选名单复用 `GET /api/v1/repair-members`（`ACTIVE` 且未软删除的成员）；编辑器以
+  「＋」选择器添加、chip 旁「移除」删除，创建人 chip 固定不可移除。
+- 审核通知：`POST /api/v1/admin/repairs/:id/reviews`（含批量审核）的通知收件人从「创建人」
+  改为**全部参与者**，审核人本人若是参与者则剔除自己；通知表结构与类型不变。
+- 统计口径：全部正式统计（成员列表计数、排行榜、分类分布、月度趋势、成员摘要）改为按
+  **参与关系**——每名参与者各计一次、时长取记录上的同一值；列表可见性不变（本人创建任意
+  状态 + 全部已通过）；管理端列表 `memberId` 筛选与 `query` 姓名搜索按「参与过」匹配。
+- 导出（`GET /api/v1/admin/repairs/export`）列新增「参与成员」（`participantNames`，
+  全部参与者「、」连接），位置在「维修成员」之后。
+- 回填：存量记录每行补一条创建人参与行（含软删除记录），统计口径零变化。
+
+新增错误码：无。

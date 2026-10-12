@@ -116,13 +116,19 @@ export async function listRepairMemberOptions(actor: AuthorizedActor) {
 // `APPROVED AND deletedAt IS NULL` 语义，只在其上追加 `memberProfileId` 归属过滤。
 // ---------------------------------------------------------------------------
 
-/** 正式摘要只在唯一正式谓词上追加成员归属与可选日期范围。 */
+/**
+ * 正式摘要只在唯一正式谓词上追加**参与关系**与可选日期范围。
+ *
+ * issue #114 起，统计归属从「维修人单字段」切到「参与关系」：参与人也计入自己的
+ * 次数与时长（时长不分人，记录上的 `duration_minutes` 对全部参与者生效）。
+ * 关系过滤用 `some`，一条记录只会命中一次，值不会因参与行重复而放大。
+ */
 function approvedForMember(
   memberProfileId: string,
   range?: UtcRange,
 ): Prisma.RepairRecordWhereInput {
   return approvedRepairWhere({
-    memberProfileId,
+    participants: { some: { memberProfileId } },
     // `repair_date` 是 DATE 列：区间必须换成日期边界再交给查询构造器，
     // 否则本月/学期统计会被整体挪一天（issue #75）。
     repairDate: range ? toDateOnlyBounds(range) : undefined,
@@ -207,6 +213,9 @@ export async function listMemberRecentRepairs(
 /**
  * 成员工作队列与最近操作。可包含未通过记录，因此与 `listMemberRecentRepairs` 区分开，
  * 返回条目带显式 `status`，禁止冒充「已通过维修」。
+ *
+ * 口径（issue #114）：仍按**创建人**（`memberProfileId`）—— 草稿/待审/退回都是
+ * 「我要去处理的事」，只有创建人能编辑与提交；参与者不该在自己队列里看到别人的作业。
  */
 export async function listMemberWorkQueue(memberProfileId: string): Promise<MemberWorkQueue> {
   const db = getDb();
@@ -219,6 +228,7 @@ export async function listMemberWorkQueue(memberProfileId: string): Promise<Memb
   return { draftCount, pendingCount, rejectedCount };
 }
 
+/** 最近操作（issue #114 口径：仍按创建人）——「我在弄的记录」的最新动态。 */
 export async function listMemberRecentActivity(
   memberProfileId: string,
   limit: number,
@@ -288,7 +298,9 @@ export function listWhere(
   return {
     deletedAt: null,
     AND: [visibility],
-    memberProfileId: input.memberId,
+    // 「维修成员」筛选（issue #114）：按**参与过**匹配，不是只看创建人 ——
+    // 管理端要能查出「某人参与过的全部记录」；创建人恒有参与行，旧口径被完全覆盖。
+    participants: input.memberId ? { some: { memberProfileId: input.memberId } } : undefined,
     categoryId: input.categoryId,
     status: input.status,
     result: input.result,
@@ -307,9 +319,14 @@ export function listWhere(
           { remark: { contains: query } },
           // 机主姓名可搜；机主电话不参与搜索（隐私口径见任务书 3.3）。
           { ownerName: { contains: query } },
+          // 成员名按**任一参与者**匹配（issue #114）；创建人恒有参与行，行为与旧口径兼容。
           {
-            memberProfile: {
-              OR: [{ realName: { contains: query } }, { nickname: { contains: query } }],
+            participants: {
+              some: {
+                memberProfile: {
+                  OR: [{ realName: { contains: query } }, { nickname: { contains: query } }],
+                },
+              },
             },
           },
         ]

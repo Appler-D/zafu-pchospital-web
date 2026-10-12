@@ -51,6 +51,8 @@ export function draftInput(body: Record<string, unknown>) {
     content: nullableString(body.content),
     result: nullableResult(body.result),
     remark: nullableString(body.remark),
+    // 参与维修人员（issue #114）：缺省表示「不动」；清理与去重在 `normalizeDraftFields`。
+    participantIds: nullableStringArray(body.participantIds),
   };
 }
 export function idempotencyKey(request: Request): string {
@@ -98,6 +100,12 @@ function bool(value: string | undefined, name: string) {
 }
 function nullableString(value: unknown): string | null | undefined {
   return value === undefined ? undefined : value === null ? null : String(value);
+}
+/** 可选字符串数组：缺省 = 「不动」；元素类型不对时不做静默拼接，直接拒绝。 */
+function nullableStringArray(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new AppError("VALIDATION_FAILED", "participantIds 必须是数组");
+  return value.map((item) => (typeof item === "string" ? item : ""));
 }
 function nullableNumber(value: unknown): number | null | undefined {
   return value === undefined ? undefined : value === null || value === "" ? null : Number(value);

@@ -139,6 +139,8 @@ async function cleanupFixtures(): Promise<void> {
     where: { targetType: "RepairActivityAttendance", targetId: { in: attendanceIds } },
   });
   await db.repairActivityAttendance.deleteMany({ where: { activityId: ACTIVITY_ID } });
+  // 参与行（issue #114）先于记录删除：接待落单的记录带创建人参与行。
+  await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
   await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   await db.repairActivity.deleteMany({ where: { id: ACTIVITY_ID } });
 
@@ -368,6 +370,14 @@ dbTest("接待落单生成 DRAFT：预填机主 / 日期 / 分类 / 机型，正
     record.timeline.map((event) => event.eventType),
     ["CREATED"],
     "只写 CREATED，不再写 SUBMITTED",
+  );
+  // 接待落单也落创建人参与行（issue #114 不变量：每条记录恒有 ≥1 参与行）。
+  assert.deepEqual(
+    await getDb().repairRecordParticipant.findMany({
+      where: { repairRecordId: record.id },
+      select: { memberProfileId: true, sortOrder: true },
+    }),
+    [{ memberProfileId: STAFF_PROFILE_ID, sortOrder: 0 }],
   );
   const summary = record.timeline[0]!.summary as {
     source?: string;

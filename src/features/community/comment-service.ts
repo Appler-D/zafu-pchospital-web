@@ -278,28 +278,34 @@ async function notifyCommentAudience(
   });
 }
 
+/**
+ * 审核结果通知（issue #114 起发给**全部参与者**）：由审核动作在事务内调用。
+ * 审核人本人若是参与者之一，跳过他自己那条（与旧的「自己审自己不发」同一规则）。
+ */
 export async function createReviewNotification(
   tx: Prisma.TransactionClient,
   input: {
     recordId: string;
-    ownerMemberProfileId: string;
+    /** 收件人 = 参与维修的成员档案 id（创建人恒在其中）；本函数去重并剔除审核人本人。 */
+    recipientMemberProfileIds: readonly string[];
     actorMemberProfileId: string | null;
     decision: "APPROVED" | "REJECTED";
     now: Date;
   },
 ): Promise<void> {
-  if (input.actorMemberProfileId && input.actorMemberProfileId === input.ownerMemberProfileId) {
-    return;
-  }
-  await tx.notification.create({
-    data: {
+  const recipients = [
+    ...new Set(input.recipientMemberProfileIds.filter((id) => id !== input.actorMemberProfileId)),
+  ];
+  if (recipients.length === 0) return;
+  await tx.notification.createMany({
+    data: recipients.map((recipientMemberProfileId) => ({
       id: randomUUID(),
-      recipientMemberProfileId: input.ownerMemberProfileId,
+      recipientMemberProfileId,
       type: input.decision === "APPROVED" ? "REPAIR_APPROVED" : "REPAIR_REJECTED",
       status: "UNREAD",
       repairRecordId: input.recordId,
       actorMemberProfileId: input.actorMemberProfileId,
       createdAt: input.now,
-    },
+    })),
   });
 }

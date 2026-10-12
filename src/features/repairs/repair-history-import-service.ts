@@ -3,7 +3,7 @@ import { appendAuditLog } from "@/lib/audit/audit-service";
 import { requirePermission } from "@/lib/auth/permissions";
 import { inSerializableTransaction } from "@/lib/db/transaction";
 import type { AuthorizedActor, PublicRequestContext } from "@/types/contracts";
-import { timeline } from "./repair-service";
+import { insertRepairParticipants, timeline } from "./repair-service";
 import type { PendingHistoryRow, ValidHistoryRow } from "./repair-history-import";
 
 /**
@@ -56,6 +56,8 @@ export async function applyHistoryImport(
           createdAt: now,
         },
       });
+      // 参与维修人员（issue #114）：历史行按「维修人员姓名」匹配出的成员本人一行。
+      await insertRepairParticipants(tx, recordId, [row.memberProfileId], now);
       await timeline(
         tx,
         recordId,
@@ -246,6 +248,8 @@ export async function claimPendingHistoryForProfile(input: HistoryClaimInput): P
             createdAt: now,
           },
         });
+        // 参与维修人员（issue #114）：认领行归新成员本人，同样先落一行。
+        await insertRepairParticipants(tx, recordId, [input.memberProfileId], now);
         await timeline(
           tx,
           recordId,

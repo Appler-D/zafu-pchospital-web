@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { adminCopy, adminShared } from "@/config/admin";
 import { formatDurationMinutes, formatShanghaiDate } from "@/config/member";
-import { repairResultLabels, repairStatusLabels } from "@/config/repairs";
+import { formatRepairParticipants, repairResultLabels, repairStatusLabels } from "@/config/repairs";
 import { UNCATEGORIZED_LABEL } from "@/types/contracts";
 import type { RepairView } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
@@ -83,7 +83,7 @@ export const repairTableSpec: TableViewSpec<RepairView, RepairTableContext> = {
       kind: "text",
       headClassName: "admin-table__grow",
       cellClassName: "admin-table__grow",
-      render: (record) => record.member.name,
+      render: (record) => formatRepairParticipants(record),
     },
     {
       key: "category",

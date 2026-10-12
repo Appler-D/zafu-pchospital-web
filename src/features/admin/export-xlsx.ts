@@ -7,6 +7,7 @@ import type { RepairExportRow } from "@/types/contracts";
 const COLUMN_WIDTHS: Record<(typeof EXPORT_COLUMNS)[number]["key"], number> = {
   repairDate: 14,
   memberName: 16,
+  participantNames: 22,
   ownerName: 16,
   ownerPhone: 14,
   categoryName: 18,

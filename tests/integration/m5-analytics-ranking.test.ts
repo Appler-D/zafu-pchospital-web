@@ -170,6 +170,17 @@ async function seedRepair(
       deletedAt: options.deleted ? now : null,
     },
   });
+  // 参与行（issue #114）：统计口径已切到参与关系，直建的夹具记录也必须带创建人参与行，
+  // 否则排名 / 摘要 / 分类分布都会把它算成 0。
+  await db.repairRecordParticipant.create({
+    data: {
+      id: randomUUID(),
+      repairRecordId: id,
+      memberProfileId,
+      sortOrder: 0,
+      createdAt: now,
+    },
+  });
   return id;
 }
 
@@ -238,6 +249,12 @@ async function prepareFixtures(): Promise<void> {
       where: { authorMemberProfileId: inProfiles, parentCommentId: null },
     });
     await db.repairFavorite.deleteMany({ where: { memberProfileId: inProfiles } });
+    // 参与行（issue #114）先于记录删除。
+    await db.repairRecordParticipant.deleteMany({
+      where: {
+        OR: [{ memberProfileId: inProfiles }, { record: { memberProfileId: inProfiles } }],
+      },
+    });
     await db.repairRecord.deleteMany({ where: { memberProfileId: inProfiles } });
     await db.userSkill.deleteMany({ where: { memberProfileId: inProfiles } });
     await db.userRole.deleteMany({ where: { userId: inUsers } });

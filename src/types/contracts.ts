@@ -106,6 +106,8 @@ export type RepairExportInput = Omit<RepairListInput, "page" | "pageSize">;
 export type RepairExportRow = {
   repairDate: string;
   memberName: string;
+  /** 参与成员（issue #114）：全部参与者、「、」连接；创建人也在列（便于单列回答「谁做过这条」）。 */
+  participantNames: string;
   ownerName: string;
   ownerPhone: string;
   categoryName: string;
@@ -500,6 +502,8 @@ export type RepairCategoryAdminView = RepairCategoryView & {
   createdAt: string;
 };
 export type RepairMemberOption = { id: string; name: string };
+/** 参与维修的成员（issue #114）：`id` 为成员档案 id，创建人恒排第一。 */
+export type RepairParticipantView = { id: string; name: string };
 export type RepairTimelineView = {
   id: string;
   eventType: RepairTimelineEventType;
@@ -516,7 +520,13 @@ export type RepairReviewView = {
 };
 export type RepairView = {
   id: string;
+  /** 创建人（主维修人，即 `repair_records.member_profile_id`），列表与详情均以他为准。 */
   member: { id: string; name: string };
+  /**
+   * 参与维修的成员（issue #114）：含创建人本人、创建人恒排第一。
+   * 时长不分人：记录的 `durationMinutes` 对全部参与者生效（每人各自计入统计）。
+   */
+  participants: RepairParticipantView[];
   repairDate: string | null;
   durationMinutes: number | null;
   category: RepairCategoryView | null;
@@ -569,6 +579,12 @@ export type RepairDraftFields = {
   content?: string | null;
   result?: RepairResult | null;
   remark?: string | null;
+  /**
+   * 参与维修人员（issue #114）：**不含创建人本人**的成员档案 id 列表，按添加顺序。
+   * 缺省（`undefined`）表示「不动」；显式空数组表示「清空额外参与者」。
+   * 服务端按整体替换处理：去重、去掉创建人本人、校验成员存在。
+   */
+  participantIds?: string[];
 };
 export type CreateRepairDraftInput = RepairDraftFields & { idempotencyKey: string };
 export type UpdateRepairInput = RepairDraftFields & { version: number };

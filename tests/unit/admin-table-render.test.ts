@@ -508,6 +508,8 @@ function repair(overrides: Partial<RepairView> = {}): RepairView {
   return {
     id: "r-1",
     member: { id: "m-1", name: "张三" },
+    // 参与者（issue #114）：默认只有创建人本人，与 `member` 保持一致。
+    participants: [{ id: "m-1", name: "张三" }],
     repairDate: "2026-09-01",
     durationMinutes: 99,
     category: {
@@ -620,6 +622,19 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
     head.includes('aria-sort="ascending"'),
     "排序字段是 memberName（sortKey），不能拿列 id `member` 去比对",
   );
+});
+
+test("维修表：成员列展示全部参与者（issue #114），创建人在前、顿号连接", async () => {
+  modulesRef = await load();
+  const html = renderRepairs([
+    repair({
+      participants: [
+        { id: "m-1", name: "张三" },
+        { id: "m-2", name: "阿伟" },
+      ],
+    }),
+  ]);
+  assert.ok(html.includes(">张三、阿伟<"), "多参与者应顿号连接显示，创建人在前");
 });
 
 test("维修表：单元格内容与占位（未分类 / 空结果 / 空时长 / 标记标签）", async () => {

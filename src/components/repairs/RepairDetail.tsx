@@ -9,7 +9,7 @@ import { RepairFlagControls } from "@/components/community/RepairFlagControls";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { communityCopy } from "@/config/community";
-import { repairCopy } from "@/config/repairs";
+import { formatRepairParticipants, repairCopy } from "@/config/repairs";
 import type { RepairDetailView } from "@/types/contracts";
 
 type Props = {
@@ -76,7 +76,7 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
         <dl className="repair-detail__facts">
           <div>
             <dt className="text-ink-3 text-sm">维修成员</dt>
-            <dd>{record.member.name}</dd>
+            <dd>{formatRepairParticipants(record)}</dd>
           </div>
           {/* 机主（客户）：老记录没有该信息则不占一行；完整电话只有本人与审核管理员可见。 */}
           {record.ownerName || record.ownerPhone ? (

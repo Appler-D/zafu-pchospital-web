@@ -141,6 +141,8 @@ test("维修导出列保持批次 1 的顺序（不得被批次 2 改动）", ()
   assert.deepEqual(keys, [
     "repairDate",
     "memberName",
+    // 参与成员（issue #114）：插在「维修成员」之后，「机主姓名 / 电话」之前。
+    "participantNames",
     // 机主姓名 / 电话（issue #79 第 6 项）：插在「维修成员」之后。
     "ownerName",
     "ownerPhone",
