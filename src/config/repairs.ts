@@ -110,7 +110,10 @@ export const repairEditorCopy = {
   participantsCreatorTag: "创建人",
   participantsHint:
     "创建人固定保留；可添加其他参与成员，误添加的可移除。维修时长对全部参与者生效。",
-  participantsAddPlaceholder: "选择成员添加…",
+  participantsAddLabel: "输入姓名添加协作者",
+  participantsAddPlaceholder: "输入姓名，选择匹配成员…",
+  participantsMatches: "找到 {count} 位成员，选择即可添加",
+  participantsNoMatches: "未找到匹配成员，请尝试其他姓名",
   participantsNoOptions: "暂无可添加的成员",
   participantsRemove: "移除",
   participantsRemoveLabel: "移除参与成员 {name}",
