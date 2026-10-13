@@ -382,7 +382,7 @@ function StatusLine({ status }: { status: Status }) {
   if (status.kind === "idle" || !status.message) return null;
   return (
     <p
-      className={`member-form__status${status.kind === "error" || status.kind === "conflict" ? "member-form__status--error" : ""}`}
+      className={`member-form__status ${status.kind === "error" || status.kind === "conflict" ? "member-form__status--error" : ""}`}
       role={status.kind === "error" || status.kind === "conflict" ? "alert" : "status"}
       aria-live="polite"
     >

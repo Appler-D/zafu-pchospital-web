@@ -65,7 +65,9 @@ export function MemberMetrics({ summary, labels }: MemberMetricsProps) {
       {entries.map((entry) => (
         <div className="member-metric" key={entry.key}>
           <dt className="member-metric__label">{entry.label}</dt>
-          <dd className={`member-metric__value${isUnavailable(entry) ? " member-metric__value--unconfigured" : ""}`}>
+          <dd
+            className={`member-metric__value ${isUnavailable(entry) ? "member-metric__value--unconfigured" : ""}`}
+          >
             {renderValue(entry)}
           </dd>
         </div>

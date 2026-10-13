@@ -108,14 +108,21 @@ export function NotificationInbox() {
           {copy.markAllRead}
         </Button>
       </div>
-      <p className="community-block__meta">{copy.unreadCount.replace("{count}", String(unreadCount))}</p>
+      <p className="community-block__meta">
+        {copy.unreadCount.replace("{count}", String(unreadCount))}
+      </p>
       {state === "loading" ? <p role="status">{copy.loading}</p> : null}
       {state === "ready" && items.length === 0 ? (
-        <p className="member-section__note">{filter === "UNREAD" ? copy.unreadEmpty : copy.empty}</p>
+        <p className="member-section__note">
+          {filter === "UNREAD" ? copy.unreadEmpty : copy.empty}
+        </p>
       ) : null}
       <ul className="community-list">
         {items.map((item) => (
-          <li className={`community-list__item${item.status === "UNREAD" ? " is-unread" : ""}`} key={item.id}>
+          <li
+            className={`community-list__item ${item.status === "UNREAD" ? "is-unread" : ""}`}
+            key={item.id}
+          >
             <NotificationRow item={item} />
             <div className="community-list__actions">
               {item.status === "UNREAD" ? (
@@ -132,7 +139,11 @@ export function NotificationInbox() {
       </ul>
       {pagination && pagination.totalPages > 1 ? (
         <nav className="repair-pagination">
-          <Button type="button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+          <Button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => current - 1)}
+          >
             {communityCopy.pagination.previous}
           </Button>
           <span>
