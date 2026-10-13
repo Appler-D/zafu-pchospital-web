@@ -76,9 +76,7 @@ export function ShellTabBar({ tabs, ariaLabel, more }: ShellTabBarProps) {
   const moreActive =
     more !== undefined &&
     more.groups.some((group) =>
-      group.items.some(
-        (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
-      ),
+      group.items.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`)),
     );
 
   return (
@@ -90,7 +88,7 @@ export function ShellTabBar({ tabs, ariaLabel, more }: ShellTabBarProps) {
           return (
             <Link
               key={tab.href}
-              className={`shell-tabbar__tab${tab.primary ? " shell-tabbar__tab--primary" : ""}`}
+              className={`shell-tabbar__tab ${tab.primary ? "shell-tabbar__tab--primary" : ""}`}
               href={tab.href}
               prefetch={false}
               onTouchStart={() => router.prefetch(tab.href)}
@@ -139,8 +137,7 @@ export function ShellTabBar({ tabs, ariaLabel, more }: ShellTabBarProps) {
                 <p className="shell-more__group-title">{group.title}</p>
                 <ul className="shell-more__list">
                   {group.items.map((item) => {
-                    const current =
-                      pathname === item.href || pathname.startsWith(`${item.href}/`);
+                    const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (
                       <li key={item.href}>
                         <Link

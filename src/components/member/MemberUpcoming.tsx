@@ -44,7 +44,10 @@ export function MemberUpcoming({ notifications, favorites, onRetry }: MemberUpco
   return (
     <div className="member-upcoming">
       <div className="community-summary">
-        <section className="community-summary__panel" aria-labelledby="member-upcoming-notifications">
+        <section
+          className="community-summary__panel"
+          aria-labelledby="member-upcoming-notifications"
+        >
           <header className="community-summary__head">
             <h3 className="community-summary__title" id="member-upcoming-notifications">
               {copy.upcomingNotifications}
@@ -61,7 +64,10 @@ export function MemberUpcoming({ notifications, favorites, onRetry }: MemberUpco
             ) : (
               <ul className="community-list community-list--compact">
                 {notifications.latest.map((item) => (
-                  <li className={`community-list__item${item.status === "UNREAD" ? " is-unread" : ""}`} key={item.id}>
+                  <li
+                    className={`community-list__item ${item.status === "UNREAD" ? "is-unread" : ""}`}
+                    key={item.id}
+                  >
                     <NotificationRow item={item} />
                   </li>
                 ))}
@@ -78,7 +84,9 @@ export function MemberUpcoming({ notifications, favorites, onRetry }: MemberUpco
               {copy.upcomingFavorites}
             </h3>
             {favorites.available ? (
-              <span className="community-summary__count">{fav.count.replace("{count}", String(favorites.count))}</span>
+              <span className="community-summary__count">
+                {fav.count.replace("{count}", String(favorites.count))}
+              </span>
             ) : null}
           </header>
           {favorites.available ? (

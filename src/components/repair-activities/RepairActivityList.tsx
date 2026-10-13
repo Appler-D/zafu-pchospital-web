@@ -99,7 +99,7 @@ export function RepairActivityList() {
               </dl>
               <div className="activity-card__footer">
                 <p
-                  className={`muted${ended ? "" : "activity-card__footer-slot"}`}
+                  className={`muted ${ended ? "" : "activity-card__footer-slot"}`}
                   aria-hidden={ended ? undefined : true}
                 >
                   {ended ? repairActivitiesPage.endedHint : "\u00a0"}

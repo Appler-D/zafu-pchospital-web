@@ -35,7 +35,7 @@ export function MemberIdentityFields({ fields }: MemberIdentityFieldsProps) {
               <span className="member-tag member-tag--muted">{field.visibilityTag}</span>
             ) : null}
           </dt>
-          <dd className={`member-field__value${field.muted ? " member-field__value--muted" : ""}`}>
+          <dd className={`member-field__value ${field.muted ? "member-field__value--muted" : ""}`}>
             {field.value ?? memberCopy.profile.notProvided}
           </dd>
         </div>
