@@ -248,6 +248,15 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
   关闭主开关时 `public_repair_stats_detail_enabled` 一并归零（而不是报错，
   否则「关掉首页统计」要分两次操作才能达成）。每次写入写审计
   `settings.public_content.updated`，并记录 `updated_by_user_id`。
+  首页在每次请求时通过 `publicHomeService.get()` 消费这份策略，默认或读取失败时保守隐藏。
+  `PublicHomeAnalytics` 是独立公开 DTO，不包含成员 ID、头像、账号、联系方式及配置修改人；
+  关闭的区块返回 `null`，辅助开关关闭时不查询或下发 `details`。
+  总量按 M5 的正式谓词对维修记录聚合，每条记录计一次，不累加多人参与贡献；
+  本学期榜单复用 M5 的数据库排名（前 `RANKING_PREVIEW_LIMIT` 条，即 3 条）。
+  学期未配置时对应指标为 `UNCONFIGURED`，不能伪装成 0 或正常空榜。
+  `NICKNAME` 仅使用昵称、`REAL_NAME` 仅使用实名，缺失时使用中性名「成员」，
+  两种模式均不回退到另一种姓名或登录展示名；`HIDDEN` 使用中性名且不读取成员资料。
+  两个区块独立降级，查询失败时隐藏失败区块，不伪造统计数字。
 - **报名数据导出**：与维修导出共用列模型、CSV/XLSX 写入器与三条硬规则
   （筛选与列表同源、超限拒绝而非截断、导出必写审计），但**故意包含 QQ 与手机号明文**
   —— 招募要按联系方式联系人，而需求 §34 对维修导出的要求是只输出记录 ID 与照片链接。

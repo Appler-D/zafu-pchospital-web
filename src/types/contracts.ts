@@ -823,7 +823,7 @@ export type RankingDisplayNameMode = ValueOf<typeof RankingDisplayNameMode>;
  * 公开内容与展示策略（`/admin/settings`，需求 §31 / §32 / §74）。
  *
  * 单行配置表，**默认全部关闭**：在管理员明确打开之前，官网首页不展示任何真实统计，
- * 不会因为「M7 还没做」而意外把内部数据暴露出去。
+ * 公开首页只消费显式启用的数据，不因配置缺失而意外暴露内部数据。
  */
 export type PublicContentSettings = {
   /** 首页展示累计维修设备数（需求 §31）。 */
@@ -843,6 +843,22 @@ export type UpdatePublicContentSettingsInput = {
   publicRepairStatsDetailEnabled: boolean;
   publicRankingsEnabled: boolean;
   rankingDisplayName: RankingDisplayNameMode;
+};
+
+/** 首页专用公开 DTO：不携带成员 ID、头像、联系方式或后台配置修改人。 */
+export type PublicHomeAnalytics = {
+  repairStats: {
+    totalApprovedCount: number;
+    /** 辅助开关关闭时整个 details 缺省，不向浏览器下发隐藏数据。 */
+    details?: {
+      termApprovedCount: MetricValue;
+      totalApprovedDurationMinutes: number;
+    };
+  } | null;
+  rankings: {
+    status: AnalyticsStatus;
+    items: { rank: number; displayName: string; approvedCount: number }[];
+  } | null;
 };
 
 /**

@@ -27,7 +27,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import { AppError } from "@/lib/api/errors";
 import { getDb } from "@/lib/db/client";
-import type { UtcRange } from "@/lib/academic-term";
+import { toDateOnlyBounds, type UtcRange } from "@/lib/academic-term";
 import {
   approvedRepairWhere,
   listMemberRepairSummary,
@@ -108,6 +108,39 @@ export async function getMemberSummary(
 ) {
   const summary = await listMemberRepairSummary(memberProfileId, options);
   return { ...summary, source: "M5_ANALYTICS" as const };
+}
+
+/** 官网总量按维修记录聚合，不能累加成员贡献（多人参与会重复计数）。 */
+export async function getPublicRepairSummary(detailEnabled: boolean, termRange?: UtcRange) {
+  const db = getDb();
+  const [total, term, duration] = await Promise.all([
+    db.repairRecord.count({ where: approvedRepairWhere() }),
+    detailEnabled && termRange
+      ? db.repairRecord.count({
+          where: approvedRepairWhere({ repairDate: toDateOnlyBounds(termRange) }),
+        })
+      : Promise.resolve(null),
+    detailEnabled
+      ? db.repairRecord.aggregate({
+          where: approvedRepairWhere(),
+          _sum: { durationMinutes: true },
+        })
+      : Promise.resolve(null),
+  ]);
+  return {
+    totalApprovedCount: total,
+    ...(detailEnabled
+      ? {
+          details: {
+            termApprovedCount:
+              term === null
+                ? { status: "UNCONFIGURED" as const, value: null }
+                : { status: "AVAILABLE" as const, value: term },
+            totalApprovedDurationMinutes: duration?._sum.durationMinutes ?? 0,
+          },
+        }
+      : {}),
+  };
 }
 
 /* -------------------------------------------------------------- 分类分布 */

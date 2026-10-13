@@ -4,6 +4,11 @@ import { after, before, beforeEach, test } from "node:test";
 
 import { analyticsService } from "../../src/features/analytics/analytics-service";
 import { rankingService } from "../../src/features/analytics/ranking-service";
+import { publicHomeService } from "../../src/features/analytics/public-home-service";
+import {
+  PUBLIC_CONTENT_SETTINGS_ID,
+  publicContentSettingsService,
+} from "../../src/features/admin/public-content-settings-service";
 import { memberDashboardService } from "../../src/features/member-dashboard/member-dashboard-service";
 import { memberProfileService } from "../../src/features/member-profile/member-profile-service";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
@@ -22,6 +27,90 @@ import { integrationTestsEnabled } from "./db-guard";
    实际事故）。未开启时返回 false，各文件照常走 test.skip。 */
 const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
+
+dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设备数，退回撤销公开贡献", async () => {
+  const db = getDb();
+  const previousPolicy = await db.publicContentSetting.findUnique({
+    where: { id: PUBLIC_CONTENT_SETTINGS_ID },
+  });
+  try {
+    useControlledTerm();
+    const a = await createMember("公开甲");
+    const b = await createMember("公开乙");
+    const admin: AuthorizedActor = {
+      ...a.actor,
+      permissions: permissionsForRoles(["ADMIN"]),
+    };
+    const policy = {
+      publicRepairStatsEnabled: true,
+      publicRepairStatsDetailEnabled: true,
+      publicRankingsEnabled: true,
+      rankingDisplayName: "NICKNAME" as const,
+    };
+    await publicContentSettingsService.update(policy, admin);
+    const baseline = await publicHomeService.get();
+    const recordId = await seedRepair(a.memberProfileId, {
+      date: CONTROLLED_DAY,
+      durationMinutes: 60,
+    });
+    await db.repairRecordParticipant.create({
+      data: {
+        id: randomUUID(),
+        repairRecordId: recordId,
+        memberProfileId: b.memberProfileId,
+        sortOrder: 1,
+        createdAt: new Date(),
+      },
+    });
+    for (const status of ["DRAFT", "PENDING", "REJECTED"] as const) {
+      await seedRepair(a.memberProfileId, { date: CONTROLLED_DAY, status });
+    }
+    await seedRepair(a.memberProfileId, { date: CONTROLLED_DAY, deleted: true });
+    const visible = await publicHomeService.get();
+    assert.equal(
+      visible.repairStats?.totalApprovedCount,
+      baseline.repairStats!.totalApprovedCount + 1,
+    );
+    assert.equal(
+      visible.repairStats?.details?.totalApprovedDurationMinutes,
+      baseline.repairStats!.details!.totalApprovedDurationMinutes + 60,
+    );
+    assert.equal(
+      visible.repairStats?.details?.termApprovedCount.value,
+      baseline.repairStats!.details!.termApprovedCount.value! + 1,
+    );
+    assert.equal(visible.rankings?.items.length, 2);
+    assert.deepEqual(
+      visible.rankings?.items.map((item) => [item.rank, item.approvedCount]),
+      [
+        [1, 1],
+        [1, 1],
+      ],
+    );
+    for (const entry of visible.rankings!.items) {
+      assert.deepEqual(Object.keys(entry).sort(), ["approvedCount", "displayName", "rank"]);
+    }
+    await db.repairRecord.update({ where: { id: recordId }, data: { status: "REJECTED" } });
+    assert.deepEqual((await publicHomeService.get()).repairStats, baseline.repairStats);
+    assert.deepEqual((await publicHomeService.get()).rankings, baseline.rankings);
+    await publicContentSettingsService.update(
+      { ...policy, publicRepairStatsEnabled: false, publicRankingsEnabled: false },
+      admin,
+    );
+    assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+  } finally {
+    // 全局配置必须连同修改人、时间原样恢复，不能影响其它测试。
+    if (previousPolicy) {
+      await db.publicContentSetting.upsert({
+        where: { id: PUBLIC_CONTENT_SETTINGS_ID },
+        create: previousPolicy,
+        update: previousPolicy,
+      });
+    } else {
+      await db.publicContentSetting.deleteMany({ where: { id: PUBLIC_CONTENT_SETTINGS_ID } });
+    }
+  }
+});
 
 /**
  * 本文件使用**独立的 UUID 段**（`d5000000-…`），与 M0–M4 的 fixture 完全隔离，
