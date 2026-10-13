@@ -96,14 +96,20 @@ export const memberRepairActivitiesCopy = {
     attendSuccess: "已标记本场出勤。",
     attendRequired: "请先点击「参加本场」标记出勤，才能签到客户或接待。",
     attendPrompt: "你尚未参加本场。先标记出勤后，才能在左侧勾选报名并签到。",
+    /** 成员视角（issue #108 起成员无「待签到」区）：出勤后可接待排队中的客户。 */
+    attendPromptMember: "你尚未参加本场。先标记出勤后，才能接待排队中的客户。",
     signupNotClosed: "报名尚未截止，暂不可出勤、签到或接待。",
     attendedBadge: "你已出勤",
+    /** 手机端分区切换行（<1100px 常显；宽屏隐藏）的无障碍名称。 */
+    paneSwitcherLabel: "工作台分区切换",
     eligibleTitle: "待签到",
     eligibleTag: "Eligible",
     eligibleEmpty: "当前没有可签到的报名。",
     queueTitle: "排队中",
     queueTag: "Queue",
     queueEmpty: "排队为空。请到左侧勾选报名并点「签到入队」。",
+    /** 成员视角（issue #108 起成员无「待签到」区）。 */
+    queueEmptyMember: "排队为空，暂无等待接待的客户。",
     /** 队列位次：按当前渲染顺序（服务端已按签到时间升序）从 1 开始。 */
     queueRank: "第{index}位",
     checkIn: "签到入队",
@@ -112,7 +118,6 @@ export const memberRepairActivitiesCopy = {
     checkInUpdatedSuccess: "故障类型已更新，客户已签到入队。",
     checkInRefreshFailed: "客户已签到入队，但工作台刷新失败，将自动重试。",
     refreshFailed: "工作台刷新失败，仍显示上次数据，将自动重试。",
-    checkInStaffReminder: "普通成员无需进行客户签到，签到工作请交给现场管理员。",
     checkInConfirmTitle: "确认签到入队？",
     checkInConfirmHint:
       "请逐一核对以下客户的信息与故障类型；如有误，可在此修改。确认后将为这些客户签到入队。",

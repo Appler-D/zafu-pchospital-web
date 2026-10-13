@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { POST as POST_CHECK_IN } from "../../src/app/api/v1/member/repair-activities/[id]/check-in/route";
+import { GET as GET_BOARD } from "../../src/app/api/v1/member/repair-activities/[id]/board/route";
 import { POST as POST_ATTENDANCE } from "../../src/app/api/v1/member/repair-activities/[id]/attendance/route";
 import { POST as POST_SERVE } from "../../src/app/api/v1/member/repair-activities/[id]/serve/route";
 import { POST as POST_WITHDRAW } from "../../src/app/api/v1/member/repair-activities/[id]/withdraw/route";
@@ -30,6 +31,9 @@ const dbTest = enabled ? test : test.skip;
  * 状态与审计必须同时对齐 —— 服务层用事务写状态 + `appendAuditLog`，只查状态无法
  * 发现审计漏写。
  *
+ * issue #108 起签到 / 撤回收紧为 `activity:admin`（成员调路由 = 403），看板按
+ * `canAdmin` 决定是否下发「待签到」并给出角色开关；本文件补上这两条的服务端断言。
+ *
  * 独立的 UUID 段 `e7900000-…` 与标题前缀 "REG79 " —— 清理一律按这两者限定，
  * 绝不触碰库里已有的活动与报名（那是开发者/生产同源的开发数据）。
  */
@@ -41,9 +45,12 @@ const STAFF_PROFILE_ID = "e7900000-0000-4000-8000-000000000003";
 const SYSTEM_CATEGORY_ID = "e7900000-0000-4000-8000-000000000004";
 /** 另一个活动（「非本活动报名」用例用）。 */
 const OTHER_ACTIVITY_ID = "e7900000-0000-4000-8000-000000000005";
-/** 未标记出勤的接待员（出勤校验 403 用例用）。 */
+/** 未标记出勤的接待员（普通成员视角：读电话、成员 403 用例用）。 */
 const ABSENT_STAFF_USER_ID = "e7900000-0000-4000-8000-000000000006";
 const ABSENT_STAFF_PROFILE_ID = "e7900000-0000-4000-8000-000000000007";
+/** 未标记出勤的管理员（签到 / 撤回收紧为 activity:admin 后的出勤 403 用例用）。 */
+const ABSENT_ADMIN_USER_ID = "e7900000-0000-4000-8000-000000000008";
+const ABSENT_ADMIN_PROFILE_ID = "e7900000-0000-4000-8000-000000000009";
 
 /** 失败信封里的错误码（`apiFailure` 的 `error.code`）。 */
 function errorCodeOf(json: Record<string, unknown>): string | undefined {
@@ -102,9 +109,9 @@ async function cleanupFixtures(): Promise<void> {
       where: { targetType: "RepairActivityAttendance", targetId: { in: attendanceIds } },
     });
   }
-  // 接待台动作的审计以活动为 target，直接按 actor 兜底清一次（两位接待员）。
+  // 接待台动作的审计以活动为 target，直接按 actor 兜底清一次（三位接待账号）。
   await db.auditLog.deleteMany({
-    where: { actorUserId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID] } },
+    where: { actorUserId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
   });
 
   await db.repairActivityRegistration.deleteMany({ where: { activityId: { in: activityIds } } });
@@ -116,23 +123,25 @@ async function cleanupFixtures(): Promise<void> {
   }
   await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });
   await db.memberProfile.deleteMany({
-    where: { id: { in: [STAFF_PROFILE_ID, ABSENT_STAFF_PROFILE_ID] } },
+    where: { id: { in: [STAFF_PROFILE_ID, ABSENT_STAFF_PROFILE_ID, ABSENT_ADMIN_PROFILE_ID] } },
   });
   await db.authSession.deleteMany({
-    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID] } },
+    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
   });
   await db.passwordCredential.deleteMany({
-    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID] } },
+    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
   });
   await db.userRole.deleteMany({
-    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID] } },
+    where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
   });
-  await db.user.deleteMany({ where: { id: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID] } } });
+  await db.user.deleteMany({
+    where: { id: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
+  });
 }
 
 /**
  * 活动建在「报名窗口内、名额未满」——只有 OPEN 才报得上名。
- * 两位接待员各有 ACTIVE 成员档案：`activity:staff` 的动作都要求「用户 ↔ 成员档案」。
+ * 三位接待账号各有 ACTIVE 成员档案：`activity:staff` 的动作都要求「用户 ↔ 成员档案」。
  * 另一个活动带一条报名：用来验证「非本活动报名」按 404 拒绝。
  */
 async function prepareFixtures(): Promise<void> {
@@ -143,6 +152,7 @@ async function prepareFixtures(): Promise<void> {
   for (const [userId, displayName] of [
     [STAFF_USER_ID, "REG79 接待员"],
     [ABSENT_STAFF_USER_ID, "REG79 未出勤接待员"],
+    [ABSENT_ADMIN_USER_ID, "REG79 未出勤管理员"],
   ] as const) {
     await db.user.create({
       data: { id: userId, status: "ACTIVE", displayName, createdAt: now, updatedAt: now },
@@ -151,6 +161,7 @@ async function prepareFixtures(): Promise<void> {
   for (const [profileId, userId, realName] of [
     [STAFF_PROFILE_ID, STAFF_USER_ID, "REG79 接待员"],
     [ABSENT_STAFF_PROFILE_ID, ABSENT_STAFF_USER_ID, "REG79 未出勤接待员"],
+    [ABSENT_ADMIN_PROFILE_ID, ABSENT_ADMIN_USER_ID, "REG79 未出勤管理员"],
   ] as const) {
     await db.memberProfile.create({
       data: { id: profileId, userId, realName, status: "ACTIVE", joinedAt: now, createdAt: now },
@@ -216,6 +227,7 @@ const staffActor: AuthorizedActor = {
 
 let staffCookie = "";
 let absentCookie = "";
+let absentAdminCookie = "";
 
 function signup(body: Record<string, unknown>) {
   return callRoute(
@@ -281,10 +293,11 @@ before(async () => {
     where: { id: ACTIVITY_ID },
     data: { signupClosesAt: new Date(Date.now() - 1_000) },
   });
-  // 主接待员先标记出勤（幂等）；「未出勤 403」用例用另一位接待员。
+  // 主接待员先标记出勤（幂等）；「未出勤 403」用例用另两位未出勤账号（成员 / 管理员）。
   await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
   staffCookie = await sessionCookie(STAFF_USER_ID, "ADMIN");
   absentCookie = await sessionCookie(ABSENT_STAFF_USER_ID, "MEMBER");
+  absentAdminCookie = await sessionCookie(ABSENT_ADMIN_USER_ID, "ADMIN");
 });
 
 after(async () => {
@@ -464,8 +477,18 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
   const withdrawn = await postWithdraw(first.id);
   assert.equal(withdrawn.status, 200);
   assert.equal((withdrawn.json.data as { issueType: string }).issueType, "SOFTWARE_SYSTEM");
+  // issue #108：签到 / 撤回收紧为 activity:admin，普通成员调用一律 403。
   const memberActor = { ...staffActor, permissions: permissionsForRoles(["MEMBER"]) };
-  await repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], memberActor);
+  await assert.rejects(
+    () => repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], memberActor),
+    { code: "FORBIDDEN" },
+  );
+  await assert.rejects(
+    () => repairActivityStaffService.withdraw(ACTIVITY_ID, first.id, memberActor),
+    { code: "FORBIDDEN" },
+  );
+  // 成员仍可接待：serve 保持 activity:staff。
+  await repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], staffActor);
   const served = await repairActivityStaffService.serve(ACTIVITY_ID, first.id, memberActor);
   const record = await db.repairRecord.findUniqueOrThrow({
     where: { id: served.repairRecordId },
@@ -617,7 +640,7 @@ dbTest("真实签到路由拒绝错误 updates，权限 / 出勤 / 截止闸门�
     assert.equal(result.status, 400, JSON.stringify(result.json));
     assert.equal(errorCodeOf(result.json), "VALIDATION_FAILED");
   }
-  const absent = await postCheckIn([row.id], absentCookie, updates);
+  const absent = await postCheckIn([row.id], absentAdminCookie, updates);
   assert.equal(errorCodeOf(absent.json), "ACTIVITY_ATTENDANCE_REQUIRED");
   assert.equal((await postCheckIn([row.id], "", updates)).status, 401);
   await assert.rejects(
@@ -663,6 +686,47 @@ dbTest("真实签到路由拒绝错误 updates，权限 / 出勤 / 截止闸门�
     row,
   );
   assert.equal(await db.auditLog.count({ where: { actorUserId: STAFF_USER_ID } }), auditCount);
+});
+
+dbTest("看板按角色下发：canAdmin 决定待签到与写权限，成员签到 / 撤回 403", async () => {
+  const row = await checkInFixture();
+  const adminBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  assert.equal(adminBoard.canAdmin, true);
+  assert.ok(adminBoard.eligible.some((item) => item.id === row.id));
+
+  // 服务层：成员拿到的看板 canAdmin=false 且 eligible 恒为空（待签到不下发）。
+  const memberActor = { ...staffActor, permissions: permissionsForRoles(["MEMBER"]) };
+  const memberBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, memberActor);
+  assert.equal(memberBoard.canAdmin, false);
+  assert.deepEqual(memberBoard.eligible, []);
+
+  // 路由层：成员读看板 200，信封里同样不下发待签到。
+  const memberBoardRoute = await callRoute(
+    GET_BOARD,
+    `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/board`,
+    { params: { id: ACTIVITY_ID }, headers: { cookie: absentCookie } },
+  );
+  assert.equal(memberBoardRoute.status, 200, JSON.stringify(memberBoardRoute.json));
+  const memberBoardData = memberBoardRoute.json.data as {
+    canAdmin: boolean;
+    eligible: unknown[];
+  };
+  assert.equal(memberBoardData.canAdmin, false);
+  assert.deepEqual(memberBoardData.eligible, []);
+
+  // 路由层：普通成员（activity:staff、未出勤）签到 / 撤回先撞权限 = 403 FORBIDDEN。
+  for (const result of [
+    await postCheckIn([row.id], absentCookie),
+    await postWithdraw(row.id, absentCookie),
+  ]) {
+    assert.equal(result.status, 403, JSON.stringify(result.json));
+    assert.equal(errorCodeOf(result.json), "FORBIDDEN");
+  }
+  const saved = await getDb().repairActivityRegistration.findUniqueOrThrow({
+    where: { id: row.id },
+  });
+  assert.equal(saved.status, "REGISTERED");
+  assert.equal(saved.checkedInAt, null);
 });
 
 dbTest("签到入队成功：状态与 checkedInAt 落库，签到审计记录本次 registrationIds", async () => {
@@ -786,12 +850,16 @@ dbTest("SERVED 不可撤回：409 ACTIVITY_REGISTRATION_STATE_INVALID，状态�
   assert.equal(row.status, "SERVED", "被拒绝的撤回不应改动状态");
 });
 
-dbTest("未标记出勤：403 ACTIVITY_ATTENDANCE_REQUIRED，报名状态不变", async () => {
+dbTest("未标记出勤：管理员签到 / 撤回 403 ACTIVITY_ATTENDANCE_REQUIRED，报名状态不变", async () => {
   const registrationId = await signUpRegistration("REG79 丁", "13900000024");
 
-  const result = await postCheckIn([registrationId], absentCookie);
-  assert.equal(result.status, 403, JSON.stringify(result.json));
-  assert.equal(errorCodeOf(result.json), "ACTIVITY_ATTENDANCE_REQUIRED");
+  for (const result of [
+    await postCheckIn([registrationId], absentAdminCookie),
+    await postWithdraw(registrationId, absentAdminCookie),
+  ]) {
+    assert.equal(result.status, 403, JSON.stringify(result.json));
+    assert.equal(errorCodeOf(result.json), "ACTIVITY_ATTENDANCE_REQUIRED");
+  }
 
   const row = await getDb().repairActivityRegistration.findUniqueOrThrow({
     where: { id: registrationId },

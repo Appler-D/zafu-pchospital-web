@@ -482,8 +482,8 @@ DELETE /api/v1/member/notifications/:id
 响应保持 `{ checkedIn: StaffRegistrationView[] }`，返回保存后的 `issueType` 和 `issueTypeLabel`，
 使用统一 API 信封与 requestId。缺省或空 updates 兼容原来的只签到请求。
 
-- 仍需同源 Cookie 请求、有效账号 / 成员、`activity:staff`（MEMBER / ADMIN）及本场出勤，
-  报名截止闸门不变。「普通成员无需签到，交给现场管理员」是分工提醒，不是新增权限限制。
+- 仍需同源 Cookie 请求、有效账号 / 成员、`activity:admin`（仅 ADMIN）及本场出勤，
+  报名截止闸门不变；普通成员不再有签到入口，也没有调用权限（issue #108）。
 - registrationIds 去空、去重后为 1–100 条。updates 必须是数组，每项 ID 为有效非空字符串、
   属于本批且不能重复；数量不能超过本批客户数，类型必须是现有四种枚举。
   null / 错误形状 / 非本批 ID / 重复 / 无效类型 / 超限均为 400 `VALIDATION_FAILED`。
@@ -502,7 +502,7 @@ DELETE /api/v1/member/notifications/:id
 
 影响范围：成员看板 → check-in Route → Staff Service；原三参数 Service 调用
 （设备 / 草稿集成测试）与旧请求（看板集成测试）保持兼容。公开查询、后台报名、board 与 serve
-共用保存后的报名 issueType；不新增 Schema、Migration、公共枚举或权限。
+共用保存后的报名 issueType；不新增 Schema、Migration 或公共枚举。
 
 ### 接待台按需查看客户电话（issue #112）
 
@@ -592,5 +592,24 @@ DELETE /api/v1/member/notifications/:id
 - 导出（`GET /api/v1/admin/repairs/export`）列新增「参与成员」（`participantNames`，
   全部参与者「、」连接），位置在「维修成员」之后。
 - 回填：存量记录每行补一条创建人参与行（含软删除记录），统计口径零变化。
+
+新增错误码：无。
+
+### 工作台按角色分区与签到 / 撤回权限收紧（issue #108）
+
+`GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
+
+- `canAdmin: boolean` —— 当前账号是否具备 `activity:admin`；看板据此渲染「待签到」区与「撤回」按钮；
+- `eligible` 变为**仅对管理员下发**：成员拿到的 `eligible` 恒为空数组，且服务端在查询报名时
+  就不再读取 `REGISTERED` 行（数据最小化；字段保留空数组而非缺省，形状对两种角色一致）。
+
+`POST .../check-in` 与 `POST .../withdraw` 的权限从 `activity:staff` **收紧为 `activity:admin`**：
+
+- 普通成员（仅 `activity:staff`）调用返回 403 `FORBIDDEN`，且先于出勤与报名状态校验；
+- 有效账号 / 成员档案、本场出勤与报名截止闸门不变；`serve` 与电话按需读取保持 `activity:staff`。
+
+成员看板布局（纯前端，无接口变化）：成员为「排队中 ｜ 已接待」两栏，管理员为
+「待签到 ｜ 排队中 ｜ 已接待」三栏（≥1100px 并排，窄屏按此顺序纵向堆叠）；
+「已接待」沿用 `servedAt` 降序，区块常驻、为空只换内容。
 
 新增错误码：无。
