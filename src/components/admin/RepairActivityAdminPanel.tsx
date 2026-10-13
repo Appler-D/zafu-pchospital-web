@@ -312,6 +312,7 @@ export function RepairActivityAdminPanel() {
                   <th>{copy.table.activityAt}</th>
                   <th>{copy.table.window}</th>
                   <th>{copy.table.capacity}</th>
+                  <th>{copy.table.attendance}</th>
                   <th>{copy.table.status}</th>
                   <th>{copy.table.actions}</th>
                 </tr>
@@ -335,6 +336,11 @@ export function RepairActivityAdminPanel() {
                       <br />
                       <span className="muted">
                         {copy.remaining.replace("{count}", String(item.remaining))}
+                      </span>
+                    </td>
+                    <td data-label={copy.table.attendance}>
+                      <span className="admin-capacity">
+                        {copy.attendanceLine.replace("{count}", String(item.attendedCount))}
                       </span>
                     </td>
                     <td data-label={copy.table.status}>

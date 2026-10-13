@@ -47,6 +47,11 @@ export type RepairActivityAdminView = RepairActivityPublicView & {
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
+  /**
+   * 本场已出勤成员数（issue #107）：成员签到即计入，系统无签退，
+   * 历史场次为累计值；只回计数，不下发出勤成员明细。
+   */
+  attendedCount: number;
 };
 
 export type CreateRepairActivityInput = {
@@ -154,10 +159,12 @@ function toPublicView(
 function toAdminView(
   row: ActivityRow,
   registeredCount: number,
+  attendedCount: number,
   now: Date,
 ): RepairActivityAdminView {
   return {
     ...toPublicView(row, registeredCount, now),
+    attendedCount,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     createdBy: row.createdBy,
@@ -198,6 +205,20 @@ async function loadCounts(ids: string[]): Promise<Map<string, number>> {
   return new Map(groups.map((g) => [g.activityId, g._count._all]));
 }
 
+/**
+ * 各场已出勤成员数（issue #107）。与 `loadCounts` 同一模式：一次 groupBy 批量聚合、
+ * 缺省 0。出勤表没有软删列，成员签到即计入、系统无签退，历史场次为累计值。
+ */
+async function loadAttendanceCounts(ids: string[]): Promise<Map<string, number>> {
+  if (ids.length === 0) return new Map();
+  const groups = await getDb().repairActivityAttendance.groupBy({
+    by: ["activityId"],
+    where: { activityId: { in: ids } },
+    _count: { _all: true },
+  });
+  return new Map(groups.map((g) => [g.activityId, g._count._all]));
+}
+
 export const repairActivityService = {
   // ---------- Admin ----------
   async listAdmin(actor: AuthorizedActor): Promise<RepairActivityAdminView[]> {
@@ -208,7 +229,10 @@ export const repairActivityService = {
       orderBy: [{ activityAt: "asc" }, { createdAt: "asc" }],
     });
     const counts = await loadCounts(rows.map((r) => r.id));
-    return rows.map((row) => toAdminView(row, counts.get(row.id) ?? 0, now));
+    const attendanceCounts = await loadAttendanceCounts(rows.map((r) => r.id));
+    return rows.map((row) =>
+      toAdminView(row, counts.get(row.id) ?? 0, attendanceCounts.get(row.id) ?? 0, now),
+    );
   },
 
   async listRegistrations(
@@ -371,7 +395,7 @@ export const repairActivityService = {
           signupClosesAt: input.signupClosesAt.toISOString(),
         },
       });
-      return toAdminView(created, 0, now);
+      return toAdminView(created, 0, 0, now);
     });
   },
 
@@ -404,6 +428,10 @@ export const repairActivityService = {
           `人数上限不能低于当前有效报名数（${effectiveCount}）`,
         );
       }
+      // 出勤人数（issue #107）：编辑响应要带回真实计数，不能沿用旧值。
+      const attendedCount = await tx.repairActivityAttendance.count({
+        where: { activityId },
+      });
 
       const updated = await tx.repairActivity.update({
         where: { id: activityId },
@@ -432,7 +460,7 @@ export const repairActivityService = {
           signupClosesAt: updated.signupClosesAt.toISOString(),
         },
       });
-      return toAdminView(updated, effectiveCount, new Date());
+      return toAdminView(updated, effectiveCount, attendedCount, new Date());
     });
   },
 

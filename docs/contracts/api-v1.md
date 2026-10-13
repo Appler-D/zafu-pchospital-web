@@ -613,3 +613,24 @@ DELETE /api/v1/member/notifications/:id
 「已接待」沿用 `servedAt` 降序，区块常驻、为空只换内容。
 
 新增错误码：无。
+
+## 管理端活动列表显示出勤人数（issue #107）
+
+`GET /api/v1/admin/repair-activities` 的响应每一项新增 `attendedCount: number` ——
+本场 `repair_activity_attendances` 的记录数。口径：成员签到即计入，系统**无签退**，
+历史场次为累计值，无记录为 0（与 `registeredCount` 的 `?? 0` 缺省一致）。
+
+- 与 `registeredCount` 同样由 `listAdmin` 一次 `groupBy` 批量聚合（`loadAttendanceCounts`），
+  不新增端点、权限、错误码、Schema 或 Migration；**只回计数，不下发出勤成员明细**
+  （成员身份字段不进管理端列表响应）。
+- `create` / `update` 的响应同口径带回：新建为 0；编辑在事务内实时计数，
+  避免保存后列表刷新出旧值。
+- 公开视图（`RepairActivityPublicView`）与成员侧不受影响；`attendedCount` 仅存在于
+  管理端视图 `RepairActivityAdminView`。
+- 界面：活动管理页表格「名额」列后新增「出勤」列，显示「出勤 N 人」，
+  文案在 `src/config/admin.ts` 的 `repairActivities.table.attendance` /
+  `repairActivities.attendanceLine`。
+
+影响范围：`repair-activity-service.ts`（`loadAttendanceCounts` / `toAdminView` /
+`listAdmin` / `create` / `update`）→ 活动管理页表格列；单测
+`tests/unit/repair-activity-attendance-count.test.ts` 钉住接线与「只回计数」红线。
