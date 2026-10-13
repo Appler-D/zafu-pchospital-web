@@ -559,18 +559,24 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     </div>
                   </div>
                   <div className="activity-board__row-actions">
+                    {/* 接待=描边主行动（issue #108 审查稿）：细蓝描边 + 右向箭头，悬停填充实心；
+                        比原实心大块轻，队列一屏多行不吵。 */}
                     <Button
-                      variant="solid"
+                      className="activity-board__serve-btn"
+                      trailingIcon="arrowRight"
                       onClick={() => requestServe(row.id)}
                       disabled={opsDisabled}
                     >
                       {busy === `serve:${row.id}` ? copy.serving : copy.serve}
                     </Button>
                     {/* 「撤回」仅活动管理员（issue #108 评论 3）：成员视角不出现；
-                        服务端 withdraw 同样要求 activity:admin 兜底。 */}
+                        服务端 withdraw 同样要求 activity:admin 兜底。
+                        幽灵 + Undo 图标，悬停转危险色（issue #108 审查稿）。 */}
                     {board.canAdmin ? (
                       <Button
                         variant="ghost"
+                        className="activity-board__withdraw-btn"
+                        icon="undo"
                         onClick={() => setWithdrawTarget(row)}
                         disabled={!board.attended || busy !== null}
                       >
