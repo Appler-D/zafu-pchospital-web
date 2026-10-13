@@ -74,9 +74,14 @@ export type StaffBoardView = {
   activity: StaffActivityListItem;
   attended: boolean;
   attendanceCheckedInAt: string | null;
-  /** 左侧：可签到（REGISTERED） */
+  /**
+   * 当前账号是否具备活动管理员权限（`activity:admin`，issue #108）：
+   * 决定「待签到」区与「撤回」按钮的可见性；签到 / 撤回接口同样只对管理员开放。
+   */
+  canAdmin: boolean;
+  /** 可签到（REGISTERED）。仅对管理员下发，成员恒为空数组（数据最小化，issue #108）。 */
   eligible: StaffRegistrationView[];
-  /** 右侧：排队（CHECKED_IN，按 checkedInAt ASC） */
+  /** 排队（CHECKED_IN，按 checkedInAt ASC） */
   queue: StaffRegistrationView[];
   /** 本场已接待（按 servedAt 倒序）；常驻区块的数据来源。 */
   served: StaffServedRow[];
@@ -126,6 +131,12 @@ function toStaffReg(row: {
 
 async function requireStaffMember(actor: AuthorizedActor) {
   requirePermission(actor, "activity:staff");
+  return repairRepository.activeMemberForUser(actor.userId);
+}
+
+/** 签到 / 撤回收紧为活动管理员（issue #108）：权限之外仍要求有效成员档案。 */
+async function requireAdminMember(actor: AuthorizedActor) {
+  requirePermission(actor, "activity:admin");
   return repairRepository.activeMemberForUser(actor.userId);
 }
 
@@ -345,6 +356,7 @@ export const repairActivityStaffService = {
 
   async getBoard(activityId: string, actor: AuthorizedActor): Promise<StaffBoardView> {
     const member = await requireStaffMember(actor);
+    const canAdmin = actor.permissions.includes("activity:admin");
     const activity = await loadActivityOrThrow(activityId);
     const now = new Date();
     const [registeredCount, attendance, registrations, servedRows, pendingDraft] =
@@ -359,7 +371,8 @@ export const repairActivityStaffService = {
           where: {
             activityId,
             deletedAt: null,
-            status: { in: ["REGISTERED", "CHECKED_IN"] },
+            // 待签到（REGISTERED）仅管理员视图需要；成员在库层就不取（issue #108）。
+            status: { in: canAdmin ? ["REGISTERED", "CHECKED_IN"] : ["CHECKED_IN"] },
           },
         }),
         getDb().repairActivityRegistration.findMany({
@@ -369,10 +382,12 @@ export const repairActivityStaffService = {
         findPendingServeDraft(member.id),
       ]);
 
-    const eligible = registrations
-      .filter((r) => r.status === "REGISTERED")
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      .map(toStaffReg);
+    const eligible = canAdmin
+      ? registrations
+          .filter((r) => r.status === "REGISTERED")
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+          .map(toStaffReg)
+      : [];
 
     const queue = sortQueueByCheckedInAt(
       registrations.filter((r) => r.status === "CHECKED_IN"),
@@ -392,6 +407,7 @@ export const repairActivityStaffService = {
       activity: toListItem(activity, registeredCount, Boolean(attendance), now),
       attended: Boolean(attendance),
       attendanceCheckedInAt: attendance?.checkedInAt.toISOString() ?? null,
+      canAdmin,
       eligible,
       queue,
       served,
@@ -405,7 +421,7 @@ export const repairActivityStaffService = {
     actor: AuthorizedActor,
     issueTypeUpdates: StaffCheckInIssueTypeUpdate[] = [],
   ): Promise<{ checkedIn: StaffRegistrationView[] }> {
-    const member = await requireStaffMember(actor);
+    const member = await requireAdminMember(actor);
     await loadActivityOrThrow(activityId);
     await requireAttendance(activityId, member.id);
 
@@ -499,7 +515,7 @@ export const repairActivityStaffService = {
     registrationId: string,
     actor: AuthorizedActor,
   ): Promise<StaffRegistrationView> {
-    const member = await requireStaffMember(actor);
+    const member = await requireAdminMember(actor);
     await loadActivityOrThrow(activityId);
     await requireAttendance(activityId, member.id);
     if (!registrationId.trim()) {

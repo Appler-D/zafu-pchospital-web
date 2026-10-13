@@ -373,7 +373,13 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
       {!staffOpen || !board.attended ? (
         <Card className="activity-board__attend-banner" variant="notice">
-          <p role="status">{staffOpen ? copy.attendPrompt : copy.signupNotClosed}</p>
+          <p role="status">
+            {staffOpen
+              ? board.canAdmin
+                ? copy.attendPrompt
+                : copy.attendPromptMember
+              : copy.signupNotClosed}
+          </p>
         </Card>
       ) : null}
       <p className="admin-status activity-board__feedback" role="alert">
@@ -381,65 +387,67 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       </p>
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
 
-      <div className="activity-board__panes">
-        <Card className="activity-board__pane repair-panel">
-          <header className="activity-board__pane-head">
-            <h2>{copy.eligibleTitle}</h2>
-            <span className="member-section__tag">{copy.eligibleTag}</span>
-          </header>
-          {board.eligible.length === 0 ? (
-            <p className="muted activity-board__empty">{copy.eligibleEmpty}</p>
-          ) : (
-            <ul className="activity-board__list">
-              {board.eligible.map((row) => (
-                <li key={row.id} className="activity-board__row">
-                  <div className="activity-board__check">
-                    <input
-                      type="checkbox"
-                      id={`registration-${row.id}`}
-                      checked={selected.has(row.id)}
-                      disabled={opsDisabled}
-                      aria-label={`${copy.name} ${row.name}`}
-                      onChange={() => toggle(row.id)}
-                    />
-                    <span>
-                      <label htmlFor={`registration-${row.id}`}>
-                        <strong>{row.name}</strong>
-                      </label>
-                      <span className="muted">
-                        {" "}
-                        ·{" "}
-                        <RegistrationPhone
-                          key={`${activityId}:${row.id}:${row.phoneMasked}`}
-                          activityId={activityId}
-                          registrationId={row.id}
-                          phoneMasked={row.phoneMasked}
-                          onError={setMessage}
-                        />{" "}
-                        · {row.issueTypeLabel}
-                        {/* 机型选填：没填就不占位（issue #68）。 */}
-                        {row.deviceModel ? ` · ${copy.deviceModel} ${row.deviceModel}` : null}
+      <div
+        className={`activity-board__panes${board.canAdmin ? "activity-board__panes--admin" : ""}`}
+      >
+        {/* 待签到（issue #108）：仅活动管理员可见；成员的看板在服务端就不下发这批数据。 */}
+        {board.canAdmin ? (
+          <Card className="activity-board__pane repair-panel">
+            <header className="activity-board__pane-head">
+              <h2>{copy.eligibleTitle}</h2>
+              <span className="member-section__tag">{copy.eligibleTag}</span>
+            </header>
+            {board.eligible.length === 0 ? (
+              <p className="muted activity-board__empty">{copy.eligibleEmpty}</p>
+            ) : (
+              <ul className="activity-board__list">
+                {board.eligible.map((row) => (
+                  <li key={row.id} className="activity-board__row">
+                    <div className="activity-board__check">
+                      <input
+                        type="checkbox"
+                        id={`registration-${row.id}`}
+                        checked={selected.has(row.id)}
+                        disabled={opsDisabled}
+                        aria-label={`${copy.name} ${row.name}`}
+                        onChange={() => toggle(row.id)}
+                      />
+                      <span>
+                        <label htmlFor={`registration-${row.id}`}>
+                          <strong>{row.name}</strong>
+                        </label>
+                        <span className="muted">
+                          {" "}
+                          ·{" "}
+                          <RegistrationPhone
+                            key={`${activityId}:${row.id}:${row.phoneMasked}`}
+                            activityId={activityId}
+                            registrationId={row.id}
+                            phoneMasked={row.phoneMasked}
+                            onError={setMessage}
+                          />{" "}
+                          · {row.issueTypeLabel}
+                          {/* 机型选填：没填就不占位（issue #68）。 */}
+                          {row.deviceModel ? ` · ${copy.deviceModel} ${row.deviceModel}` : null}
+                        </span>
                       </span>
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="activity-board__actions">
-            <div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="activity-board__actions">
               <p className="muted m-0">{copy.selectHint}</p>
-              <p className="text-ink-3 m-0 text-xs">{copy.checkInStaffReminder}</p>
+              <Button
+                variant="solid"
+                onClick={openCheckInConfirm}
+                disabled={opsDisabled || selected.size === 0}
+              >
+                {busy === "check-in" ? copy.checkingIn : copy.checkIn}
+              </Button>
             </div>
-            <Button
-              variant="solid"
-              onClick={openCheckInConfirm}
-              disabled={opsDisabled || selected.size === 0}
-            >
-              {busy === "check-in" ? copy.checkingIn : copy.checkIn}
-            </Button>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         <Card className="activity-board__pane repair-panel">
           <header className="activity-board__pane-head">
@@ -447,7 +455,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <span className="member-section__tag">{copy.queueTag}</span>
           </header>
           {board.queue.length === 0 ? (
-            <p className="muted activity-board__empty">{copy.queueEmpty}</p>
+            <p className="muted activity-board__empty">
+              {board.canAdmin ? copy.queueEmpty : copy.queueEmptyMember}
+            </p>
           ) : (
             <ul className="activity-board__list">
               {board.queue.map((row, index) => (
@@ -482,75 +492,80 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     >
                       {busy === `serve:${row.id}` ? copy.serving : copy.serve}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setWithdrawTarget(row)}
-                      disabled={!board.attended || busy !== null}
-                    >
-                      {busy === `withdraw:${row.id}` ? copy.withdrawing : copy.withdraw}
-                    </Button>
+                    {/* 「撤回」仅活动管理员（issue #108 评论 3）：成员视角不出现；
+                        服务端 withdraw 同样要求 activity:admin 兜底。 */}
+                    {board.canAdmin ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setWithdrawTarget(row)}
+                        disabled={!board.attended || busy !== null}
+                      >
+                        {busy === `withdraw:${row.id}` ? copy.withdrawing : copy.withdraw}
+                      </Button>
+                    ) : null}
                   </div>
                 </li>
               ))}
             </ul>
           )}
         </Card>
-      </div>
 
-      {/* 「已接待」= 常驻区块（issue #79 第 6 项）：数据为空只换内容，区块本身不出现 / 消失。 */}
-      <Card className="activity-board__pane repair-panel">
-        <header className="activity-board__pane-head">
-          <h2>{copy.servedTitle}</h2>
-          <span className="member-section__tag">{copy.servedTag}</span>
-        </header>
-        {board.served.length === 0 ? (
-          <p className="muted activity-board__empty">{copy.servedEmpty}</p>
-        ) : (
-          <ul className="activity-board__list">
-            {board.served.map((row) => {
-              const recordId = row.repairRecordId;
-              return (
-                <li key={row.id} className="activity-board__row">
-                  <div className="activity-board__queue-main">
-                    <div>
-                      <strong>{row.name}</strong>{" "}
-                      {row.recordStatus ? (
-                        <span className="admin-tag">{repairStatusLabels[row.recordStatus]}</span>
-                      ) : null}
-                      <div className="muted">
-                        {copy.phone}{" "}
-                        <RegistrationPhone
-                          key={`${activityId}:${row.id}:${row.phoneMasked}`}
-                          activityId={activityId}
-                          registrationId={row.id}
-                          phoneMasked={row.phoneMasked}
-                          onError={setMessage}
-                        />
+        {/* 「已接待」= 常驻区块（issue #79 第 6 项；issue #108 起作为成员两栏 / 管理员三栏的
+            最后一栏，按 servedAt 降序）：数据为空只换内容，区块本身不出现 / 消失。 */}
+        <Card className="activity-board__pane repair-panel">
+          <header className="activity-board__pane-head">
+            <h2>{copy.servedTitle}</h2>
+            <span className="member-section__tag">{copy.servedTag}</span>
+          </header>
+          {board.served.length === 0 ? (
+            <p className="muted activity-board__empty">{copy.servedEmpty}</p>
+          ) : (
+            <ul className="activity-board__list">
+              {board.served.map((row) => {
+                const recordId = row.repairRecordId;
+                return (
+                  <li key={row.id} className="activity-board__row">
+                    <div className="activity-board__queue-main">
+                      <div>
+                        <strong>{row.name}</strong>{" "}
+                        {row.recordStatus ? (
+                          <span className="admin-tag">{repairStatusLabels[row.recordStatus]}</span>
+                        ) : null}
+                        <div className="muted">
+                          {copy.phone}{" "}
+                          <RegistrationPhone
+                            key={`${activityId}:${row.id}:${row.phoneMasked}`}
+                            activityId={activityId}
+                            registrationId={row.id}
+                            phoneMasked={row.phoneMasked}
+                            onError={setMessage}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="activity-board__row-actions">
-                    {/* 记录缺失或已软删除：占位文案，不出链接。 */}
-                    {!recordId || !row.recordStatus ? (
-                      <span className="muted">{copy.recordMissing}</span>
-                    ) : row.recordStatus === "DRAFT" || row.recordStatus === "REJECTED" ? (
-                      <Button
-                        href={`/member/repairs/${recordId}/edit?returnActivityId=${encodeURIComponent(activityId)}`}
-                      >
-                        {copy.fillRepair}
-                      </Button>
-                    ) : (
-                      <Button variant="ghost" href={`/member/repairs/${recordId}`}>
-                        {copy.viewRepair}
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
+                    <div className="activity-board__row-actions">
+                      {/* 记录缺失或已软删除：占位文案，不出链接。 */}
+                      {!recordId || !row.recordStatus ? (
+                        <span className="muted">{copy.recordMissing}</span>
+                      ) : row.recordStatus === "DRAFT" || row.recordStatus === "REJECTED" ? (
+                        <Button
+                          href={`/member/repairs/${recordId}/edit?returnActivityId=${encodeURIComponent(activityId)}`}
+                        >
+                          {copy.fillRepair}
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" href={`/member/repairs/${recordId}`}>
+                          {copy.viewRepair}
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
 
       {checkInConfirmOpen ? (
         <ConfirmDialog
@@ -562,7 +577,6 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           onConfirm={() => void confirmCheckIn()}
         >
           <p>{copy.checkInConfirmHint}</p>
-          <p className="text-ink-3 text-xs">{copy.checkInStaffReminder}</p>
           <ol className="activity-board__list">
             {checkInRows.map((row, index) => (
               <li key={row.id} className="activity-board__row">
