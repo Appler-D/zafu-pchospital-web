@@ -100,6 +100,8 @@ export const memberRepairActivitiesCopy = {
     attendPromptMember: "你尚未参加本场。先标记出勤后，才能接待排队中的客户。",
     signupNotClosed: "报名尚未截止，暂不可出勤、签到或接待。",
     attendedBadge: "你已出勤",
+    /** 手机端分区切换行（<1100px 常显；宽屏隐藏）的无障碍名称。 */
+    paneSwitcherLabel: "工作台分区切换",
     eligibleTitle: "待签到",
     eligibleTag: "Eligible",
     eligibleEmpty: "当前没有可签到的报名。",

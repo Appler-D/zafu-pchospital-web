@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
@@ -23,6 +30,9 @@ import type {
 } from "@/features/repair-activities/repair-activity-staff-service";
 
 type Props = { activityId: string };
+
+/** 手机端一次只展示一个分区（<1100px；宽屏由 CSS 显示全部并排栏）。 */
+type MobilePane = "eligible" | "queue" | "served";
 
 export function MemberRepairActivityBoard({ activityId }: Props) {
   const router = useRouter();
@@ -47,6 +57,12 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const request = useRef<{ background: boolean } | null>(null);
   /** 全局接单拦截弹层（issue #79 第 6 项）：点击「接待」命中未完成草稿时出现，不发请求。 */
   const [pendingNotice, setPendingNotice] = useState<StaffServeDraft | null>(null);
+  /**
+   * 手机端分区切换（issue #108 审查稿）：<1100px 一次只展示一个分区。
+   * 首次加载后落定默认分区（管理员优先「待签到」，成员固定「排队中」），
+   * 之后保留用户点选，不因 5 秒刷新里数据变化自动跳转。
+   */
+  const [mobilePane, setMobilePane] = useState<MobilePane | null>(null);
   const paused =
     busy !== null || checkInConfirmOpen || withdrawTarget !== null || pendingNotice !== null;
   const pausedRef = useRef(paused);
@@ -81,12 +97,18 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             boardElement.current.style.minHeight = `${boardElement.current.getBoundingClientRect().height}px`;
           }
         }
-        setBoard(json.data);
+        const next = json.data;
+        setBoard(next);
         hasBoard.current = true;
-        const eligibleIds = new Set(json.data.eligible.map((row) => row.id));
+        // 首次加载落定手机端默认分区；已有选择（用户点过）保持不变。
+        setMobilePane(
+          (current) =>
+            current ?? (next.canAdmin && next.eligible.length > 0 ? "eligible" : "queue"),
+        );
+        const eligibleIds = new Set(next.eligible.map((row) => row.id));
         setSelected((current) => new Set([...current].filter((id) => eligibleIds.has(id))));
         setState("ready");
-        return json.data;
+        return next;
       } catch (error) {
         if (request.current !== active) return null;
         // 自动同步失败保留数据与操作反馈，下一轮继续重试。
@@ -116,6 +138,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       window.removeEventListener("resize", onResize);
     };
   }, [load]);
+
+  // 换一场活动 = 重新落定默认分区（同一组件实例被复用时旧选择不跨活动保留）。
+  useEffect(() => {
+    setMobilePane(null);
+  }, [activityId]);
 
   useEffect(() => {
     if (paused) {
@@ -350,6 +377,22 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const opsDisabled = !staffOpen || !board.attended || busy !== null;
   const withdrawBusy = withdrawTarget ? busy === `withdraw:${withdrawTarget.id}` : false;
   const checkInBusy = busy === "check-in";
+  // 手机端切换项（与 panes 的可见性一致：成员没有「待签到」）。
+  const mobilePanes: Array<[MobilePane, string, number]> = board.canAdmin
+    ? [
+        ["eligible", copy.eligibleTitle, board.eligible.length],
+        ["queue", copy.queueTitle, board.queue.length],
+        ["served", copy.servedTitle, board.served.length],
+      ]
+    : [
+        ["queue", copy.queueTitle, board.queue.length],
+        ["served", copy.servedTitle, board.served.length],
+      ];
+  // 滑块位置：与 mobilePanes 顺序一致；理论上必有匹配，找不到时回落到第一段。
+  const activeIndex = Math.max(
+    0,
+    mobilePanes.findIndex(([key]) => key === mobilePane),
+  );
 
   return (
     <div ref={boardElement} className="activity-board content-start">
@@ -387,12 +430,39 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       </p>
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
 
+      {/* 手机端分区切换（issue #108 审查稿·分段滑块）：窄屏一次只显示一个分区、切换行吸顶；
+          宽屏由 CSS 隐藏，恢复并排栏。计数实时来自看板数据、放在段内（等宽段不因数字变化位移）。 */}
+      <div className="activity-board__switcher" role="group" aria-label={copy.paneSwitcherLabel}>
+        <div
+          className="activity-board__seg"
+          style={{ "--seg-count": mobilePanes.length, "--seg-index": activeIndex } as CSSProperties}
+        >
+          <span className="activity-board__seg-thumb" aria-hidden="true" />
+          {mobilePanes.map(([key, label, count]) => (
+            <button
+              key={key}
+              type="button"
+              className="activity-board__seg-btn"
+              aria-pressed={mobilePane === key}
+              onClick={() => setMobilePane(key)}
+            >
+              {label}
+              <span className="activity-board__seg-count">{count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div
-        className={`activity-board__panes${board.canAdmin ? "activity-board__panes--admin" : ""}`}
+        className={`activity-board__panes ${board.canAdmin ? "activity-board__panes--admin" : ""}`}
       >
         {/* 待签到（issue #108）：仅活动管理员可见；成员的看板在服务端就不下发这批数据。 */}
         {board.canAdmin ? (
-          <Card className="activity-board__pane repair-panel">
+          <Card
+            className={`activity-board__pane repair-panel ${
+              mobilePane === "eligible" ? "is-active" : ""
+            }`}
+          >
             <header className="activity-board__pane-head">
               <h2>{copy.eligibleTitle}</h2>
               <span className="member-section__tag">{copy.eligibleTag}</span>
@@ -449,7 +519,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           </Card>
         ) : null}
 
-        <Card className="activity-board__pane repair-panel">
+        <Card
+          className={`activity-board__pane repair-panel ${
+            mobilePane === "queue" ? "is-active" : ""
+          }`}
+        >
           <header className="activity-board__pane-head">
             <h2>{copy.queueTitle}</h2>
             <span className="member-section__tag">{copy.queueTag}</span>
@@ -512,7 +586,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
         {/* 「已接待」= 常驻区块（issue #79 第 6 项；issue #108 起作为成员两栏 / 管理员三栏的
             最后一栏，按 servedAt 降序）：数据为空只换内容，区块本身不出现 / 消失。 */}
-        <Card className="activity-board__pane repair-panel">
+        <Card
+          className={`activity-board__pane repair-panel ${
+            mobilePane === "served" ? "is-active" : ""
+          }`}
+        >
           <header className="activity-board__pane-head">
             <h2>{copy.servedTitle}</h2>
             <span className="member-section__tag">{copy.servedTag}</span>

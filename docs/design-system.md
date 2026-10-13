@@ -744,6 +744,7 @@ round 端点）。后台需要新图标时按同样规则补 `Icon.tsx` 的 `sha
 | `.activity-card` / `__link` / `__head` / `__title` / `__meta` / `--ended` | 活动卡：标题钳制 2 行保证等高；已结束整卡降透明度，不加新色 |
 | `.activity-board__row--queue` / `__queue-main` / `__queue-rank` | 接待台队列行：位次与正文同格（窄屏不单独成列），位次列定宽让姓名左边缘对齐（issue #68） |
 | `.activity-board__check` / `__actions` / `__row-actions`  | 勾选行、底部动作条与行内动作组                                          |
+| `.activity-board__switcher` / `__seg` / `__seg-thumb` / `__seg-btn` / `__seg-count` | 手机端分区切换行（<1100px 居中分段滑块、一次一个分区；≥1100px 隐藏）            |
 
 规则：
 
@@ -759,9 +760,19 @@ round 端点）。后台需要新图标时按同样规则补 `Icon.tsx` 的 `sha
 - 成员活动列表使用 `.member-activity-workspace` 收紧页头留白，与成员维修列表共用内容宽度；
   活动卡复用 `.repair-panel` 内边距，悬停与键盘焦点描边画在边界内侧，避免被横滑容器裁切。
 - 活动工作台复用 `.member-activity-workspace` 页头和 `.repair-panel` 面板内边距；
-  ≥1100px 成员两栏（排队中 ｜ 已接待）、管理员三栏（待签到 ｜ 排队中 ｜ 已接待），
-  窄屏按同一次序单栏堆叠；队列操作在 <760px 换到下一行，长机型与故障文字可断行。
+  ≥1100px 成员两栏（排队中 ｜ 已接待）、管理员三栏（待签到 ｜ 排队中 ｜ 已接待）；
+  窄屏由分区切换行逐区展示（见下一条）；队列操作在 <760px 换到下一行，
+  长机型与故障文字可断行。
   「待签到」区与「撤回」按钮仅对 `activity:admin` 账号渲染，成员拿到的看板不含该数据（issue #108）。
+- 手机端（<1100px）工作台在工具栏下用吸顶分段滑块（`.activity-board__switcher` +
+  `__seg`）：居中胶囊、等宽分段（管理员 3 段 / 成员 2 段），计数放在段内
+  （等宽段保证数字变化不改行宽）；选中滑块 `__seg-thumb` 只用 `transform` 位移
+  （180ms、不回弹，`prefers-reduced-motion` 由全局 0.01ms 规则压成瞬时跳位），
+  一次只展示一个分区，≥1100px 隐藏切换行、恢复并排栏（issue #108 后续）。
+- 拼接组合类名时把分隔空格放在模板字面量一侧（`repair-panel ${cond ? "is-active" : ""}`），
+  不要写进三元字符串（`? " is-active" : ""`）：`prettier-plugin-tailwindcss` 会吞掉
+  className 里三元字符串的首尾空格且不补回，`pnpm format` 后类名粘连成单个无效类、
+  样式静默失效（issue #108 踩过：提交前的格式化把空格吃掉）。
 - 签到确认弹窗按待签到列表顺序核对客户，用现有列表分隔线和 `.field` 下拉框修改类型，
   不套第二层卡片。看板及弹窗错误区 `.activity-board__feedback`
   常驻预留三行，长错误在区内滚动；成功反馈复用 `AdminToast`，不挤动已有内容。
