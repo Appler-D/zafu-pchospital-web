@@ -61,7 +61,21 @@ Seed 会初始化角色、故障分类和技能标签，不会创建默认账号
 
 技术文档来自独立的 [ZAFU-PCHospital-Doc](https://github.com/ZAFU-PCHospital/ZAFU-PCHospital-Doc) 仓库，由 mdBook 生成。完整构建需要安装 mdBook，缺少文档源码时会自动克隆到 `.docs-source/`。只运行 `pnpm dev` 不会生成文档正文；本地查看 `/handbook/` 前需执行 `pnpm docs:build`。配置细节见 [工程手册第 7 节](AGENTS.md#7-站内文档构建 handbook)。
 
-部署使用 `pnpm build` 和 `pnpm start`，需要 Node.js 服务端与 GreatSQL；上传照片的存储目录需要持久化。
+## 部署
+
+生产环境使用 [`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh) 部署：先在本地构建产物，再上传到服务器做原子替换。生产服务器内存很小，不在服务器上执行构建。
+
+```bash
+bash tools/deploy/deploy-prod.sh                 # 部署 upstream/main 当前指向的提交（缺省）
+bash tools/deploy/deploy-prod.sh --sha <提交>    # 部署指定提交（须已合并到远端 main）
+bash tools/deploy/deploy-prod.sh --rollback      # 秒级回退到上一版产物
+```
+
+脚本覆盖完整流程：环境预检 → 服务器侦察 → 变更评估（新迁移与环境变量变化会停下确认）→ 本地构建打包（独立 worktree，不影响当前工作区）→ 备份数据库 → 上传并校验产物 → 更新代码与依赖 → 停机执行迁移 → 原子替换并启动服务 → 冒烟验证。「开始部署」与「即将停机」两处需要人工确认；中途失败不自动回滚，会按中断阶段打印恢复指引，修复后重跑即可。
+
+运行脚本需要：对生产服务器的 SSH 访问（`--key <私钥>` 或环境变量 `DEPLOY_SSH_KEY`），本机安装 Node.js、pnpm 与 mdBook。全部参数与各阶段闸门见脚本头部注释（`bash tools/deploy/deploy-prod.sh --help`）。
+
+生产运行需要 Node.js 服务端与 GreatSQL；上传照片的存储目录需要持久化。
 
 ## 参与开发
 
