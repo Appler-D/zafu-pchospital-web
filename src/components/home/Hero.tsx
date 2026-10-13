@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { heroActions, heroContent } from "@/config/home";
-import { revealIndex } from "@/lib/utils";
+import { cn, revealIndex } from "@/lib/utils";
+import type { PublicHomeAnalytics } from "@/types/contracts";
+
+import { HomePublicAnalytics } from "./HomePublicAnalytics";
 
 /**
  * Hero —— 首页首屏
@@ -13,8 +16,9 @@ import { revealIndex } from "@/lib/utils";
  * 行动按钮组与右侧读数面板。视觉规则全部来自设计系统，这里只负责拼装。
  */
 
-export function Hero() {
+export function Hero({ analytics }: { analytics?: PublicHomeAnalytics } = {}) {
   const { repair, docs } = heroActions;
+  const hasAnalytics = Boolean(analytics?.repairStats || analytics?.rankings);
 
   return (
     <section className="hero" id="hero" aria-labelledby="hero-title">
@@ -25,8 +29,8 @@ export function Hero() {
         {heroContent.meta}
       </span>
 
-      <Container className="hero__inner">
-        <div>
+      <Container className={cn("hero__inner", hasAnalytics && "hero__inner--public")}>
+        <div className="hero__identity">
           <p className="hero__tag">
             <i aria-hidden="true" />
             {heroContent.tag}
@@ -73,13 +77,16 @@ export function Hero() {
             </a>
           </div>
 
-          <DocReadout
-            title="内置文档仓库"
-            tag="DOCS"
-            index={3}
-            footnote="数值读取自站点内置的文档仓库清单，随仓库重新生成而更新。"
-          />
+          {!hasAnalytics ? (
+            <DocReadout
+              title="内置文档仓库"
+              tag="DOCS"
+              index={3}
+              footnote="数值读取自站点内置的文档仓库清单，随仓库重新生成而更新。"
+            />
+          ) : null}
         </div>
+        {analytics ? <HomePublicAnalytics data={analytics} /> : null}
       </Container>
     </section>
   );

@@ -325,6 +325,8 @@ async function prepareFixtures(): Promise<void> {
     const inProfiles = { in: profileIds };
     const inUsers = { in: userIds };
 
+    // #115 的设置保存会写审计；先清理本文件操作者的审计，避免 actor_user_id 外键阻止删账号。
+    await db.auditLog.deleteMany({ where: { actorUserId: inUsers } });
     await db.notification.deleteMany({
       where: {
         OR: [{ recipientMemberProfileId: inProfiles }, { actorMemberProfileId: inProfiles }],

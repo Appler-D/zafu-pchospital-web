@@ -207,6 +207,8 @@ test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内�
   assert.match(pending, /0 台/);
   assert.match(pending, /1.5 小时/);
   assert.match(pending, /本学期排行待配置/);
+  assert.equal((pending.match(/class="home-analytics__table"/g) ?? []).length, 2);
+  assert.equal((pending.match(/<caption>/g) ?? []).length, 2);
   assert.doesNotMatch(pending, /暂无上榜记录/);
   assert.match(
     render({ repairStats: null, rankings: { status: "AVAILABLE", items: [] } }),
@@ -223,4 +225,30 @@ test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内�
   assert.match(enabled, /第 1 名/);
   assert.match(enabled, /2 次/);
   assert.doesNotMatch(enabled, /累计服务设备/);
+});
+
+test("首页公开数据位于 Hero 内；全关时保留文档面板，不重复渲染统计", async () => {
+  // Icon 的图形在模块加载时创建，须在测试的 React 全局初始化之后加载 Hero。
+  const { Hero } = await import("../../src/components/home/Hero");
+  const visible: PublicHomeAnalytics = {
+    repairStats: { totalApprovedCount: 7 },
+    rankings: {
+      status: "AVAILABLE",
+      items: [
+        { rank: 1, displayName: "成员", approvedCount: 2 },
+        { rank: 1, displayName: "成员", approvedCount: 2 },
+      ],
+    },
+  };
+  const html = renderToStaticMarkup(React.createElement(Hero, { analytics: visible }));
+  assert.match(html, /class="shell hero__inner hero__inner--public"/);
+  assert.match(html, /id="hero"[\s\S]*id="public-statistics"/);
+  assert.equal((html.match(/id="public-statistics"/g) ?? []).length, 1);
+  assert.equal((html.match(/第 1 名 · 成员/g) ?? []).length, 2, "并列和同名不得丢行");
+  assert.doesNotMatch(html, /内置文档仓库/);
+  const hidden = renderToStaticMarkup(
+    React.createElement(Hero, { analytics: { repairStats: null, rankings: null } }),
+  );
+  assert.doesNotMatch(hidden, /public-statistics|hero__inner--public/);
+  assert.match(hidden, /内置文档仓库/);
 });

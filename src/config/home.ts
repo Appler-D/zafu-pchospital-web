@@ -61,8 +61,6 @@ export const homeActivityPreview = {
 } as const;
 
 export const homePublicAnalytics = {
-  index: "DATA",
-  label: "Public statistics",
   title: "维修服务数据",
   statsTitle: "维修统计",
   statsTag: "REPAIRS",
@@ -73,11 +71,13 @@ export const homePublicAnalytics = {
   durationUnit: "小时",
   unconfigured: "待配置",
   rankingTitle: "本学期维修排行",
+  rankingTag: "TOP 3",
   rankingUnconfigured: "本学期排行待配置。",
   rankingEmpty: "本学期暂无上榜记录。",
   rankLabel: "第 {rank} 名",
   rankingCount: "{count} 次",
   note: "仅统计已审核通过、未删除的维修记录；每条维修记录按一次计入总量。",
+  rankingNote: "按本学期审核通过的维修次数排序。",
 } as const;
 
 export const aboutContent = {

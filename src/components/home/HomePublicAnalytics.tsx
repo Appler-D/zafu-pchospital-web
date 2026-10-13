@@ -1,15 +1,56 @@
 import { Card } from "@/components/ui/Card";
-import { Readout, type ReadoutRow } from "@/components/ui/Readout";
 import { Section } from "@/components/ui/Section";
-import { SectionHead } from "@/components/ui/SectionHead";
-import { SectionTitle } from "@/components/ui/SectionTitle";
 import { homePublicAnalytics as copy } from "@/config/home";
 import type { PublicHomeAnalytics } from "@/types/contracts";
+
+type AnalyticsRow = { label: string; value: string; accent?: boolean };
+
+/** 两张表共用标题、行结构和数值对齐；不改变公共 UI 组件 API。 */
+function AnalyticsTable({
+  title,
+  tag,
+  rows,
+  message,
+}: {
+  title: string;
+  tag: string;
+  rows: AnalyticsRow[];
+  message?: string;
+}) {
+  return (
+    <Card className="home-analytics__panel">
+      <table className="home-analytics__table">
+        <caption>
+          <span className="home-analytics__caption">
+            <span>{title}</span>
+            <span className="home-analytics__tag">{tag}</span>
+          </span>
+        </caption>
+        <tbody>
+          {message ? (
+            <tr>
+              <td colSpan={2} className="home-analytics__empty">
+                {message}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={index}>
+                <th scope="row">{row.label}</th>
+                <td className={row.accent ? "is-accent" : undefined}>{row.value}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
 
 /** 只接收已按公开策略裁剪的 DTO，不接收内部排行或管理员设置。 */
 export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
   if (!data.repairStats && !data.rankings) return null;
-  const rows: ReadoutRow[] = [];
+  const rows: AnalyticsRow[] = [];
   if (data.repairStats) {
     rows.push({
       label: copy.total,
@@ -34,40 +75,37 @@ export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
     }
   }
   return (
-    <Section id="public-statistics" labelledBy="home-statistics-title">
-      <SectionHead index={copy.index} label={copy.label} />
-      <div className="sec-titlebar">
-        <SectionTitle id="home-statistics-title">{copy.title}</SectionTitle>
-      </div>
-      <div className="gap-s-5 grid lg:grid-cols-2">
-        {data.repairStats ? (
-          <Readout title={copy.statsTitle} tag={copy.statsTag} rows={rows} footnote={copy.note} />
-        ) : null}
-        {data.rankings ? (
-          <Card>
-            <h3 className="mb-s-4">{copy.rankingTitle}</h3>
-            {data.rankings.status === "UNCONFIGURED" ? (
-              <p className="muted">{copy.rankingUnconfigured}</p>
-            ) : data.rankings.items.length === 0 ? (
-              <p className="muted">{copy.rankingEmpty}</p>
-            ) : (
-              <ol className="ranking-list">
-                {data.rankings.items.map((item, index) => (
-                  <li className="gap-s-3 border-line py-s-3 flex items-center border-b" key={index}>
-                    <span className="ranking-row__rank">
-                      {copy.rankLabel.replace("{rank}", String(item.rank))}
-                    </span>
-                    <span className="ranking-row__name flex-1">{item.displayName}</span>
-                    <span className="ranking-row__value">
-                      {copy.rankingCount.replace("{count}", String(item.approvedCount))}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Card>
-        ) : null}
-      </div>
+    <Section
+      id="public-statistics"
+      labelledBy="home-statistics-title"
+      variant="plain"
+      contained={false}
+      className="home-analytics"
+    >
+      <h2 id="home-statistics-title" className="sr-only">
+        {copy.title}
+      </h2>
+      {data.repairStats ? (
+        <AnalyticsTable title={copy.statsTitle} tag={copy.statsTag} rows={rows} />
+      ) : null}
+      {data.rankings ? (
+        <AnalyticsTable
+          title={copy.rankingTitle}
+          tag={copy.rankingTag}
+          rows={data.rankings.items.map((item) => ({
+            label: `${copy.rankLabel.replace("{rank}", String(item.rank))} · ${item.displayName}`,
+            value: copy.rankingCount.replace("{count}", String(item.approvedCount)),
+          }))}
+          message={
+            data.rankings.status === "UNCONFIGURED"
+              ? copy.rankingUnconfigured
+              : data.rankings.items.length === 0
+                ? copy.rankingEmpty
+                : undefined
+          }
+        />
+      ) : null}
+      <p className="home-analytics__note">{data.repairStats ? copy.note : copy.rankingNote}</p>
     </Section>
   );
 }
