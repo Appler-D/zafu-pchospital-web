@@ -152,6 +152,12 @@ export const memberRepairActivitiesCopy = {
     servedEmpty: "本场还没有已接待的客户。",
     fillRepair: "填写维修记录",
     recordMissing: "维修单状态未知，请刷新后再看。",
+    /** 「出勤成员」入口与弹层（issue #107）：仅活动管理员可见的只读名单。 */
+    attendanceEntry: "出勤成员 {count} 人",
+    attendanceTitle: "出勤成员",
+    attendanceEmpty: "本场还没有成员出勤。",
+    attendanceCheckedInAt: "{time} 签到",
+    attendanceNote: "按签到时间升序。",
     /**
      * 全局接单拦截（issue #79 第 6 项）：存在未提交的接待草稿时不能接单，
      * 客户端先行拦截（不发请求），服务端以 `ACTIVITY_SERVE_DRAFT_PENDING` 兜底。

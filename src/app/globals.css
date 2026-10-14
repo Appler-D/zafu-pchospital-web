@@ -7797,6 +7797,44 @@ html[data-theme="black-yellow"] {
   align-items: center;
   gap: var(--s-3);
 }
+/* 「出勤成员」入口（issue #107）：工具栏尾部靠右；窄屏换行后仍贴右。 */
+.activity-board__attendance-entry {
+  margin-inline-start: auto;
+}
+/* 出勤成员弹层名单（issue #107）：只读；桌面两列，人多由弹窗正文内部滚动，
+   页面高度与三栏布局都不随人数变化。 */
+.activity-board__attendance-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--s-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 760px) {
+  .activity-board__attendance-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.activity-board__attendance-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding-block: var(--s-2);
+  border-bottom: 1px dashed var(--line-soft);
+}
+.activity-board__attendance-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.activity-board__attendance-time {
+  flex: none;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+}
 /* 常驻错误区域：反馈原地替换，长错误可滚动，不挤动列表或确认按钮。 */
 .activity-board__feedback {
   block-size: 3lh;

@@ -10,3 +10,13 @@ export function formatShanghaiDateTime(iso: string): string {
     hour12: false,
   }).format(new Date(iso));
 }
+
+/** Asia/Shanghai 时间（时:分）展示，用于出勤成员名单。 */
+export function formatShanghaiTime(iso: string): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}

@@ -34,6 +34,9 @@ const dbTest = enabled ? test : test.skip;
  * issue #108 起签到 / 撤回收紧为 `activity:admin`（成员调路由 = 403），看板按
  * `canAdmin` 决定是否下发「待签到」并给出角色开关；本文件补上这两条的服务端断言。
  *
+ * issue #107 起看板向管理员下发 `attendanceMembers`（出勤名单：排序 / 展示名回退 /
+ * 成员恒空数组），同样在本文件钉住。
+ *
  * 独立的 UUID 段 `e7900000-…` 与标题前缀 "REG79 " —— 清理一律按这两者限定，
  * 绝不触碰库里已有的活动与报名（那是开发者/生产同源的开发数据）。
  */
@@ -51,6 +54,9 @@ const ABSENT_STAFF_PROFILE_ID = "e7900000-0000-4000-8000-000000000007";
 /** 未标记出勤的管理员（签到 / 撤回收紧为 activity:admin 后的出勤 403 用例用）。 */
 const ABSENT_ADMIN_USER_ID = "e7900000-0000-4000-8000-000000000008";
 const ABSENT_ADMIN_PROFILE_ID = "e7900000-0000-4000-8000-000000000009";
+/** 出勤名单用例：签到时间早于接待员的第二位出勤成员（issue #107 排序 / 名字解析用）。 */
+const EARLY_USER_ID = "e7900000-0000-4000-8000-000000000010";
+const EARLY_PROFILE_ID = "e7900000-0000-4000-8000-000000000011";
 
 /** 失败信封里的错误码（`apiFailure` 的 `error.code`）。 */
 function errorCodeOf(json: Record<string, unknown>): string | undefined {
@@ -109,9 +115,13 @@ async function cleanupFixtures(): Promise<void> {
       where: { targetType: "RepairActivityAttendance", targetId: { in: attendanceIds } },
     });
   }
-  // 接待台动作的审计以活动为 target，直接按 actor 兜底清一次（三位接待账号）。
+  // 接待台动作的审计以活动为 target，直接按 actor 兜底清一次（四位接待账号）。
   await db.auditLog.deleteMany({
-    where: { actorUserId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
+    where: {
+      actorUserId: {
+        in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID, EARLY_USER_ID],
+      },
+    },
   });
 
   await db.repairActivityRegistration.deleteMany({ where: { activityId: { in: activityIds } } });
@@ -123,7 +133,11 @@ async function cleanupFixtures(): Promise<void> {
   }
   await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });
   await db.memberProfile.deleteMany({
-    where: { id: { in: [STAFF_PROFILE_ID, ABSENT_STAFF_PROFILE_ID, ABSENT_ADMIN_PROFILE_ID] } },
+    where: {
+      id: {
+        in: [STAFF_PROFILE_ID, ABSENT_STAFF_PROFILE_ID, ABSENT_ADMIN_PROFILE_ID, EARLY_PROFILE_ID],
+      },
+    },
   });
   await db.authSession.deleteMany({
     where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
@@ -135,7 +149,9 @@ async function cleanupFixtures(): Promise<void> {
     where: { userId: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
   });
   await db.user.deleteMany({
-    where: { id: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID] } },
+    where: {
+      id: { in: [STAFF_USER_ID, ABSENT_STAFF_USER_ID, ABSENT_ADMIN_USER_ID, EARLY_USER_ID] },
+    },
   });
 }
 
@@ -727,6 +743,91 @@ dbTest("看板按角色下发：canAdmin 决定待签到与写权限，成员签
   });
   assert.equal(saved.status, "REGISTERED");
   assert.equal(saved.checkedInAt, null);
+});
+
+dbTest("出勤成员名单：管理员按签到时间升序拿到展示名，成员不下发（issue #107）", async () => {
+  const db = getDb();
+  const now = new Date();
+  // 第二位出勤成员：昵称优先于实名的解析路径；档案刻意置为 REVOKED ——
+  // 名单口径是「出勤记录」而非「当前有效成员」，与管理端 `attendedCount` 计数一致
+  // （数据行保留，界面据此还原历史场次）。
+  await db.user.create({
+    data: {
+      id: EARLY_USER_ID,
+      status: "ACTIVE",
+      displayName: "REG79 早到账号名",
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await db.memberProfile.create({
+    data: {
+      id: EARLY_PROFILE_ID,
+      userId: EARLY_USER_ID,
+      realName: "REG79 早到实名",
+      nickname: "REG79 早到昵称",
+      status: "REVOKED",
+      joinedAt: now,
+      createdAt: now,
+    },
+  });
+  await db.repairActivityAttendance.create({
+    data: {
+      id: randomUUID(),
+      activityId: ACTIVITY_ID,
+      memberProfileId: EARLY_PROFILE_ID,
+      checkedInAt: new Date(now.getTime() - 2 * 60 * 60 * 1000),
+    },
+  });
+
+  // 服务层：早到成员在前；名字走 `nickname → realName` 回退链（昵称存在时压过实名，
+  // 账号 displayName 永不外泄）；行形状钉死为三键，不带任何身份字段。
+  const board = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  assert.deepEqual(
+    board.attendanceMembers.map((row) => row.name),
+    ["REG79 早到昵称", "REG79 接待员"],
+  );
+  assert.equal(board.attendanceMembers[0].memberProfileId, EARLY_PROFILE_ID);
+  assert.ok(
+    board.attendanceMembers[0].checkedInAt < board.attendanceMembers[1].checkedInAt,
+    "ISO 字符串应可直接字典序比较（同为 UTC Z 格式）",
+  );
+  assert.deepEqual(Object.keys(board.attendanceMembers[0]).sort(), [
+    "checkedInAt",
+    "memberProfileId",
+    "name",
+  ]);
+  assert.equal(JSON.stringify(board).includes("REG79 早到账号名"), false);
+
+  // 路由层：管理员信封带回同一名单；成员（activity:staff）读到空数组。
+  const adminRoute = await callRoute(
+    GET_BOARD,
+    `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/board`,
+    { params: { id: ACTIVITY_ID }, headers: { cookie: staffCookie } },
+  );
+  assert.equal(adminRoute.status, 200, JSON.stringify(adminRoute.json));
+  const adminData = adminRoute.json.data as {
+    attendanceMembers: Array<{ memberProfileId: string; name: string; checkedInAt: string }>;
+  };
+  assert.deepEqual(
+    adminData.attendanceMembers.map((row) => row.name),
+    ["REG79 早到昵称", "REG79 接待员"],
+  );
+  const memberRoute = await callRoute(
+    GET_BOARD,
+    `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/board`,
+    { params: { id: ACTIVITY_ID }, headers: { cookie: absentCookie } },
+  );
+  assert.equal(memberRoute.status, 200, JSON.stringify(memberRoute.json));
+  assert.deepEqual(
+    (memberRoute.json.data as { attendanceMembers: unknown[] }).attendanceMembers,
+    [],
+  );
+  const memberActor = { ...staffActor, permissions: permissionsForRoles(["MEMBER"]) };
+  assert.deepEqual(
+    (await repairActivityStaffService.getBoard(ACTIVITY_ID, memberActor)).attendanceMembers,
+    [],
+  );
 });
 
 dbTest("签到入队成功：状态与 checkedInAt 落库，签到审计记录本次 registrationIds", async () => {
