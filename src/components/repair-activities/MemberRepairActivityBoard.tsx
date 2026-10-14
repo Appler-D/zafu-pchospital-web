@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
@@ -20,6 +21,7 @@ import { RegistrationPhone } from "@/components/repair-activities/RegistrationPh
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Icon } from "@/components/ui/Icon";
 import { repairStatusLabels } from "@/config/repairs";
 import { memberRepairActivitiesCopy, repairActivitiesPage } from "@/config/repair-activities";
 import {
@@ -37,6 +39,27 @@ type Props = { activityId: string };
 
 /** 手机端一次只展示一个分区（<1100px；宽屏由 CSS 显示全部并排栏）。 */
 type MobilePane = "eligible" | "queue" | "served";
+
+/**
+ * 页面级错误提示（改版第二轮·方案 A，用户看过低保真预览后选定）：
+ * 固定视口顶部的浮条（Portal 到 body，与成功提示同款外观与位置；z-index 高于移动端顶栏与
+ * 详情窗口）。不自动消失，被下一次操作清掉 / 覆盖 —— 与原先内联错误带的持久性一致。
+ * 关键差异：不参与布局。原来工具行与卡片之间需要一条常驻预留带（3lh→2lh 后仍有 45.5px
+ * 空白，用户反馈「还是过大」），浮条让那段间距只剩网格间距，卡片真正紧贴。
+ * 管理员与成员共用本组件，两个视角一起生效。
+ */
+function BoardAlert({ message }: { message: string }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="activity-board__alert">
+      <div className="card activity-board__alert-body" role="alert">
+        <Icon name="close" />
+        <p className="activity-board__alert-text">{message}</p>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 export function MemberRepairActivityBoard({ activityId }: Props) {
   const router = useRouter();
@@ -236,6 +259,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       setMessage(copy.selectNone);
       return;
     }
+    // 勾选达标、继续走确认弹窗：把「请先勾选…」浮条清掉，避免错误提示滞留。
+    setMessage("");
     setCheckInRows(rows);
     setIssueTypeDrafts(Object.fromEntries(rows.map((row) => [row.id, row.issueType])));
     setCheckInError("");
@@ -363,16 +388,36 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     });
   }
 
+  /**
+   * 页头（issue #107 后续改版）：小标签 + 活动名主标题 + 日期行。
+   * 活动名来自看板数据，加载中就绪前先用「活动工作台」占位。
+   */
+  function renderHead(title: string, meta?: string) {
+    return (
+      <header className="member-page-head activity-board__head">
+        <p className="member-section__tag">{copy.label}</p>
+        <h1 className="sec-title" id="member-activity-board-title">
+          {title}
+        </h1>
+        {meta ? <p className="activity-board__meta">{meta}</p> : null}
+      </header>
+    );
+  }
+
   if (state === "loading") {
     return (
-      <div className="activity-board activity-board--loading" role="status">
-        <p className="muted">{copy.loading}</p>
+      <div className="activity-board activity-board--loading">
+        {renderHead(copy.title)}
+        <p className="muted" role="status">
+          {copy.loading}
+        </p>
       </div>
     );
   }
   if (state === "error" || !board) {
     return (
       <div className="activity-board">
+        {renderHead(copy.title)}
         <p className="admin-status admin-status--error" role="alert">
           {message || copy.loadFailed}
         </p>
@@ -406,6 +451,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
   return (
     <div ref={boardElement} className="activity-board content-start">
+      {renderHead(board.activity.title, formatShanghaiDateTime(board.activity.activityAt))}
       <div className="activity-board__toolbar">
         <Button href="/member/repair-activities" variant="ghost">
           {copy.back}
@@ -447,10 +493,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           </p>
         </Card>
       ) : null}
-      <p className="admin-status activity-board__feedback" role="alert">
-        {message}
-      </p>
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
+      {/* 页面级错误 = 浮动提示（方案 A）：不占布局，工具行与卡片之间只剩网格间距。 */}
+      {message ? <BoardAlert message={message} /> : null}
 
       {/* 手机端分区切换（issue #108 审查稿·分段滑块）：窄屏一次只显示一个分区、切换行吸顶；
           宽屏由 CSS 隐藏，恢复并排栏。计数实时来自看板数据、放在段内（等宽段不因数字变化位移）。 */}
@@ -486,7 +531,10 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             }`}
           >
             <header className="activity-board__pane-head">
-              <h2>{copy.eligibleTitle}</h2>
+              <h2>
+                {copy.eligibleTitle}
+                <span className="activity-board__pane-count">{board.eligible.length}</span>
+              </h2>
               <span className="member-section__tag">{copy.eligibleTag}</span>
             </header>
             {board.eligible.length === 0 ? (
@@ -508,7 +556,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                         <label htmlFor={`registration-${row.id}`}>
                           <strong>{row.name}</strong>
                         </label>
-                        <span className="muted">
+                        <span className="activity-board__check-meta">
                           {" "}
                           ·{" "}
                           <RegistrationPhone
@@ -547,7 +595,12 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           }`}
         >
           <header className="activity-board__pane-head">
-            <h2>{copy.queueTitle}</h2>
+            <h2>
+              {copy.queueTitle}
+              <span className="activity-board__pane-count activity-board__pane-count--queue">
+                {board.queue.length}
+              </span>
+            </h2>
             <span className="member-section__tag">{copy.queueTag}</span>
           </header>
           {board.queue.length === 0 ? (
@@ -558,6 +611,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <ul className="activity-board__list">
               {board.queue.map((row, index) => (
                 <li key={row.id} className="activity-board__row activity-board__row--queue">
+                  {/* 三区（改版）：姓名信息区（位次 + 姓名 + 联系方式）→ 故障详情区
+                      （故障类型 / 入队时间 / 机型 分行）→ 操作区沉底（不再与正文抢宽）。 */}
                   <div className="activity-board__queue-main">
                     {/* 队列位次：按当前渲染顺序从 1 开始（服务端已按签到时间升序）。 */}
                     <span className="activity-board__queue-rank">
@@ -565,24 +620,33 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     </span>
                     <div>
                       <strong>{row.name}</strong>
-                      <div className="muted">
-                        {copy.phone} {row.phoneMasked} · {copy.issueType} {row.issueTypeLabel}
+                      <div className="activity-board__queue-line">
+                        <span className="activity-board__queue-label">{copy.phone}</span>
+                        <span className="activity-board__queue-value">{row.phoneMasked}</span>
                       </div>
-                      {row.deviceModel ? (
-                        <div className="muted">
-                          {copy.deviceModel} {row.deviceModel}
+                      <div className="activity-board__queue-line">
+                        <span className="activity-board__queue-label">{copy.issueType}</span>
+                        <span className="activity-board__queue-value">{row.issueTypeLabel}</span>
+                      </div>
+                      {row.checkedInAt ? (
+                        <div className="activity-board__queue-line">
+                          <span className="activity-board__queue-label">{copy.checkedInAt}</span>
+                          <span className="activity-board__queue-value">
+                            {formatShanghaiDateTime(row.checkedInAt)}
+                          </span>
                         </div>
                       ) : null}
-                      {row.checkedInAt ? (
-                        <div className="muted">
-                          {copy.checkedInAt} {formatShanghaiDateTime(row.checkedInAt)}
+                      {row.deviceModel ? (
+                        <div className="activity-board__queue-line">
+                          <span className="activity-board__queue-label">{copy.deviceModel}</span>
+                          <span className="activity-board__queue-value">{row.deviceModel}</span>
                         </div>
                       ) : null}
                     </div>
                   </div>
-                  <div className="activity-board__row-actions">
-                    {/* 接待=描边主行动（issue #108 审查稿）：细蓝描边 + 右向箭头，悬停填充实心；
-                        比原实心大块轻，队列一屏多行不吵。 */}
+                  <div className="activity-board__row-actions activity-board__row-actions--foot">
+                    {/* 接待=描边主行动（issue #108 审查稿，改版后保留）：细蓝描边 + 右向箭头，
+                        悬停填充实心；比原实心大块轻，队列一屏多行不吵。 */}
                     <Button
                       className="activity-board__serve-btn"
                       trailingIcon="arrowRight"
@@ -620,7 +684,10 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           }`}
         >
           <header className="activity-board__pane-head">
-            <h2>{copy.servedTitle}</h2>
+            <h2>
+              {copy.servedTitle}
+              <span className="activity-board__pane-count">{board.served.length}</span>
+            </h2>
             <span className="member-section__tag">{copy.servedTag}</span>
           </header>
           {board.served.length === 0 ? (
@@ -637,8 +704,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                         {row.recordStatus ? (
                           <span className="admin-tag">{repairStatusLabels[row.recordStatus]}</span>
                         ) : null}
-                        <div className="muted">
-                          {copy.phone}{" "}
+                        <div className="activity-board__queue-line">
+                          <span className="activity-board__queue-label">{copy.phone}</span>
                           <RegistrationPhone
                             key={`${activityId}:${row.id}:${row.phoneMasked}`}
                             activityId={activityId}
@@ -660,7 +727,10 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                           {copy.fillRepair}
                         </Button>
                       ) : (
-                        <Button variant="ghost" href={`/member/repairs/${recordId}`}>
+                        <Button
+                          className="activity-board__view-btn"
+                          href={`/member/repairs/${recordId}`}
+                        >
                           {copy.viewRepair}
                         </Button>
                       )}
