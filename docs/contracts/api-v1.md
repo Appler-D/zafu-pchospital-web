@@ -277,7 +277,7 @@ DELETE /api/v1/member/notifications/:id
 | `POST /api/v1/admin/members/batch`                  | `member:manage`           | `{memberIds, enabled}`，单次上限 50；**允许部分成功**，`failed` 带稳定错误码                                                                                                                                                                                                                                                                                                                                     |
 | `POST /api/v1/admin/members/move`                   | `member:manage`           | `{memberIds: string[], beforeId: string \| null}`：把这几行（1–50，保持内部先后）整体拖到 `beforeId` 之前（`null` = 末尾）；整份重排写成稠密 `sortOrder`，落点没变则幂等（`moved: false`）且不写审计；任一位成员不存在 404 `RESOURCE_NOT_FOUND`                                                                                                                                                                  |
 | `GET /api/v1/admin/members/:id/stats`               | `analytics:read_internal` | M5 个人统计口径的管理端入口；**已禁用成员的历史统计也可查**                                                                                                                                                                                                                                                                                                                                                      |
-| `GET /api/v1/admin/repairs`                         | `repair:read`             | 管理端维修列表：`page`/`pageSize`/`query`/`memberId`/`categoryId`/`status`/`result`/`repairDateFrom`/`repairDateTo`/`isDifficult`/`isTypical`/`sort`；`sort` 白名单：`repairDate`/`durationMinutes`/`status`/`result`/`memberName`/`categoryName`/`createdAt` —— 关联列按**名字**排（按 UUID 排没有意义）；导出**不读** `sort`，顺序固定                                                                         |
+| `GET /api/v1/admin/repairs`                         | `repair:read`             | 管理端维修列表：`page`/`pageSize`/`query`/`memberId`/`categoryId`/`status`/`result`/`repairDateFrom`/`repairDateTo`/`isDifficult`/`isTypical`/`flagged`/`sort`；`sort` 白名单：`repairDate`/`durationMinutes`/`status`/`result`/`memberName`/`categoryName`/`createdAt` —— 关联列按**名字**排（按 UUID 排没有意义）；`flagged=any`（典型案例 ∪ 疑难案例，issue #134）由成员案例库传入，管理端不传；导出**不读** `sort`，顺序固定                                                                         |
 | `PATCH /api/v1/admin/repairs/:id`                   | `repair:review`           | 修改异常数据：草稿字段 + `version` + **必填 `reason`**；**不改审核状态**                                                                                                                                                                                                                                                                                                                                         |
 | `DELETE /api/v1/admin/repairs/:id`                  | `repair:delete`           | 软删除违规记录：`{reason}` 必填，复用 M2 `repairService.softDelete`                                                                                                                                                                                                                                                                                                                                              |
 | `POST /api/v1/admin/repairs/batch-reviews`          | `repair:review`           | `{recordIds, decision, note?, idempotencyKey}`，单次上限 50；逐条复用单条审核，允许部分成功                                                                                                                                                                                                                                                                                                                      |
@@ -441,12 +441,12 @@ DELETE /api/v1/member/notifications/:id
   `REPAIR_PHOTO_TOO_LARGE`，消息带文件名与实际体积（`「xx.jpg」12.4 MB，超过单张 10 MB 的上限`）。
   `maxBytes` 是**单张**上限，不是本次合计。
 
-### 成员案例库（前端页面，无新接口）
+### 成员案例库准入规则（issue #134，前端页面，无新接口）
 
 `/member/cases` 取数复用 `GET /api/v1/repairs` 的既有筛选
-（`status=APPROVED` + `isTypical` / `isDifficult` / `categoryId` / `query` + 分页），
-不单开接口 —— 普通成员本来就能看到他人的 `APPROVED` 记录，案例库只是换一种读法：
-只读、无状态动作、每页 12 条。分页沿用 `.repair-pagination` 的上一页 / 下一页。
+（`status=APPROVED` + `categoryId` / `query` + 分页），不单开接口 —— 普通成员本来就能看到他人的 `APPROVED` 记录，案例库只是换一种读法：只读、无状态动作、每页 12 条。分页沿用 `.repair-pagination` 的上一页 / 下一页。
+
+准入口径（issue #134）：案例库只收录**被标记**的已通过记录。「全部已标记」档传 `flagged=any` —— 列表新增参数，白名单仅 `any` 一个取值（空值不过滤、非法值 400 `VALIDATION_FAILED`），语义为「`isTypical` 或 `isDifficult` 之一」的**并集**，单条记录维度过滤（双标不重复）。`isTypical` / `isDifficult` 两个既有参数保持平铺 AND 语义不变（都传 = 要求两条都标），「典型案例」「疑难案例」两个单标记档继续沿用。管理端列表与导出不传 `flagged`，行为零变化。
 
 ### 只在客户端表达、不改接口的两项
 

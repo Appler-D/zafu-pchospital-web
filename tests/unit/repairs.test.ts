@@ -18,7 +18,7 @@ import {
   RepairTimelineEventType,
   type RepairDraftFields,
 } from "../../src/types/contracts";
-import { draftInput, parseRepairListStatus } from "../../src/features/repairs/repair-http";
+import { draftInput, parseRepairListStatus, repairListInput } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
 
@@ -57,6 +57,51 @@ test("列表搜索词覆盖机主姓名（电话不参与搜索）", () => {
     clauses.every((clause) => !("ownerPhone" in clause)),
     "机主电话不得参与搜索",
   );
+});
+
+test("案例库准入（issue #134）：flagged=any 解析为 ANY，缺省不过滤，非法值 400", () => {
+  assert.equal(repairListInput(new URLSearchParams("flagged=any"), 1, 20).flagged, "ANY");
+  assert.equal(
+    repairListInput(new URLSearchParams(""), 1, 20).flagged,
+    undefined,
+    "缺省 = 不过滤，保持既有调用方兼容",
+  );
+  assert.throws(
+    () => repairListInput(new URLSearchParams("flagged=typical"), 1, 20),
+    (e) => e instanceof AppError && e.code === "VALIDATION_FAILED",
+    "白名单外取值必须 400，不能静默忽略",
+  );
+});
+
+test("案例库准入（issue #134）：flagged=ANY 注入「典型 ∪ 疑难」并集，且不顶掉关键词搜索", () => {
+  const actor = { userId: "u1", permissions: ["repair:read"] as const };
+  const where = listWhere({ page: 1, pageSize: 20, flagged: "ANY", query: "张三" }, actor);
+  // 并集条件必须走 AND 数组注入。注意 visibility 的 OR 也在 AND 里，要按标记键认准。
+  const and = where.AND as Array<Record<string, unknown>>;
+  const flagClause = and.find((clause) => {
+    const or = clause.OR as Array<Record<string, unknown>> | undefined;
+    return Array.isArray(or) && or.some((c) => "isTypical" in c || "isDifficult" in c);
+  });
+  assert.ok(flagClause, "flagged=ANY 必须在 AND 数组里注入并集条件");
+  assert.deepEqual(flagClause?.OR, [{ isTypical: true }, { isDifficult: true }]);
+  // 红线：顶层 OR（关键词搜索）不得被并集条件顶掉 —— Prisma 同一对象同名键后者覆盖前者
+  const search = where.OR as Array<Record<string, unknown>>;
+  assert.ok(
+    search.some((clause) => "ownerName" in clause),
+    "关键词搜索必须与 flagged 并存",
+  );
+  // 缺省 flagged 时 AND 里不得出现任何标记过滤（管理端 / 成员记录列表行为零变化）
+  const plain = listWhere({ page: 1, pageSize: 20 }, actor);
+  const plainAnd = plain.AND as Array<Record<string, unknown>>;
+  const plainHasFlag = plainAnd.some((clause) => {
+    const or = clause.OR as Array<Record<string, unknown>> | undefined;
+    return (
+      "isTypical" in clause ||
+      "isDifficult" in clause ||
+      (Array.isArray(or) && or.some((c) => "isTypical" in c || "isDifficult" in c))
+    );
+  });
+  assert.equal(plainHasFlag, false, "不传 flagged 不得注入标记过滤");
 });
 
 test("M2 公共枚举与错误码已冻结", () => {

@@ -19,6 +19,9 @@ export function repairListInput(
   page: number,
   pageSize: number,
 ): RepairListInput {
+  // 案例库准入（issue #134）：URL 值 "any" 过白名单后映射为契约值 "ANY"。
+  // 空值 = 不过滤（保持既有调用方兼容）；非法值由 oneOf 抛 400，与 status / result 同模式。
+  const flagged = oneOf(value(params, "flagged"), ["any"], "flagged");
   return {
     page,
     pageSize,
@@ -35,6 +38,7 @@ export function repairListInput(
     repairDateTo: value(params, "repairDateTo"),
     isDifficult: bool(value(params, "isDifficult"), "isDifficult"),
     isTypical: bool(value(params, "isTypical"), "isTypical"),
+    flagged: flagged === "any" ? "ANY" : undefined,
     query: value(params, "query"),
     // 与成员表同一形状：白名单 + 方向 + 去重 + 条数上限都在 `sortRules` 里，
     // 非法值一律 `VALIDATION_FAILED`，字段名不透传成列名。
