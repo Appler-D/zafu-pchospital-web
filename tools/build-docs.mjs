@@ -119,7 +119,11 @@ function toPosix(value) {
 }
 
 function localMarkdownPath(href) {
-  const clean = href.split(/[?#]/, 1)[0].trim();
+  // CommonMark 的尖括号目标是合法写法（`<path with spaces.md>`）：先剥壳再判空。
+  // 文档仓库用 `(<>)` 表示「待补充」占位（此前是 `()`，两者等价）：按无链接处理，
+  // 否则 `<>` 会被当成真实路径去找 `<>.html，导致整次构建失败。
+  const target = href.trim().replace(/^<(.*)>$/s, "$1").trim();
+  const clean = target.split(/[?#]/, 1)[0].trim();
   if (!clean || /^[a-z][a-z\d+.-]*:/i.test(clean) || clean.startsWith("//")) return null;
 
   const decoded = decodeURIComponent(clean);
