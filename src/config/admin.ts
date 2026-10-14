@@ -570,6 +570,7 @@ export const adminCopy = {
       activityAt: "活动时间",
       window: "报名窗口",
       capacity: "名额",
+      attendance: "出勤",
       status: "状态",
       actions: "操作",
     },
@@ -625,6 +626,8 @@ export const adminCopy = {
     registered: "已报 {count}",
     /** 行内名额主文案（R3）：已报 n / 上限 m */
     capacityLine: "已报 {registered} / 上限 {capacity}",
+    /** 行内出勤文案（issue #107）：n 人。左侧字段名 / 列表列头已是「出勤」，值里不再重复 */
+    attendanceLine: "{count} 人",
   },
   categories: {
     label: "Categories",
