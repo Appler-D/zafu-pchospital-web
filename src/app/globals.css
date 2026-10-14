@@ -3936,6 +3936,24 @@ html[data-theme="black-yellow"] {
     display: grid;
     gap: var(--s-4);
   }
+  /* 案例库紧凑页头（issue #134）：与 `.rankings-page__*` 同一紧凑尺度。
+     成员壳内不用官网式 PageHead —— 其 `.reveal` 元素在壳内不可见，只剩留白。 */
+  .cases-page__head {
+    display: grid;
+    gap: var(--s-2);
+  }
+  .cases-page__title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+  }
+  .cases-page__lead {
+    max-width: 68ch;
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    color: var(--ink-3);
+  }
   .community-block__head {
     display: flex;
     flex-wrap: wrap;

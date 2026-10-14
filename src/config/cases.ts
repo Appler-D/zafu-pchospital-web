@@ -12,12 +12,13 @@ import { communityCopy } from "@/config/community";
 export const casesCopy = {
   title: "案例库",
   label: "Case Library",
-  lead: "全站已通过的维修案例都收在这里。想找同类故障的处理办法，先按典型案例或疑难案例筛一遍。",
+  // 准入口径（issue #134）：只收录被标记的已通过记录，不再是「全部已通过」。
+  lead: "这里只收录被标记为典型案例或疑难案例的已通过维修记录。想找同类故障的处理办法，先按标记筛一遍。",
 
-  /** 三档范围筛选（issue 原文「典型案例还有别的选项」）。 */
+  /** 三档范围筛选（issue 原文「典型案例还有别的选项」；#134 起「全部」= 已标记并集）。 */
   scopeLabel: "案例范围",
   scope: {
-    all: "全部案例",
+    all: "全部已标记",
     typical: communityCopy.flags.typical,
     difficult: communityCopy.flags.difficult,
   },
@@ -37,9 +38,9 @@ export const casesCopy = {
   loading: "正在加载案例…",
   loadError: "案例加载失败，请稍后重试。",
   reload: "重新加载",
-  /** 筛选后无结果与案例库本身为空分开说：后者才说明全站还没有已通过的记录。 */
+  /** 筛选后无结果与案例库本身为空分开说：后者才说明全站没有被标记的已通过记录。 */
   emptyFiltered: "没有符合条件的案例，换个分类或关键词试试。",
-  empty: "案例库还是空的 —— 目前还没有已通过的维修记录。",
+  empty: "案例库还是空的 —— 目前还没有被标记为典型案例或疑难案例的维修记录。",
 
   /** 卡片字段缺失时的占位 */
   uncategorized: "未分类",

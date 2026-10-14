@@ -635,6 +635,13 @@ export type RepairListInput = PaginationInput & {
   repairDateTo?: string;
   isDifficult?: boolean;
   isTypical?: boolean;
+  /**
+   * 案例库准入（issue #134）：`"ANY"` 表示「被标记为典型案例或疑难案例之一」
+   * （并集）。与 `isTypical` / `isDifficult` 的关系：那两个是**平铺 AND** 语义
+   * （都传=要求两条都标），表达不了并集，故另立此字段。
+   * 缺省 = 不过滤；`RepairExportInput` 继承它但导出不传，行为零变化。
+   */
+  flagged?: "ANY";
   query?: string;
   /**
    * 排序规则。字段必须落在 `REPAIR_SORTABLE` 白名单内 ——

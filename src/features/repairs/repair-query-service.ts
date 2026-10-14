@@ -295,9 +295,16 @@ export function listWhere(
     ? {}
     : { OR: [{ memberProfile: { userId: actor.userId } }, { status: "APPROVED" }] };
   const query = input.query?.trim();
+  // 案例库准入（issue #134）：并集条件必须经 AND 数组注入 —— 返回值已有顶层 `OR`
+  // 承载关键词搜索，Prisma 同一对象内两个同名键后者覆盖前者，另开顶层 `OR`
+  // 会把关键词搜索静默顶掉。单条记录维度过滤，双标记录天然只命中一次。
+  const conditions: Prisma.RepairRecordWhereInput[] = [visibility];
+  if (input.flagged === "ANY") {
+    conditions.push({ OR: [{ isTypical: true }, { isDifficult: true }] });
+  }
   return {
     deletedAt: null,
-    AND: [visibility],
+    AND: conditions,
     // 「维修成员」筛选（issue #114）：按**参与过**匹配，不是只看创建人 ——
     // 管理端要能查出「某人参与过的全部记录」；创建人恒有参与行，旧口径被完全覆盖。
     participants: input.memberId ? { some: { memberProfileId: input.memberId } } : undefined,

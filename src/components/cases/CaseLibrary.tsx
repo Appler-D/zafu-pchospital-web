@@ -18,7 +18,11 @@ import type { PaginationMeta, RepairCategoryView, RepairView } from "@/types/con
  * 所以只保留「范围 / 分类 / 关键词」三个筛选项，卡片也不带任何状态动作。
  *
  * 取数复用 `GET /api/v1/repairs?status=APPROVED`（含 `isTypical` / `isDifficult` /
- * `categoryId` / `query` 与分页），不为它单开接口。
+ * `flagged` / `categoryId` / `query` 与分页），不为它单开接口。
+ *
+ * 准入规则（issue #134）：案例库只收录**被标记**的已通过记录 ——「全部」档传
+ * `flagged=any`（典型案例 ∪ 疑难案例，服务端并集），两个单标记档仍走既有的
+ * `isTypical` / `isDifficult` 参数，路径与语义不变。
  */
 
 type Scope = "ALL" | "TYPICAL" | "DIFFICULT";
@@ -53,6 +57,8 @@ export function CaseLibrary() {
         // 案例 = 已通过的维修记录；草稿 / 待审核 / 已退回不属于案例库。
         status: "APPROVED",
       });
+      // 「全部」档 = 被标记记录的并集（issue #134）；单标记档参数不变。
+      if (scope === "ALL") params.set("flagged", "any");
       if (scope === "TYPICAL") params.set("isTypical", "true");
       if (scope === "DIFFICULT") params.set("isDifficult", "true");
       if (categoryId) params.set("categoryId", categoryId);
@@ -113,6 +119,16 @@ export function CaseLibrary() {
 
   return (
     <div className="community-page">
+      {/* 紧凑页头（issue #134）：替代官网式 PageHead —— 那套在成员壳里因
+          `.reveal` 特异性问题整块不可见，只剩留白。结构与 /member/rankings 一致，
+          h1 的 id 由页面 section 的 aria-labelledby 引用。 */}
+      <header className="cases-page__head">
+        <h1 className="cases-page__title" id="member-cases-title">
+          {casesCopy.title}
+        </h1>
+        <p className="cases-page__lead">{casesCopy.lead}</p>
+      </header>
+
       <nav className="repair-quick-filters" aria-label={copy.scopeLabel}>
         {scopes.map((item) => (
           <Button
