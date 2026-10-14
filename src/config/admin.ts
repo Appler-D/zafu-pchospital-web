@@ -626,8 +626,8 @@ export const adminCopy = {
     registered: "已报 {count}",
     /** 行内名额主文案（R3）：已报 n / 上限 m */
     capacityLine: "已报 {registered} / 上限 {capacity}",
-    /** 行内出勤文案（issue #107）：出勤 n 人 */
-    attendanceLine: "出勤 {count} 人",
+    /** 行内出勤文案（issue #107）：n 人。左侧字段名 / 列表列头已是「出勤」，值里不再重复 */
+    attendanceLine: "{count} 人",
   },
   categories: {
     label: "Categories",

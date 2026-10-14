@@ -627,7 +627,8 @@ DELETE /api/v1/member/notifications/:id
   避免保存后列表刷新出旧值。
 - 公开视图（`RepairActivityPublicView`）与成员侧不受影响；`attendedCount` 仅存在于
   管理端视图 `RepairActivityAdminView`。
-- 界面：活动管理页表格「名额」列后新增「出勤」列，显示「出勤 N 人」，
+- 界面：活动管理页表格「名额」列后新增「出勤」列，列内显示「N 人」
+  （列头 / 手机卡片左侧字段名已是「出勤」，值里不再重复），
   文案在 `src/config/admin.ts` 的 `repairActivities.table.attendance` /
   `repairActivities.attendanceLine`。
 
