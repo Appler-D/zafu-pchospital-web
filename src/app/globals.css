@@ -7986,3 +7986,32 @@ html[data-theme="black-yellow"] {
   flex-wrap: wrap;
   gap: var(--s-2);
 }
+/* 队列处理按钮（issue #108 审查稿，观感优化）：
+   接待 = 描边主行动 —— 细蓝描边 + 蓝字，悬停由 .btn 基线填充为实心；
+   撤回 = 幽灵 + Undo 图标，悬停转危险色（含淡底色），与接待区分、防误触。 */
+.activity-board__serve-btn.btn {
+  border-color: var(--accent-line);
+  color: var(--accent);
+  padding: 0.6rem 1.15rem;
+}
+.activity-board__serve-btn.btn:hover,
+.activity-board__serve-btn.btn:focus-visible {
+  color: var(--accent-on);
+  border-color: var(--accent);
+}
+.activity-board__withdraw-btn.btn--ghost:hover,
+.activity-board__withdraw-btn.btn--ghost:focus-visible {
+  color: var(--status-danger);
+}
+.activity-board__withdraw-btn.btn--ghost::before {
+  background: var(--status-danger-wash);
+}
+/* 管理员三栏（≥1100px）按钮保持紧凑：三栏时每张卡片窄、行内 auto 列先取
+   按钮的 max-content 宽度，图标会和正文抢宽（实测 1280px 下正文列只剩个位数像素）。
+   此处只在管理员三栏隐藏图标、保留文字按钮；成员两栏与窄屏单栏宽度充裕，保留图标。 */
+@media (min-width: 1100px) {
+  .activity-board__panes--admin .activity-board__serve-btn.btn svg,
+  .activity-board__panes--admin .activity-board__withdraw-btn.btn svg {
+    display: none;
+  }
+}

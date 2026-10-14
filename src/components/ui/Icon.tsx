@@ -17,6 +17,8 @@ export type IconName =
   | "chevronDown"
   | "arrowDown"
   | "arrowUpRight"
+  | "arrowRight"
+  | "undo"
   | "fileText"
   | "github"
   | "eye"
@@ -120,6 +122,19 @@ const shapes: Record<IconName, ReactNode> = {
     <>
       <path d="M7 7h10v10" />
       <path d="M7 17 17 7" />
+    </>
+  ),
+  /* 活动工作台队列处理按钮（issue #108 审查稿）：接待=右向箭头，撤回=Undo（逆时针回转）。 */
+  arrowRight: (
+    <>
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
+    </>
+  ),
+  undo: (
+    <>
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
     </>
   ),
   fileText: (
