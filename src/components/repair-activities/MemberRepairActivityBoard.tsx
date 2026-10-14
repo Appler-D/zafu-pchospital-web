@@ -10,8 +10,12 @@ import {
   useState,
 } from "react";
 
+import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
-import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
+import {
+  formatShanghaiDateTime,
+  formatShanghaiTime,
+} from "@/components/repair-activities/activity-format";
 import { RegistrationPhone } from "@/components/repair-activities/RegistrationPhone";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -57,6 +61,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const request = useRef<{ background: boolean } | null>(null);
   /** 全局接单拦截弹层（issue #79 第 6 项）：点击「接待」命中未完成草稿时出现，不发请求。 */
   const [pendingNotice, setPendingNotice] = useState<StaffServeDraft | null>(null);
+  /** 出勤成员弹层（issue #107）：仅活动管理员，只读名单。 */
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
   /**
    * 手机端分区切换（issue #108 审查稿）：<1100px 一次只展示一个分区。
    * 首次加载后落定默认分区（管理员优先「待签到」，成员固定「排队中」），
@@ -64,7 +70,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
    */
   const [mobilePane, setMobilePane] = useState<MobilePane | null>(null);
   const paused =
-    busy !== null || checkInConfirmOpen || withdrawTarget !== null || pendingNotice !== null;
+    busy !== null ||
+    checkInConfirmOpen ||
+    withdrawTarget !== null ||
+    pendingNotice !== null ||
+    attendanceOpen;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
@@ -412,6 +422,18 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             {busy === "attend" ? copy.attending : copy.attendCta}
           </Button>
         )}
+        {/* 出勤成员入口（issue #107）：仅活动管理员可见，人数实时取自看板数据。
+            放在工具栏尾部靠右（CSS 的 auto 外边距），不与返回 / 出勤按钮抢行。 */}
+        {board.canAdmin ? (
+          <Button
+            className="activity-board__attendance-entry"
+            variant="ghost"
+            trailingIcon="chevronRight"
+            onClick={() => setAttendanceOpen(true)}
+          >
+            {copy.attendanceEntry.replace("{count}", String(board.attendanceMembers.length))}
+          </Button>
+        ) : null}
       </div>
 
       {!staffOpen || !board.attended ? (
@@ -742,6 +764,35 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
               .replace("{activity}", pendingNotice.activityTitle)}
           </p>
         </ConfirmDialog>
+      ) : null}
+
+      {/* 出勤成员名单（issue #107）：只读弹层，沿用后台详情窗口；桌面两列、
+          人多时由弹窗正文内部滚动，页面高度不随之变化。 */}
+      {attendanceOpen ? (
+        <AdminModal
+          title={copy.attendanceTitle}
+          subtitle={`${board.activity.title} · ${formatShanghaiDateTime(board.activity.activityAt)}`}
+          onClose={() => setAttendanceOpen(false)}
+        >
+          {board.attendanceMembers.length === 0 ? (
+            <p className="muted m-0">{copy.attendanceEmpty}</p>
+          ) : (
+            <ul className="activity-board__attendance-list">
+              {board.attendanceMembers.map((row) => (
+                <li key={row.memberProfileId} className="activity-board__attendance-row">
+                  <span className="activity-board__attendance-name">{row.name}</span>
+                  <span className="activity-board__attendance-time">
+                    {copy.attendanceCheckedInAt.replace(
+                      "{time}",
+                      formatShanghaiTime(row.checkedInAt),
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="admin-note">{copy.attendanceNote}</p>
+        </AdminModal>
       ) : null}
     </div>
   );

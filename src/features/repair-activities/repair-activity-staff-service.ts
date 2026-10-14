@@ -20,6 +20,7 @@ import {
   validateCheckInIssueTypeUpdates,
   type StaffCheckInIssueTypeUpdate,
 } from "@/features/repair-activities/repair-activity-validation";
+import { resolveDisplayName } from "@/features/analytics/analytics-policy";
 import { createServeDraftForActivity } from "@/features/repairs/repair-service";
 import { repairRepository } from "@/features/repairs/repair-repository";
 import { AppError } from "@/lib/api/errors";
@@ -70,6 +71,16 @@ export type StaffServeDraft = {
   activityTitle: string;
 };
 
+/**
+ * 出勤成员条目（issue #107）：只下发展示名与签到时间，
+ * 不含 QQ、手机号、学号等身份字段。
+ */
+export type StaffAttendanceMemberView = {
+  memberProfileId: string;
+  name: string;
+  checkedInAt: string;
+};
+
 export type StaffBoardView = {
   activity: StaffActivityListItem;
   attended: boolean;
@@ -79,6 +90,11 @@ export type StaffBoardView = {
    * 决定「待签到」区与「撤回」按钮的可见性；签到 / 撤回接口同样只对管理员开放。
    */
   canAdmin: boolean;
+  /**
+   * 本场出勤成员（按签到时间升序，issue #107）。仅对管理员下发，
+   * 成员恒为空数组（数据最小化，issue #108）。
+   */
+  attendanceMembers: StaffAttendanceMemberView[];
   /** 可签到（REGISTERED）。仅对管理员下发，成员恒为空数组（数据最小化，issue #108）。 */
   eligible: StaffRegistrationView[];
   /** 排队（CHECKED_IN，按 checkedInAt ASC） */
@@ -359,7 +375,7 @@ export const repairActivityStaffService = {
     const canAdmin = actor.permissions.includes("activity:admin");
     const activity = await loadActivityOrThrow(activityId);
     const now = new Date();
-    const [registeredCount, attendance, registrations, servedRows, pendingDraft] =
+    const [registeredCount, attendance, registrations, servedRows, pendingDraft, attendanceRows] =
       await Promise.all([
         countEffective(activityId),
         getDb().repairActivityAttendance.findUnique({
@@ -380,6 +396,24 @@ export const repairActivityStaffService = {
           include: { repairRecord: { select: { id: true, status: true, deletedAt: true } } },
         }),
         findPendingServeDraft(member.id),
+        // 出勤名单仅管理员视图需要；成员在库层就不取（issue #108）。
+        canAdmin
+          ? getDb().repairActivityAttendance.findMany({
+              where: { activityId },
+              orderBy: [{ checkedInAt: "asc" }, { id: "asc" }],
+              select: {
+                memberProfileId: true,
+                checkedInAt: true,
+                memberProfile: {
+                  select: {
+                    nickname: true,
+                    realName: true,
+                    user: { select: { displayName: true } },
+                  },
+                },
+              },
+            })
+          : Promise.resolve([]),
       ]);
 
     const eligible = canAdmin
@@ -403,11 +437,22 @@ export const repairActivityStaffService = {
             : null,
       }));
 
+    const attendanceMembers: StaffAttendanceMemberView[] = attendanceRows.map((row) => ({
+      memberProfileId: row.memberProfileId,
+      name: resolveDisplayName({
+        nickname: row.memberProfile.nickname,
+        realName: row.memberProfile.realName,
+        displayName: row.memberProfile.user.displayName,
+      }),
+      checkedInAt: row.checkedInAt.toISOString(),
+    }));
+
     return {
       activity: toListItem(activity, registeredCount, Boolean(attendance), now),
       attended: Boolean(attendance),
       attendanceCheckedInAt: attendance?.checkedInAt.toISOString() ?? null,
       canAdmin,
+      attendanceMembers,
       eligible,
       queue,
       served,

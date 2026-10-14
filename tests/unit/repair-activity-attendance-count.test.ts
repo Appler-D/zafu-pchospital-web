@@ -54,8 +54,11 @@ test("活动管理页表格有「出勤」列并绑定 attendedCount", () => {
 });
 
 test("出勤人数只回计数：管理端列表源码不下发成员身份字段", () => {
-  // 本期只做计数，成员明细不在范围。若将来要做出勤明细接口，应新建独立服务/路由
-  // 并同步本用例，而不是把 memberProfileId / checkedInAt 泄进列表响应。
+  // 管理端列表永远只回计数。出勤明细已由 issue #107 后续在成员看板落地
+  // （`repair-activity-staff-service.ts` 的管理员名单 + 只读弹层，
+  // 接线契约见 `repair-activity-attendance-members.test.ts`）——
+  // 那是独立服务、独立端点；这里的红线是不把 memberProfileId / checkedInAt
+  // 泄进**管理端列表**响应。
   for (const field of ["memberProfileId", "checkedInAt"]) {
     assert.equal(serviceSource.includes(field), false, `管理端列表不应暴露 ${field}`);
   }

@@ -640,3 +640,28 @@ DELETE /api/v1/member/notifications/:id
 影响范围：`repair-activity-service.ts`（`loadAttendanceCounts` / `toAdminView` /
 `listAdmin` / `create` / `update`）→ 活动管理页表格列；单测
 `tests/unit/repair-activity-attendance-count.test.ts` 钉住接线与「只回计数」红线。
+
+## 成员工作台出勤成员名单（issue #107）
+
+`GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
+
+- `attendanceMembers: { memberProfileId, name, checkedInAt }[]` —— 本场出勤成员名单，
+  按 `checkedInAt` 升序（同毫秒按 `id` 兜底，保证顺序稳定）；
+- **仅对管理员下发**（与 `eligible` 同策略，见 #108 一节）：成员拿到的
+  `attendanceMembers` 恒为空数组，且服务端在为成员取数时**不查询**出勤名单
+  （数据最小化）；字段保留空数组而非缺省，形状对两种角色一致；
+- `name` 走展示名回退链 `nickname → realName → displayName → "成员"`
+  （`resolveDisplayName`），**不含** QQ、手机号、学号等身份字段；
+- 口径与管理端 `attendedCount` 一致：`repair_activity_attendances` 记录数，
+  不按成员档案状态过滤（系统无签退，历史场次为累计值）；
+- 只读：无新增写接口；「代打卡 / 撤销出勤」不在范围内（issue #107 V1.0 已砍）。
+
+界面：成员工作台工具栏右侧新增管理员专有入口「出勤成员 N 人」（N 实时取自
+本字段长度），点开为只读弹层（桌面两列、窄屏单列；人多由弹窗正文内部滚动，
+页面高度与三栏布局不随人数变化）；空名单时入口显示「出勤成员 0 人」、
+弹层显示「本场还没有成员出勤。」。
+
+影响范围：`repair-activity-staff-service.ts`（`StaffAttendanceMemberView` /
+`getBoard`）→ `MemberRepairActivityBoard.tsx` 弹层；集成测试
+`tests/integration/repair-activity-board.test.ts` 钉住排序、名字解析与
+「成员不下发」红线。
