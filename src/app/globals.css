@@ -1641,6 +1641,109 @@ html[data-theme="black-yellow"] {
     text-transform: none;
   }
 
+  /* 首页公开数据：与首屏标题相邻，两类数据共用同一张表的视觉规则。 */
+  .home-analytics {
+    display: grid;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+  .hero:has(.home-analytics) .hero__meta {
+    display: none;
+  }
+  .home-analytics__panel {
+    min-width: 0;
+    padding: var(--s-4) var(--s-5);
+  }
+  .home-analytics__table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .home-analytics__caption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-3);
+    padding-bottom: var(--s-3);
+    border-bottom: 1px solid var(--line);
+    text-align: start;
+    font-size: var(--t-base);
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .home-analytics__tag {
+    flex-shrink: 0;
+    font-family: var(--font-latin);
+    font-size: var(--t-micro);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+  }
+  .home-analytics__table th,
+  .home-analytics__table td {
+    padding-block: var(--s-3);
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+  }
+  .home-analytics__table tr:last-child > * {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+  .home-analytics__table th {
+    width: 62%;
+    padding-inline-end: var(--s-3);
+    text-align: start;
+    font-size: var(--t-sm);
+    font-weight: 500;
+    color: var(--ink-2);
+  }
+  .home-analytics__table td {
+    text-align: end;
+    font-family: var(--font-latin);
+    font-size: var(--t-lg);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .home-analytics__table td.is-accent {
+    color: var(--accent-deep);
+  }
+  .home-analytics__table td.home-analytics__empty {
+    text-align: start;
+    font-family: inherit;
+    font-size: var(--t-sm);
+    font-weight: 400;
+    color: var(--ink-3);
+  }
+  .home-analytics__note {
+    font-size: var(--t-xs);
+    line-height: 1.75;
+    color: var(--ink-3);
+  }
+  @media (min-width: 1100px) {
+    .hero__inner--public {
+      grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+      column-gap: var(--s-6);
+      row-gap: var(--s-6);
+    }
+    .hero__inner--public .hero__identity {
+      grid-column: 1;
+      grid-row: 1;
+      min-width: 0;
+    }
+    .hero__inner--public .hero__body {
+      grid-column: 1;
+      grid-row: 2;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .hero__inner--public .home-analytics {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+    }
+  }
+
   /* -------------------------------------------------------------- 按钮 */
   .btn {
     position: relative;

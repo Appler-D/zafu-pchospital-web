@@ -43,7 +43,7 @@ export const PUBLIC_CONTENT_SETTINGS_DEFAULTS: UpdatePublicContentSettingsInput 
  * 这是一份**要留痕的持久化配置**，所以既不能硬编码在前端，也不适合放环境变量
  * （环境变量改不了、也没有变更记录）。
  *
- * M7 接入官网公开数据时消费这份配置；本模块只负责存储与校验。
+ * 官网 publicHomeService 消费这份配置；本模块只负责管理端存储与校验。
  */
 export const publicContentSettingsService: PublicContentSettingsServiceContract = {
   async get(actor: AuthorizedActor): Promise<PublicContentSettings> {

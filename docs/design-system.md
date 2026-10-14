@@ -390,6 +390,13 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 | `MemberDashboard` / `MemberShortcuts` / `MemberUpcoming` / 工作台区块                                        | `member/`    | `/member` 工作台                                                   |
 | `RepairComments` / `FavoriteToggle` / `FavoriteList` / `NotificationInbox` / `RepairFlagControls`            | `community/` | 维修详情、工作台摘要、`/member/notifications`、`/member/favorites` |
 
+首页公开维修数据位于 Hero 内：≥1100px 与标题、介绍并列，窄屏接在行动按钮之后；
+全部关闭时保留原有文档读数面板。维修数据和本学期排行共用
+`.home-analytics__panel`（既有 `Card`）与 `.home-analytics__table`：相同标题栏、行间距、
+分隔线、字号和右对齐数值，排行名次与姓名同格，长名称可断行。
+状态提示保留表格标题，不用真实零值代替「待配置」或空榜；文档仓库完整读数仍在文档区。
+该模式只使用既有语义令牌和断点，不修改主题或公共组件 API。
+
 成员维修页使用 `.repair-page` 对齐页头与正文，卡片内容统一用 `.repair-panel` 添加内边距；
 桌面端基础信息双列，手机端单列，均沿用 `Card` 和语义间距令牌。
 

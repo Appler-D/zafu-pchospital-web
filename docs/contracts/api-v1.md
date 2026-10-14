@@ -324,6 +324,11 @@ DELETE /api/v1/member/notifications/:id
 
 ## M6 管理后台（批次 2）
 
+首页公开统计（issue #115）由服务端直接消费 `publicHomeService.get()`，不新增匿名 HTTP API，
+也不开放内部统计接口。`PUT /api/v1/admin/settings/public-content` 保存后刷新首页即可生效，
+首页按请求动态渲染，维修数据与排行展示在首屏标题附近，共用表格样式。
+公开 DTO 与姓名裁剪规则见数据契约的「公开内容与展示策略」。
+
 同样要求 `ADMIN` 角色对应的权限码，未登录 401、普通成员 403。列表型端点一律返回标准分页信封
 （条目在 `data`，分页在 `meta.pagination`）。
 
