@@ -88,7 +88,7 @@ export const memberRepairActivitiesCopy = {
   },
   board: {
     title: "活动工作台",
-    label: "Staff Board",
+    label: "活动工作台 · STAFF BOARD",
     back: "返回活动列表",
     loadFailed: "工作台加载失败，请稍后重试。",
     attendCta: "参加本场",

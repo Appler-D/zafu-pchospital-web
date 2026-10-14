@@ -14,19 +14,12 @@ export default async function MemberRepairActivityBoardPage({
 }) {
   await requireActiveMemberPage();
   const { id } = await params;
-  const copy = memberRepairActivitiesCopy.board;
   return (
     <Section
       variant="page-head"
       className="member-workspace member-activity-workspace"
       labelledBy="member-activity-board-title"
     >
-      <header className="member-page-head">
-        <p className="member-section__tag">{copy.label}</p>
-        <h1 className="sec-title" id="member-activity-board-title">
-          {copy.title}
-        </h1>
-      </header>
       <MemberRepairActivityBoard activityId={id} />
     </Section>
   );
