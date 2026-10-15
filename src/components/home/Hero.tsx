@@ -4,10 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Reveal } from "@/components/ui/Reveal";
 import { heroActions, heroContent } from "@/config/home";
-import { cn, revealIndex } from "@/lib/utils";
-import type { PublicHomeAnalytics } from "@/types/contracts";
-
-import { HomePublicAnalytics } from "./HomePublicAnalytics";
+import { revealIndex } from "@/lib/utils";
 
 /**
  * Hero —— 首页首屏
@@ -16,9 +13,12 @@ import { HomePublicAnalytics } from "./HomePublicAnalytics";
  * 行动按钮组与右侧读数面板。视觉规则全部来自设计系统，这里只负责拼装。
  */
 
-export function Hero({ analytics }: { analytics?: PublicHomeAnalytics } = {}) {
+export function Hero({
+  scrollTarget = "#home-content",
+}: {
+  scrollTarget?: "#public-statistics" | "#home-content";
+} = {}) {
   const { repair, docs } = heroActions;
-  const hasAnalytics = Boolean(analytics?.repairStats || analytics?.rankings);
 
   return (
     <section className="hero" id="hero" aria-labelledby="hero-title">
@@ -29,7 +29,7 @@ export function Hero({ analytics }: { analytics?: PublicHomeAnalytics } = {}) {
         {heroContent.meta}
       </span>
 
-      <Container className={cn("hero__inner", hasAnalytics && "hero__inner--public")}>
+      <Container className="hero__inner">
         <div className="hero__identity">
           <p className="hero__tag">
             <i aria-hidden="true" />
@@ -71,22 +71,19 @@ export function Hero({ analytics }: { analytics?: PublicHomeAnalytics } = {}) {
               </Button>
             </Reveal>
 
-            <a className="hero__scroll" href="#about">
+            <a className="hero__scroll" href={scrollTarget}>
               <Icon name="arrowDown" />
-              向下滚动
+              {heroContent.scrollLabel}
             </a>
           </div>
 
-          {!hasAnalytics ? (
-            <DocReadout
-              title="内置文档仓库"
-              tag="DOCS"
-              index={3}
-              footnote="数值读取自站点内置的文档仓库清单，随仓库重新生成而更新。"
-            />
-          ) : null}
+          <DocReadout
+            title="内置文档仓库"
+            tag="DOCS"
+            index={3}
+            footnote="数值读取自站点内置的文档仓库清单，随仓库重新生成而更新。"
+          />
         </div>
-        {analytics ? <HomePublicAnalytics data={analytics} /> : null}
       </Container>
     </section>
   );

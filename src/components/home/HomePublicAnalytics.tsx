@@ -1,109 +1,116 @@
-import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 import { Section } from "@/components/ui/Section";
+import { SectionTitle } from "@/components/ui/SectionTitle";
 import { homePublicAnalytics as copy } from "@/config/home";
 import type { PublicHomeAnalytics } from "@/types/contracts";
 
-type AnalyticsRow = { label: string; value: string; accent?: boolean };
+type Metric = { label: string; value: string; unit?: string };
 
-/** 两张表共用标题、行结构和数值对齐；不改变公共 UI 组件 API。 */
-function AnalyticsTable({
-  title,
-  tag,
-  rows,
-  message,
-}: {
-  title: string;
-  tag: string;
-  rows: AnalyticsRow[];
-  message?: string;
-}) {
-  return (
-    <Card className="home-analytics__panel">
-      <table className="home-analytics__table">
-        <caption>
-          <span className="home-analytics__caption">
-            <span>{title}</span>
-            <span className="home-analytics__tag">{tag}</span>
-          </span>
-        </caption>
-        <tbody>
-          {message ? (
-            <tr>
-              <td colSpan={2} className="home-analytics__empty">
-                {message}
-              </td>
-            </tr>
-          ) : (
-            rows.map((row, index) => (
-              <tr key={index}>
-                <th scope="row">{row.label}</th>
-                <td className={row.accent ? "is-accent" : undefined}>{row.value}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </Card>
-  );
-}
-
-/** 只接收已按公开策略裁剪的 DTO，不接收内部排行或管理员设置。 */
+/** 首屏后的独立区块；只接收已按公开策略裁剪的 DTO。 */
 export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
   if (!data.repairStats && !data.rankings) return null;
-  const rows: AnalyticsRow[] = [];
+  const metrics: Metric[] = [];
   if (data.repairStats) {
-    rows.push({
+    metrics.push({
       label: copy.total,
-      value: `${data.repairStats.totalApprovedCount.toLocaleString("zh-CN")} ${copy.countUnit}`,
-      accent: true,
+      value: data.repairStats.totalApprovedCount.toLocaleString("zh-CN"),
+      unit: copy.countUnit,
     });
     if (data.repairStats.details) {
       const { termApprovedCount, totalApprovedDurationMinutes } = data.repairStats.details;
-      rows.push(
+      metrics.push(
         {
           label: copy.term,
           value:
-            termApprovedCount.status === "UNCONFIGURED"
+            termApprovedCount.status === "UNCONFIGURED" || termApprovedCount.value === null
               ? copy.unconfigured
-              : `${termApprovedCount.value} ${copy.countUnit}`,
+              : termApprovedCount.value.toLocaleString("zh-CN"),
+          unit:
+            termApprovedCount.status === "UNCONFIGURED" || termApprovedCount.value === null
+              ? undefined
+              : copy.countUnit,
         },
         {
           label: copy.duration,
-          value: `${(totalApprovedDurationMinutes / 60).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} ${copy.durationUnit}`,
+          value: (totalApprovedDurationMinutes / 60).toLocaleString("zh-CN", {
+            maximumFractionDigits: 1,
+          }),
+          unit: copy.durationUnit,
         },
       );
     }
   }
+  const rankingMessage =
+    data.rankings?.status === "UNCONFIGURED"
+      ? copy.rankingUnconfigured
+      : data.rankings?.items.length === 0
+        ? copy.rankingEmpty
+        : undefined;
+
   return (
-    <Section
-      id="public-statistics"
-      labelledBy="home-statistics-title"
-      variant="plain"
-      contained={false}
-      className="home-analytics"
-    >
-      <h2 id="home-statistics-title" className="sr-only">
-        {copy.title}
-      </h2>
+    <Section id="public-statistics" labelledBy="home-statistics-title" className="home-analytics">
+      <Reveal as="header" className="sec-head">
+        <span className="sec-head__en">{copy.label}</span>
+        <span className="sec-head__rule" aria-hidden="true" />
+      </Reveal>
+      <SectionTitle id="home-statistics-title">{copy.title}</SectionTitle>
       {data.repairStats ? (
-        <AnalyticsTable title={copy.statsTitle} tag={copy.statsTag} rows={rows} />
+        <dl className="home-analytics__metrics" aria-label={copy.statsTitle}>
+          {metrics.map((metric) => (
+            <div className="home-analytics__metric" key={metric.label}>
+              <dt>{metric.label}</dt>
+              <dd>
+                <span>{metric.value}</span>
+                {metric.unit ? (
+                  <>
+                    {" "}
+                    <span className="home-analytics__unit">{metric.unit}</span>
+                  </>
+                ) : null}
+              </dd>
+            </div>
+          ))}
+        </dl>
       ) : null}
       {data.rankings ? (
-        <AnalyticsTable
-          title={copy.rankingTitle}
-          tag={copy.rankingTag}
-          rows={data.rankings.items.map((item) => ({
-            label: `${copy.rankLabel.replace("{rank}", String(item.rank))} · ${item.displayName}`,
-            value: copy.rankingCount.replace("{count}", String(item.approvedCount)),
-          }))}
-          message={
-            data.rankings.status === "UNCONFIGURED"
-              ? copy.rankingUnconfigured
-              : data.rankings.items.length === 0
-                ? copy.rankingEmpty
-                : undefined
-          }
-        />
+        <table className="home-analytics__table">
+          <caption>
+            <div className="home-analytics__caption">
+              <h3>{copy.rankingTitle}</h3>
+              <span className="home-analytics__tag">{copy.rankingTag}</span>
+            </div>
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">{copy.rankColumn}</th>
+              <th scope="col">{copy.memberColumn}</th>
+              <th scope="col">{copy.countColumn}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rankingMessage ? (
+              <tr>
+                <td colSpan={3} className="home-analytics__empty">
+                  {rankingMessage}
+                </td>
+              </tr>
+            ) : (
+              data.rankings.items.map((item, index) => (
+                <tr key={index}>
+                  <td className={item.rank === 1 ? "is-accent" : undefined}>
+                    <span aria-label={copy.rankLabel.replace("{rank}", String(item.rank))}>
+                      {String(item.rank).padStart(2, "0")}
+                    </span>
+                  </td>
+                  <th scope="row">{item.displayName}</th>
+                  <td>
+                    {item.approvedCount.toLocaleString("zh-CN")} {copy.rankingUnit}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       ) : null}
       <p className="home-analytics__note">{data.repairStats ? copy.note : copy.rankingNote}</p>
     </Section>

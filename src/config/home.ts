@@ -20,6 +20,7 @@ export const heroContent = {
   wordmark: "ZAFU PC HOSPITAL",
   meta: "电脑医院 · 志愿技术服务 · 浙江农林大学",
   glyph: "PC HOSPITAL",
+  scrollLabel: "向下滚动",
   lead: "浙江农林大学电脑医院成立于2003年，是一个由人工智能学院学生主导、跨学科学生参与的综合志愿服务组织。我们构建了「专业维修 + 数字科普 + AI 赋能」的三维服务体系，提供散热模组清理、硬件维修、系统与驱动、蓝屏与磁盘排查等专业维修服务。",
 } as const;
 
@@ -61,9 +62,9 @@ export const homeActivityPreview = {
 } as const;
 
 export const homePublicAnalytics = {
-  title: "维修服务数据",
+  title: "维修服务记录",
+  label: "Service Records",
   statsTitle: "维修统计",
-  statsTag: "REPAIRS",
   total: "累计服务设备",
   term: "本学期维修",
   duration: "累计维修时长",
@@ -72,10 +73,13 @@ export const homePublicAnalytics = {
   unconfigured: "待配置",
   rankingTitle: "本学期维修排行",
   rankingTag: "TOP 3",
+  rankColumn: "排名",
+  memberColumn: "成员",
+  countColumn: "维修次数",
+  rankingUnit: "次",
   rankingUnconfigured: "本学期排行待配置。",
   rankingEmpty: "本学期暂无上榜记录。",
   rankLabel: "第 {rank} 名",
-  rankingCount: "{count} 次",
   note: "仅统计已审核通过、未删除的维修记录；每条维修记录按一次计入总量。",
   rankingNote: "按本学期审核通过的维修次数排序。",
 } as const;

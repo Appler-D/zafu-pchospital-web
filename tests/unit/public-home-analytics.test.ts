@@ -204,11 +204,15 @@ test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内�
     },
   };
   const pending = render({ repairStats: stats, rankings: { status: "UNCONFIGURED", items: [] } });
-  assert.match(pending, /0 台/);
-  assert.match(pending, /1.5 小时/);
+  const text = pending.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+  assert.match(text, /0 台/);
+  assert.match(text, /1.5 小时/);
   assert.match(pending, /本学期排行待配置/);
-  assert.equal((pending.match(/class="home-analytics__table"/g) ?? []).length, 2);
-  assert.equal((pending.match(/<caption>/g) ?? []).length, 2);
+  assert.equal((pending.match(/<dt>/g) ?? []).length, 3);
+  assert.equal((pending.match(/<caption>/g) ?? []).length, 1);
+  assert.match(pending, /<th scope="col">排名<\/th>/);
+  assert.match(pending, /<th scope="col">成员<\/th>/);
+  assert.match(pending, /<th scope="col">维修次数<\/th>/);
   assert.doesNotMatch(pending, /暂无上榜记录/);
   assert.match(
     render({ repairStats: null, rankings: { status: "AVAILABLE", items: [] } }),
@@ -227,9 +231,40 @@ test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内�
   assert.doesNotMatch(enabled, /累计服务设备/);
 });
 
-test("首页公开数据位于 Hero 内；全关时保留文档面板，不重复渲染统计", async () => {
+test("首页公开数据是 Hero 与跑马灯之间的独立第二屏；全关时无空白区块", async (t) => {
+  const f = fixture(t);
+  f.configureTerm();
   // Icon 的图形在模块加载时创建，须在测试的 React 全局初始化之后加载 Hero。
   const { Hero } = await import("../../src/components/home/Hero");
+  const { default: HomePage } = await import("../../src/app/page");
+  const renderOpening = async () => {
+    const page = await HomePage();
+    return renderToStaticMarkup(
+      React.createElement(
+        React.Fragment,
+        null,
+        ...React.Children.toArray(page.props.children).slice(0, 3),
+      ),
+    );
+  };
+  const opening = await renderOpening();
+  assert.match(opening, /href="#public-statistics"/);
+  assert.match(opening, /<\/section><section[^>]*id="public-statistics"/);
+  assert.match(opening, /<\/section><div id="home-content" class="ticker"/);
+  assert.equal((opening.match(/id="public-statistics"/g) ?? []).length, 1);
+  assert.match(opening, /内置文档仓库/);
+  f.policy.publicRepairStatsEnabled = false;
+  f.policy.publicRankingsEnabled = false;
+  const hidden = await renderOpening();
+  assert.doesNotMatch(hidden, /id="public-statistics"/);
+  assert.match(hidden, /href="#home-content"/);
+  assert.match(hidden, /<\/section><div id="home-content" class="ticker"/);
+  const hero = renderToStaticMarkup(React.createElement(Hero));
+  assert.doesNotMatch(hero, /public-statistics|hero__inner--public/);
+  assert.match(hero, /内置文档仓库/);
+});
+
+test("第二屏独立开关：详细统计关闭不泄露辅助指标，并列与同名成员不丢行", () => {
   const visible: PublicHomeAnalytics = {
     repairStats: { totalApprovedCount: 7 },
     rankings: {
@@ -240,15 +275,27 @@ test("首页公开数据位于 Hero 内；全关时保留文档面板，不重�
       ],
     },
   };
-  const html = renderToStaticMarkup(React.createElement(Hero, { analytics: visible }));
-  assert.match(html, /class="shell hero__inner hero__inner--public"/);
-  assert.match(html, /id="hero"[\s\S]*id="public-statistics"/);
-  assert.equal((html.match(/id="public-statistics"/g) ?? []).length, 1);
-  assert.equal((html.match(/第 1 名 · 成员/g) ?? []).length, 2, "并列和同名不得丢行");
-  assert.doesNotMatch(html, /内置文档仓库/);
-  const hidden = renderToStaticMarkup(
-    React.createElement(Hero, { analytics: { repairStats: null, rankings: null } }),
+  const render = (data: PublicHomeAnalytics) =>
+    renderToStaticMarkup(React.createElement(HomePublicAnalytics, { data }));
+  const html = render(visible);
+  assert.equal((html.match(/aria-label="第 1 名"/g) ?? []).length, 2);
+  assert.equal((html.match(/<th scope="row">成员<\/th>/g) ?? []).length, 2);
+  assert.equal((html.match(/<dt>/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /累计维修时长|<dt>本学期维修<\/dt>/);
+  const statsOnly = render({ ...visible, rankings: null });
+  assert.match(statsOnly, /累计服务设备/);
+  assert.doesNotMatch(statsOnly, /<table|本学期维修排行/);
+  const rankingOnly = render({ ...visible, repairStats: null });
+  assert.match(rankingOnly, /本学期维修排行/);
+  assert.doesNotMatch(rankingOnly, /<dl|累计服务设备/);
+  assert.match(
+    render({
+      repairStats: null,
+      rankings: {
+        status: "AVAILABLE",
+        items: [{ rank: 1, displayName: '<script>alert("x")</script>', approvedCount: 0 }],
+      },
+    }),
+    /&lt;script&gt;/,
   );
-  assert.doesNotMatch(hidden, /public-statistics|hero__inner--public/);
-  assert.match(hidden, /内置文档仓库/);
 });
