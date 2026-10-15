@@ -1467,10 +1467,13 @@ html[data-theme="black-yellow"] {
     letter-spacing: 0.16em;
     color: var(--ink-3);
   }
-  .hero__tag i {
-    width: 26px;
-    height: 1px;
+  .hero__logo {
+    display: block;
+    flex: none;
+    width: clamp(4rem, 7vw, 6rem);
+    aspect-ratio: 1;
     background: var(--accent);
+    mask: url("/icon-normal.svg") center / contain no-repeat;
   }
 
   .hero__title {
@@ -5048,6 +5051,10 @@ html[data-theme="black-yellow"] {
 
   /* 左侧索引栏出现，移动端顶栏让位 */
   @media (min-width: 1100px) {
+    .hero {
+      align-content: start;
+      padding-block-start: var(--s-6);
+    }
     .rail {
       display: flex;
     }

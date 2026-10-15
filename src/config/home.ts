@@ -15,6 +15,7 @@ export type ProcessStep = { title: string; description: string };
 
 export const heroContent = {
   tag: "志愿技术服务 · 面向全校师生",
+  logoAlt: "浙江农林大学电脑医院标志",
   titleMain: "电脑医院",
   titleSub: "浙江农林大学",
   wordmark: "ZAFU PC HOSPITAL",

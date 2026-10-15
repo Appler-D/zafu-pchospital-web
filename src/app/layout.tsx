@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Footer } from "@/components/layout/Footer";
 import { Header } from "@/components/layout/Header";
 import { SiteEffects } from "@/components/layout/SiteEffects";
+import { ThemeIcon } from "@/components/layout/ThemeIcon";
 import { SessionMonitor } from "@/components/auth/SessionMonitor";
 import { siteConfig } from "@/config/site";
 import { DEFAULT_THEME_MODE, resolveTheme } from "@/config/theme";
@@ -41,6 +42,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-Hans-CN" suppressHydrationWarning>
+      <head>
+        <ThemeIcon />
+      </head>
       <body id="top">
         {/* 字体预加载：Archivo 是首屏 hero 与导航用的拉丁展示字体，87 KB 的可变字体。
             不 preload 的话，浏览器要等 CSS 解析、布局完成、发现真的用到了才去取 ——

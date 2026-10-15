@@ -32,7 +32,7 @@ export function Hero({
       <Container className="hero__inner">
         <div className="hero__identity">
           <p className="hero__tag">
-            <i aria-hidden="true" />
+            <span className="hero__logo" role="img" aria-label={heroContent.logoAlt} />
             {heroContent.tag}
           </p>
 
