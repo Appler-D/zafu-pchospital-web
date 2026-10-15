@@ -399,14 +399,15 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 并列与同名成员保留独立行；状态提示保留标题，不用零值替代「待配置」或空榜。
 仅使用既有语义令牌、间距和断点，不修改主题或公共组件 API；向下滚动入口指向下一个实际区块。
 
-首页 `.hero__logo` 保留社团印章原有轮廓与镂空，以 SVG 蒙版和 `--accent` 着色，
-浅色为钴蓝、深色为信号黄；两种模式使用同一尺寸，不随切换改变布局。
+首页 `.hero__logo` 保留社团印章原有轮廓与镂空，使用红标 SVG 素材
+（红色 `#c62828`）；浅色模式使用透明底，深色模式使用圆形白底（`#ffffff`）。
+两种模式使用相同路径、留白与尺寸，不随切换改变布局。
 桌面首屏内容靠上排列，顶部仅留 `--s-6`（32px）；窄屏保留固定顶栏所需留白。
-`public/icon-normal.svg` 与 `public/icon-dark.svg` 是对应的独立网页图标资产，
-颜色取自 §9.4 的 `--accent`（独立 SVG 使用等价 sRGB 值），通过主题注册表的
-`iconHref` 与 `ThemeIcon` 共用显示模式快照同步。`public/icon.png` 提供透明 PNG 备用，
-`src/app/apple-icon.png` 使用暖白底，供添加到主屏幕时使用。
-`public/icon-origin.svg` 为随系统色系切换的独立 SVG，三份文件保留相同路径与透明留白。
+`public/icon-normal.svg` 与 `public/icon-dark.svg` 分别提供首页浅色与深色标志素材。
+网页标签页在两种模式下均通过主题注册表的 `iconHref` 与 `ThemeIcon`
+引用 `public/icon-origin.svg`，统一为圆形白底红标，圆形之外透明。
+`public/icon.png` 与 `src/app/apple-icon.png` 同步使用圆形白底红标，后者供添加到主屏幕时使用。
+标志素材使用固定品牌色，不随页面强调色变化；页面主题令牌保持独立。
 
 成员维修页使用 `.repair-page` 对齐页头与正文，卡片内容统一用 `.repair-panel` 添加内边距；
 桌面端基础信息双列，手机端单列，均沿用 `Card` 和语义间距令牌。

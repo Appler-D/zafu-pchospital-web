@@ -1472,8 +1472,12 @@ html[data-theme="black-yellow"] {
     flex: none;
     width: clamp(4rem, 7vw, 6rem);
     aspect-ratio: 1;
-    background: var(--accent);
-    mask: url("/icon-normal.svg") center / contain no-repeat;
+    /* 浅色透明底，深色圆形白底；两种模式保持相同尺寸。 */
+    background: url("/icon-normal.svg") center / contain no-repeat;
+  }
+
+  html[data-theme="black-yellow"] .hero__logo {
+    background-image: url("/icon-dark.svg");
   }
 
   .hero__title {

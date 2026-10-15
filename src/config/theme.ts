@@ -33,7 +33,7 @@ export type ThemeDefinition = {
   colorScheme: "light" | "dark";
   /** 写入 `<meta name="theme-color">`，影响移动端地址栏配色 */
   browserThemeColor: string;
-  /** 与站内主题同步的 SVG 网页图标 */
+  /** SVG 网页图标；两种模式统一使用圆形白底红标 */
   iconHref: string;
 };
 
@@ -45,7 +45,7 @@ export const themeRegistry: Record<ThemeId, ThemeDefinition> = {
     mode: "normal",
     colorScheme: "light",
     browserThemeColor: "#f5f5f2",
-    iconHref: "/icon-normal.svg",
+    iconHref: "/icon-origin.svg",
   },
   "black-yellow": {
     id: "black-yellow",
@@ -53,7 +53,7 @@ export const themeRegistry: Record<ThemeId, ThemeDefinition> = {
     mode: "dark",
     colorScheme: "dark",
     browserThemeColor: "#0b0a08",
-    iconHref: "/icon-dark.svg",
+    iconHref: "/icon-origin.svg",
   },
 };
 
