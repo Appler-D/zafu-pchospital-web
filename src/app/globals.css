@@ -988,12 +988,15 @@ html[data-theme="black-yellow"] {
     display: none;
     flex-direction: column;
     justify-content: space-between;
+    gap: var(--s-4);
     padding: var(--s-6) 0;
+    overflow-y: auto;
     border-right: 1px solid var(--line-soft);
     background: linear-gradient(180deg, var(--rail-panel), var(--bg));
   }
 
   .rail__brand {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1026,6 +1029,50 @@ html[data-theme="black-yellow"] {
   .rail__brand span {
     color: var(--ink-4);
     letter-spacing: 0.22em;
+  }
+
+  /* 只让中间导航收缩并滚动，品牌与底部操作不被导航挤出视口。
+     至少保留一项导航的高度；更矮的窗口由 rail 的滚动兜底。 */
+  .rail > nav {
+    min-height: calc(var(--s-8) + var(--s-4));
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .rail,
+  .rail > nav {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  /* Chromium / Safari 用窄滑块替代系统轨道与箭头；其它浏览器用上面的标准属性。 */
+  @supports selector(::-webkit-scrollbar) {
+    .rail,
+    .rail > nav {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+    .rail::-webkit-scrollbar,
+    .rail > nav::-webkit-scrollbar {
+      width: var(--s-1);
+    }
+    .rail::-webkit-scrollbar-track,
+    .rail > nav::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .rail::-webkit-scrollbar-thumb,
+    .rail > nav::-webkit-scrollbar-thumb {
+      background: var(--line-strong);
+      border-radius: var(--r-full);
+    }
+    .rail::-webkit-scrollbar-thumb:hover,
+    .rail > nav::-webkit-scrollbar-thumb:hover {
+      background: var(--ink-3);
+    }
+    .rail::-webkit-scrollbar-button,
+    .rail > nav::-webkit-scrollbar-button {
+      display: none;
+    }
   }
 
   .rail__list {
@@ -1083,10 +1130,12 @@ html[data-theme="black-yellow"] {
   }
 
   .rail__foot {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--s-5);
+    /* 矮视口优先把底部留白让给导航，保留按钮与文字的原尺寸。 */
+    gap: clamp(var(--s-2), calc(100svh - 800px), var(--s-5));
   }
 
   /* 公开站「成员登录」（T-P0-1）：挂在索引栏足部，风格贴近 theme-switch */
@@ -1124,7 +1173,7 @@ html[data-theme="black-yellow"] {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--s-2);
+    gap: clamp(var(--s-1), calc(100svh - 800px), var(--s-2));
     font-family: var(--font-latin);
     font-size: 0.625rem;
     font-weight: 600;
@@ -1414,7 +1463,7 @@ html[data-theme="black-yellow"] {
   .theme-switch--rail {
     flex-direction: column;
     align-items: stretch;
-    gap: var(--s-2);
+    gap: clamp(var(--s-1), calc(100svh - 800px), var(--s-2));
   }
   .theme-switch--rail .theme-switch__btn {
     flex-direction: column;
