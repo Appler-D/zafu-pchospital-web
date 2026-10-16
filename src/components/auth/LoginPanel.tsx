@@ -1,9 +1,9 @@
 import Link from "next/link";
 
+import { AuthPanel } from "@/components/auth/AuthPanel";
 import { InviteRegistrationForm } from "@/components/auth/InviteRegistrationForm";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { loginCopy, registerCopy } from "@/config/auth";
-import { cn } from "@/lib/utils";
 
 export type AuthPanelMode = "login" | "register";
 
@@ -27,18 +27,13 @@ export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
   const registerHref = authHref({ mode: "register", returnTo });
 
   return (
-    <div className={cn("auth-login__panel", isRegister && "auth-login__panel--register")}>
-      <Link className="auth-login__brand" href="/" aria-label={`${shell.brandName} · 返回首页`}>
-        <b>{shell.brandMark}</b>
-        <span>{shell.brandName}</span>
-      </Link>
-
-      <header className="auth-login__header">
-        <p className="eyebrow">{shell.eyebrow}</p>
-        <h1 id="login-title">{shell.title}</h1>
-        <p>{shell.lead}</p>
-      </header>
-
+    <AuthPanel
+      title={shell.title}
+      titleId="login-title"
+      eyebrow={shell.eyebrow}
+      lead={shell.lead}
+      className={isRegister ? "auth-login__panel--register" : undefined}
+    >
       {isRegister ? (
         <InviteRegistrationForm returnTo={returnTo} />
       ) : (
@@ -79,7 +74,7 @@ export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
           {shell.backHome}
         </Link>
       </div>
-    </div>
+    </AuthPanel>
   );
 }
 
