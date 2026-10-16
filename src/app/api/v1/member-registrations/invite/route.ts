@@ -4,8 +4,10 @@ import { AppError } from "@/lib/api/errors";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
+import { resolveAccountAccess } from "@/lib/auth/account-access";
 import { assertSameOrigin, requestContext, sessionCookie } from "@/lib/auth/request";
 import { normalizeClassName, normalizeStudentId } from "@/lib/security/normalization";
+import type { InviteRegistrationResponse } from "@/types/contracts";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -31,7 +33,19 @@ export async function POST(request: Request) {
     };
     const registration = await inviteCodeService.redeem(input, context);
     const login = await authService.login({ qq: input.qq, password: input.password }, context);
-    const response = apiSuccess(registration, requestId, { status: 201 });
+    // 注册不新增邮箱字段：先完成注册与建会话，再由服务端统一状态决定下一步
+    // （开启门禁且尚未验证邮箱时进邮箱步骤，否则进角色默认页）。
+    // `returnTo` 与登录接口同源：只作候选，由 `resolveAccountAccess` 按白名单 + 当次角色校验。
+    const accountAccess = await resolveAccountAccess({
+      principal: login,
+      returnTo: typeof body.returnTo === "string" ? body.returnTo : undefined,
+    });
+    const data: InviteRegistrationResponse = {
+      ...registration,
+      accountAccess,
+      destination: accountAccess.destination,
+    };
+    const response = apiSuccess(data, requestId, { status: 201 });
     response.cookies.set(sessionCookie(login.token, login.expiresAt));
     return response;
   } catch (error) {

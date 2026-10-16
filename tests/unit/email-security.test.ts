@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AppError } from "../../src/lib/api/errors";
-import { getMailConfig, getServerEnv, resetServerEnvForTests } from "../../src/lib/env";
+import {
+  getEmailGateMode,
+  getMailConfig,
+  getServerEnv,
+  resetServerEnvForTests,
+} from "../../src/lib/env";
 import { classifySmtpFailure } from "../../src/lib/email/mailer";
 import {
   digestEmailBucketKey,
@@ -31,6 +36,7 @@ const MANAGED_ENV = [
   "SMTP_PASSWORD",
   "MAIL_FROM",
   "EMAIL_DAILY_BUDGET",
+  "EMAIL_GATE_MODE",
 ];
 
 /** 临时覆盖环境变量并返回恢复函数（含 resetServerEnvForTests）。 */
@@ -177,6 +183,42 @@ test("配置关闭兼容：未启用邮件时应用可启动，邮件操作被�
   }
   assert.ok(rejection instanceof AppError);
   assert.equal(rejection.code, "EMAIL_NOT_ENABLED");
+});
+
+test("门禁档位：缺省 off，只认三个值，非法值不静默按关闭运行", () => {
+  withEnv({ EMAIL_GATE_MODE: undefined }, () => {
+    assert.equal(getServerEnv().EMAIL_GATE_MODE, "off");
+  });
+  for (const [raw, expected] of [
+    ["", "off"],
+    ["off", "off"],
+    ["admin", "admin"],
+    ["all", "all"],
+    ["  all  ", "all"],
+  ] as const)
+    withEnv({ EMAIL_GATE_MODE: raw }, () => {
+      assert.equal(getEmailGateMode(), expected, `原始值 ${JSON.stringify(raw)}`);
+    });
+  // 大小写 / 近似值 / 空意外值都算部署错误：报错而不是退回关闭继续跑。
+  for (const raw of ["ALL", "Admin", "true", "1", "enable", "on", "off1"])
+    withEnv({ EMAIL_GATE_MODE: raw }, () => {
+      assert.throws(
+        () => getEmailGateMode(),
+        (error: unknown) =>
+          error instanceof AppError &&
+          error.code === "EMAIL_GATE_MODE_INVALID" &&
+          error.status === 500,
+        `非法档位 ${JSON.stringify(raw)} 必须拒绝`,
+      );
+    });
+  // 档位与 SMTP 解耦：未启用邮件也能开启门禁，读取档位不会去校验发信配置。
+  withEnv(
+    { EMAIL_GATE_MODE: "all", MAIL_ENABLED: undefined, SMTP_HOST: undefined, SMTP_PORT: undefined },
+    () => {
+      assert.equal(getEmailGateMode(), "all");
+      assert.deepEqual(getMailConfig(), { enabled: false });
+    },
+  );
 });
 
 test("启用邮件时配置校验：缺一项即拒绝，端口 / 预算必须在启用时才校验", () => {

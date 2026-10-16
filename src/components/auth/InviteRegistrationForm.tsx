@@ -111,7 +111,11 @@ const groups = [
   { title: registerCopy.groupPassword, fields: passwordFields },
 ] as const;
 
-export function InviteRegistrationForm() {
+/**
+ * 邀请码注册表单。`returnTo` 是从 `/login` 带过来的**候选**原目标（任务 6 返修 F4）：
+ * 注册成功后服务端仍按白名单与当次角色重判落点，前端不自行跳转。
+ */
+export function InviteRegistrationForm({ returnTo }: { returnTo?: string | null }) {
   const router = useRouter();
   const key = useRef(crypto.randomUUID());
   const [problem, setProblem] = useState("");
@@ -130,18 +134,25 @@ export function InviteRegistrationForm() {
     const response = await fetch("/api/v1/member-registrations/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, idempotencyKey: key.current }),
+      body: JSON.stringify({
+        ...data,
+        idempotencyKey: key.current,
+        ...(returnTo ? { returnTo } : {}),
+      }),
     });
-    const payload = (await response.json()) as { success: boolean; error?: { message?: string } };
-    if (!response.ok || !payload.success) {
+    const payload = (await response.json()) as {
+      success: boolean;
+      data?: { destination?: string };
+      error?: { message?: string };
+    };
+    if (!response.ok || !payload.success || !payload.data?.destination) {
       setProblem(payload.error?.message ?? registerCopy.failed);
       setBusy(false);
       return;
     }
-    // MemberRegistrationResult（userId / memberProfileId / redemptionId / provisionId）
-    // 不含 mustChangePassword；邀请码注册者自设密码，服务端为 false。不发明契约字段，
-    // 成功后落到 /member（受保护页仍会按 Session 强制改密）。
-    router.replace("/member");
+    // 邀请码注册者自设密码（服务端 mustChangePassword = false），落点仍由服务端的
+    // 统一门禁编排决定：模式开启时先被引导到邮箱步骤页，前端不写死 /member。
+    router.replace(payload.data.destination);
     router.refresh();
   }
 

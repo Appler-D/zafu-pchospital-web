@@ -95,6 +95,9 @@ export const ApiErrorCode = [
   "EMAIL_RATE_LIMITED",
   "EMAIL_BUDGET_EXHAUSTED",
   "EMAIL_RESET_AUTHORIZATION_INVALID",
+  // 统一账号门禁（issue #146）：当前模式下需要已验证邮箱或有效豁免。
+  "EMAIL_VERIFICATION_REQUIRED",
+  "EMAIL_GATE_MODE_INVALID",
   "INTERNAL_ERROR",
 ] as const;
 
@@ -207,6 +210,11 @@ const defaultStatus: Record<ApiErrorCode, number> = {
   EMAIL_RATE_LIMITED: 429,
   EMAIL_BUDGET_EXHAUSTED: 429,
   EMAIL_RESET_AUTHORIZATION_INVALID: 400,
+  // 403 而不是 401：会话本身有效，是当前模式的账号资格不允许访问业务 ——
+  // 前端不能把它当成「登录过期」踢回登录页。
+  EMAIL_VERIFICATION_REQUIRED: 403,
+  // 配置错误属于部署问题：与学期配置同一档 500，不静默按 off 运行。
+  EMAIL_GATE_MODE_INVALID: 500,
   INTERNAL_ERROR: 500,
 };
 export class AppError extends Error {

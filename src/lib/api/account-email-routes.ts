@@ -104,7 +104,9 @@ export async function accountEmailRoute(
   const requestId = getRequestId(request.headers);
   try {
     if (action !== "state") assertSameOrigin(request);
-    const { token } = await authenticateRequest(request, requestId);
+    // 本人邮箱管理：服务端固定用途，豁免邮箱门禁（否则待验证用户会被自己的门禁锁死），
+    // 但强制改密仍然先拦（Service 内同一口径复核）。
+    const { token } = await authenticateRequest(request, requestId, "email-self");
     const ctx = requestContext(request, requestId);
     if (action === "state")
       return apiSuccess(await accountEmailService.getState(token), requestId, { headers: PRIVATE });
@@ -139,7 +141,9 @@ export async function adminEmailRoute(
   const requestId = getRequestId(request.headers);
   try {
     if (action !== "state") assertSameOrigin(request);
-    const { actor } = await authenticateRequest(request, requestId);
+    // 管理员账号邮箱工具：任务 6 §6 的窄安全例外 —— 只豁免邮箱门禁，
+    // 改密、同源、member:manage、Service 二次校验、SELF 禁止与审计全部照旧。
+    const { actor } = await authenticateRequest(request, requestId, "account-recovery");
     requirePermission(actor, "member:manage");
     if (action === "state")
       return apiSuccess(await accountEmailService.getAdminState(userId, actor), requestId, {

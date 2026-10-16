@@ -28,7 +28,20 @@ export type ServerEnv = Record<(typeof REQUIRED_SERVER_ENV)[number], string> & {
   SMTP_PASSWORD: string;
   MAIL_FROM: string;
   EMAIL_CODE_PEPPER: string;
+  /**
+   * 邮箱门禁分阶段模式（issue #146 任务 6），缺省 `off`。
+   *
+   * 与 SMTP_* 不同，它决定**认证后的账号资格**，因此在这里解析并校验：
+   * 非法取值必须受控报错，不能静默按 `off` 运行（那等于把「已开启门禁」的部署
+   * 悄悄退回到不拦截）。未配置（本地 / CI）合法使用 `off`。
+   */
+  EMAIL_GATE_MODE: EmailGateMode;
 };
+
+/** 邮箱门禁档位：off 不强制；admin 只约束当次具有 ADMIN 角色的账号；all 约束全部已认证账号。 */
+export type EmailGateMode = "off" | "admin" | "all";
+
+const EMAIL_GATE_MODES: readonly EmailGateMode[] = ["off", "admin", "all"];
 
 /**
  * 邮件传输配置（issue #146 §5.1）。
@@ -60,6 +73,20 @@ function parsePositiveInteger(name: string, raw: string | undefined): number | n
     throw new AppError("INTERNAL_ERROR", `${name} 必须是正整数`, { status: 500 });
   }
   return value;
+}
+
+/** 门禁档位解析：空值合法（off），其它非枚举值直接受控报错。 */
+function parseEmailGateMode(raw: string | undefined): EmailGateMode {
+  const value = (raw ?? "").trim();
+  if (value === "") return "off";
+  if (!(EMAIL_GATE_MODES as readonly string[]).includes(value)) {
+    throw new AppError(
+      "EMAIL_GATE_MODE_INVALID",
+      `EMAIL_GATE_MODE 只能是 off / admin / all，当前值「${value}」无效`,
+      { status: 500 },
+    );
+  }
+  return value as EmailGateMode;
 }
 
 let cached: ServerEnv | undefined;
@@ -97,8 +124,14 @@ export function getServerEnv(): ServerEnv {
     SMTP_PASSWORD: process.env.SMTP_PASSWORD ?? "",
     MAIL_FROM: process.env.MAIL_FROM?.trim() ?? "",
     EMAIL_CODE_PEPPER: process.env.EMAIL_CODE_PEPPER ?? "",
+    EMAIL_GATE_MODE: parseEmailGateMode(process.env.EMAIL_GATE_MODE),
   };
   return cached;
+}
+
+/** 当前邮箱门禁档位（每次读取都走同一份缓存配置；变更按进程生命周期生效，需重启实例）。 */
+export function getEmailGateMode(): EmailGateMode {
+  return getServerEnv().EMAIL_GATE_MODE;
 }
 
 /** 只读取「邮件是否启用」，不校验 SMTP 细节（用给「未启用时拒绝」这一层）。 */

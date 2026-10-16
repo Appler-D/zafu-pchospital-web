@@ -4,6 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import type { ReactElement, ReactNode } from "react";
 import { accountEmailCopy as copy } from "../../src/config/account-email";
+import { adminCopy } from "../../src/config/admin";
 import { passwordRecoveryCopy as recoveryCopy } from "../../src/config/password-recovery";
 import type { AccountEmailState } from "../../src/types/contracts";
 
@@ -22,6 +23,10 @@ type Props = {
   onSubmit?: (event: { preventDefault(): void }) => void;
   onChange?: (event: { target: { value: string } }) => void;
   onClick?: () => void;
+  /** 恢复工具窗口的关闭回调：用它数「当前挂着几个弹层」。 */
+  onClose?: () => void;
+  /** 登录 / 注册表单收到的候选回跳目标（返修 F4）。 */
+  returnTo?: string | null;
 };
 function elements(node: ReactNode): ReactElement<Props>[] {
   if (Array.isArray(node)) return node.flatMap(elements);
@@ -36,12 +41,14 @@ function text(node: ReactNode): string {
 
 /** Node 原生 mock 驱动真实表单的事件处理器；不启动 Next / DB，不复制业务状态机。
  * 只替换 React hook 的存储与路由上下文，返回的控件仍取自 AccountEmailForm JSX。
+ * `emailProps` 只用于门禁（任务 6）用例：这些值在生产里一律由服务端页面组件传入。
  */
 async function form(
   t: TestContext,
   state: AccountEmailState,
   responses: unknown[],
   component?: () => ReactElement,
+  emailProps?: { continueTo?: string | null; returnTo?: string | null; canRecover?: boolean },
 ) {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -76,13 +83,17 @@ async function form(
   });
   t.mock.method(React, "useMemo", (factory: () => unknown) => factory());
   const destinations: string[] = [];
+  /** 「刷新状态」有没有真的重放当前 RSC 请求（返修 F3）；由服务端重算页面 props。 */
+  const refreshes: string[] = [];
   t.mock.method(React, "useContext", (context: unknown) => {
     if (context === AppRouterContext)
       return {
         replace(path: string) {
           destinations.push(path);
         },
-        refresh() {},
+        refresh() {
+          refreshes.push("refresh");
+        },
       };
     if (context === SearchParamsContext) return new URLSearchParams();
     throw new Error("Unexpected context");
@@ -99,7 +110,13 @@ async function form(
   const { AccountEmailForm } = await import("../../src/components/account/AccountEmailForm");
   const view = () => {
     cursor = 0;
-    return component ? component() : AccountEmailForm();
+    if (component) return component();
+    return AccountEmailForm({
+      continueTo: null,
+      returnTo: null,
+      canRecover: false,
+      ...emailProps,
+    });
   };
   const button = (label: string) => {
     const found = elements(view()).find(
@@ -142,7 +159,18 @@ async function form(
     elements(view()).find((element) => element.type === "form")!.props.onSubmit!({
       preventDefault() {},
     });
-  return { view, button, input, code, field, submit, requests, destinations, settle: setImmediate };
+  return {
+    view,
+    button,
+    input,
+    code,
+    field,
+    submit,
+    requests,
+    destinations,
+    refreshes,
+    settle: setImmediate,
+  };
 }
 const challenge = {
   success: true,
@@ -215,6 +243,59 @@ test("目标邮箱重发 SMTP 失败后，清除旧证明及验证码，禁用�
   assert.equal(ui.requests.length, 2);
 });
 
+test("门禁未清时「继续」置灰且不给出落点，成员看不到恢复入口", async (t) => {
+  const blocked = await form(t, state, []);
+  assert.equal(blocked.button(copy.continueAction).disabled, true);
+  assert.equal(blocked.button(copy.continueAction).href, undefined);
+  assert.ok(text(blocked.view()).includes(copy.continueBlocked));
+  assert.equal(
+    elements(blocked.view()).some((element) => element.props.children === copy.adminTitle),
+    false,
+    "成员不该看到管理员恢复入口",
+  );
+});
+
+test("服务端授予落点后「继续」成为链接；恢复窗口常驻但一次只挂一个", async (t) => {
+  const dialogs = (node: ReactNode) =>
+    elements(node).filter((element) => typeof element.props.onClose === "function");
+  const granted = await form(t, state, [], undefined, {
+    continueTo: "/member/repairs",
+    returnTo: "/member/repairs",
+    canRecover: true,
+  });
+  assert.equal(granted.button(copy.continueAction).href, "/member/repairs");
+  assert.equal(granted.button(copy.continueAction).disabled, undefined);
+  assert.ok(text(granted.view()).includes(copy.continueReady));
+  granted.button(adminCopy.members.account.action).onClick!();
+  assert.equal(dialogs(granted.view()).length, 1);
+  granted.button(copy.adminTitle).onClick!();
+  // 一次只挂一个窗口：切到账号邮箱时恢复窗口必须已经撤下。
+  assert.equal(dialogs(granted.view()).length, 1);
+});
+
+test("「刷新状态」同时刷新服务端授予的继续落点，不是只重取邮箱状态（返修 F3）", async (t) => {
+  const props: {
+    continueTo: string | null;
+    returnTo: string | null;
+    canRecover: boolean;
+  } = { continueTo: null, returnTo: "/member/repairs", canRecover: false };
+  const ui = await form(t, state, [], undefined, props);
+  assert.equal(ui.button(copy.continueAction).disabled, true);
+  assert.equal(ui.refreshes.length, 0);
+
+  // 期间另一位管理员授予了有效豁免。客户端唯一能做的是让**服务端**重算本页 props ——
+  // 既没有新的「门禁状态」接口，也不许前端看见豁免就自行拼落点。
+  ui.button(copy.reload).onClick!();
+  assert.equal(ui.refreshes.length, 1, "刷新状态必须重放当前 RSC 请求");
+  assert.equal(ui.requests.length, 0, "不新增状态端点");
+
+  props.continueTo = "/member/repairs"; // 服务端重算后的结论（同一 returnTo，链条不断）
+  const after = ui.button(copy.continueAction);
+  assert.equal(after.href, "/member/repairs");
+  assert.equal(after.disabled, undefined);
+  assert.ok(text(ui.view()).includes(copy.continueReady));
+});
+
 test("匿名找回在途互斥、验码后自设密码、字段错误保留授权并可纠正重提", async (t) => {
   const { ForgotPasswordForm } = await import("../../src/components/account/ForgotPasswordForm");
   let accept!: (response: unknown) => void;
@@ -266,6 +347,8 @@ test("匿名找回在途互斥、验码后自设密码、字段错误保留授�
   assert.equal(ui.field("qq").value, "123456");
   const { LoginPanel } = await import("../../src/components/auth/LoginPanel");
   const { LoginForm } = await import("../../src/components/auth/LoginForm");
+  const { InviteRegistrationForm } =
+    await import("../../src/components/auth/InviteRegistrationForm");
   const login = elements(LoginPanel({}));
   assert.ok(
     login.findIndex((e) => e.props.href === "/account/forgot-password") >
@@ -276,6 +359,32 @@ test("匿名找回在途互斥、验码后自设密码、字段错误保留授�
       (e) => e.props.href === "/account/forgot-password",
     ),
     false,
+  );
+  // 登录 ↔ 注册切换与注册表单都带着同一个候选原目标（返修 F4）：链条不能在切换处掉链子。
+  assert.equal(
+    login.find((e) => e.type === LoginForm)!.props.returnTo,
+    undefined,
+    "没有候选时不凭空造 returnTo",
+  );
+  assert.ok(
+    login.some((e) => e.props.href === "/login?mode=register"),
+    "无候选时切换链接保持原样",
+  );
+  const chained = elements(LoginPanel({ returnTo: "/member/repairs" }));
+  assert.ok(
+    chained.some((e) => e.props.href === "/login?mode=register&returnTo=%2Fmember%2Frepairs"),
+    "登录 → 注册的切换链接带着候选",
+  );
+  assert.equal(chained.find((e) => e.type === LoginForm)!.props.returnTo, "/member/repairs");
+  const register = elements(LoginPanel({ mode: "register", returnTo: "/member/repairs" }));
+  assert.ok(
+    register.some((e) => e.props.href === "/login?returnTo=%2Fmember%2Frepairs"),
+    "注册 → 登录的返回链接同样带着候选",
+  );
+  assert.equal(
+    register.find((e) => e.type === InviteRegistrationForm)!.props.returnTo,
+    "/member/repairs",
+    "注册表单收到候选（提交时由服务端按白名单 + 当次角色重判）",
   );
 });
 

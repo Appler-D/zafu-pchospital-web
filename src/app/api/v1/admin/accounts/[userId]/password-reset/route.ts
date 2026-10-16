@@ -12,7 +12,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ use
   const requestId = getRequestId(request.headers);
   try {
     assertSameOrigin(request);
-    const { actor } = await authenticateRequest(request, requestId);
+    // 恢复工具入口之一：只豁免邮箱门禁（任务 6 §6），自重置禁止与目标资格仍由 Service 拦。
+    const { actor } = await authenticateRequest(request, requestId, "account-recovery");
     return apiSuccess(
       await memberService.resetAccountPassword((await params).userId, actor),
       requestId,

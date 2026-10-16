@@ -1,16 +1,35 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { AdminAccountEmailDialog } from "@/components/admin/AdminAccountEmailPanel";
+import { AdminAccountResetDialog } from "@/components/admin/AdminAccountResetDialog";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { adminCopy } from "@/config/admin";
 import { accountEmailCopy as copy } from "@/config/account-email";
 import type { AccountEmailState, EmailChallengeRequestResult } from "@/types/contracts";
 
 import { emailFetch, EmailRequestError } from "@/features/email/email-client";
-export function AccountEmailForm() {
-  const router = useRouter(),
-    params = useSearchParams();
+
+/**
+ * 邮箱步骤页表单（`/account/email`）。
+ *
+ * 三个值都由服务端授予（任务 6）：`continueTo` 是「继续原目标」的**唯一**来源
+ * （邮箱已验证或豁免仍有效时才有值，否则按钮置灰，前端不自行拼路径）；`returnTo`
+ * 是已按白名单与当前角色校验过的候选目标；`canRecover` 决定窄例外恢复入口是否出现
+ * （ADMIN + `member:manage`，豁免不授予该权限）。
+ */
+export function AccountEmailForm({
+  continueTo,
+  returnTo,
+  canRecover,
+}: {
+  continueTo: string | null;
+  returnTo: string | null;
+  canRecover: boolean;
+}) {
+  const router = useRouter();
   const [state, setState] = useState<AccountEmailState | null>(null);
   const [target, setTarget] = useState(""),
     [password, setPassword] = useState("");
@@ -19,6 +38,8 @@ export function AccountEmailForm() {
   const [oldProof, setOldProof] = useState<EmailChallengeRequestResult | null>(null),
     [newProof, setNewProof] = useState<EmailChallengeRequestResult | null>(null);
   const [refresh, setRefresh] = useState(0);
+  /** 恢复工具窗口同一时刻只挂一个（两个都常驻在页面上，只是弹层互斥）。 */
+  const [dialog, setDialog] = useState<"recover" | "email" | null>(null);
   const [busy, setBusy] = useState(false),
     [cooldown, setCooldown] = useState(0);
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
@@ -67,7 +88,7 @@ export function AccountEmailForm() {
           ...common,
           mode: mode === "NEW" ? "CHANGE" : mode,
           proof: { challengeId: newProof?.challengeId, code: newCode },
-          returnTo: params.get("returnTo") ?? undefined,
+          returnTo: returnTo ?? undefined,
         });
         if (id !== requestId.current) return;
         setPassword("");
@@ -250,6 +271,11 @@ export function AccountEmailForm() {
             setOldCode("");
             setPassword("");
             setRefresh((v) => v + 1);
+            // 「刷新状态」也要刷新**服务端授予的继续落点**（任务 6 返修 F3）：
+            // `continueTo` 来自页面服务端渲染，只重取本人邮箱状态不会更新它，管理员
+            // 刚授的豁免就只能靠整页重载才生效。`router.refresh()` 重放当前 RSC 请求，
+            // 查询串里的 `returnTo` 原样保留；这一轮失败就维持原状，不会凭空放行。
+            router.refresh();
           }}
         >
           {copy.reload}
@@ -257,6 +283,40 @@ export function AccountEmailForm() {
         <p className="admin-note">{copy.cooldown}</p>
         <p className="admin-note">{copy.sessionNotice}</p>
       </div>
+
+      {/* 统一门禁（任务 6）：落点只由服务端给出 —— 邮箱已验证或管理员豁免仍有效时
+          才是链接，否则按钮常驻但置灰，避免「点了没反应」和自行拼路径两种坏味道。 */}
+      <div className="signup__actions">
+        {continueTo ? (
+          <Button variant="solid" href={continueTo}>
+            {copy.continueAction}
+          </Button>
+        ) : (
+          <Button variant="solid" disabled>
+            {copy.continueAction}
+          </Button>
+        )}
+      </div>
+      <p className="admin-note">{continueTo ? copy.continueReady : copy.continueBlocked}</p>
+
+      {/* 窄例外恢复入口（issue #113 / 任务 4）：门禁拦住普通管理接口，但恢复工具必须
+          可达 —— 否则「全员都要验邮箱」会把唯一没有邮箱的管理员锁在门外。常驻在本页，
+          按当次角色 + 权限由服务端决定是否给出。 */}
+      {canRecover ? (
+        <>
+          <p className="admin-note">{copy.adminEntries}</p>
+          <div className="signup__actions">
+            <Button icon="key" onClick={() => setDialog("recover")}>
+              {adminCopy.members.account.action}
+            </Button>
+            <Button onClick={() => setDialog("email")}>{copy.adminTitle}</Button>
+          </div>
+          {dialog === "recover" ? (
+            <AdminAccountResetDialog onClose={() => setDialog(null)} />
+          ) : null}
+          {dialog === "email" ? <AdminAccountEmailDialog onClose={() => setDialog(null)} /> : null}
+        </>
+      ) : null}
     </Card>
   );
 }

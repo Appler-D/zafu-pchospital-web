@@ -6,13 +6,17 @@ import { LoginPanel, type AuthPanelMode } from "@/components/auth/LoginPanel";
 import { Section } from "@/components/ui/Section";
 import { authService } from "@/features/auth/auth-service";
 import { AppError } from "@/lib/api/errors";
-import { loginDestination } from "@/lib/auth/login-destination";
+import { accountReturnCandidate, resolveAccountAccess } from "@/lib/auth/account-access";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/request";
 
 export const metadata: Metadata = { title: "成员登录" };
 
 type LoginPageProps = {
-  searchParams: Promise<{ mode?: string | string[]; reason?: string | string[] }>;
+  searchParams: Promise<{
+    mode?: string | string[];
+    reason?: string | string[];
+    returnTo?: string | string[];
+  }>;
 };
 
 function resolveMode(raw: string | string[] | undefined): AuthPanelMode {
@@ -23,10 +27,17 @@ function resolveMode(raw: string | string[] | undefined): AuthPanelMode {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   const params = await searchParams;
+  const requestedReturnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
+  // 未认证时没有角色可查，先按**形状**过滤（只留规范业务 pathname），拼回链接与表单的
+  // 就只有安全值；真正的准入判定在认证之后由 `safeAccountReturnPath` 按当次角色做。
+  const candidate = accountReturnCandidate(requestedReturnTo);
   let destination: string | undefined;
   if (token) {
     try {
-      destination = loginDestination(await authService.authenticate(token));
+      const principal = await authService.authenticate(token);
+      // 已登录访问 /login 走与登录接口、页面守卫同一套服务端落点编排（任务 6）：
+      // 未走完的步骤优先，其次才是原目标 / 角色默认页。
+      destination = (await resolveAccountAccess({ principal, returnTo: candidate })).destination;
     } catch (error) {
       if (
         !(error instanceof AppError) ||
@@ -39,7 +50,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       )
         throw error;
       if (!Array.isArray(params.reason) && params.reason !== "expired")
-        redirect("/login?reason=expired");
+        redirect(
+          candidate
+            ? `/login?reason=expired&returnTo=${encodeURIComponent(candidate)}`
+            : "/login?reason=expired",
+        );
     }
   }
   if (destination) redirect(destination);
@@ -47,7 +62,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <Section variant="page-head" className="auth-login" labelledBy="login-title">
-      <LoginPanel mode={mode} />
+      <LoginPanel mode={mode} returnTo={candidate} />
     </Section>
   );
 }

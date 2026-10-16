@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emailReturnDestination } from "../../src/features/email/account-email-service";
+import { loginDestination } from "../../src/lib/auth/login-destination";
+import { safeAccountReturnPath } from "../../src/lib/auth/account-access";
 import { parseEmailChallenge, parseEmailConfirm } from "../../src/lib/api/account-email-routes";
 
 test("自助输入严格拒绝 userId、找回用途和协助目标覆盖，不把对象强转文本", () => {
@@ -29,7 +30,7 @@ test("自助输入严格拒绝 userId、找回用途和协助目标覆盖，不�
     }),
   );
 });
-test("邮箱成功回跳由服务端业务路径白名单及当前角色限定", () => {
+test("回跳由服务端业务路径白名单及当前角色限定（门禁与邮箱共用同一规则）", () => {
   for (const path of [
     "https://evil.invalid",
     "//evil.invalid",
@@ -38,12 +39,15 @@ test("邮箱成功回跳由服务端业务路径白名单及当前角色限定",
     "/api/v1/me",
     "/login",
     "/account/email",
+    "/account/change-password",
     "/member/../admin",
     "/member?next=evil",
     "/member\n",
   ])
-    assert.equal(emailReturnDestination(path, ["MEMBER"]), "/member");
-  assert.equal(emailReturnDestination("/admin/members", ["MEMBER"]), "/member");
-  assert.equal(emailReturnDestination("/admin/members", ["ADMIN"]), "/admin/members");
-  assert.equal(emailReturnDestination("/member/repairs", ["MEMBER"]), "/member/repairs");
+    assert.equal(safeAccountReturnPath(path, ["MEMBER"]), null);
+  assert.equal(safeAccountReturnPath("/admin/members", ["MEMBER"]), null);
+  assert.equal(safeAccountReturnPath("/admin/members", ["ADMIN"]), "/admin/members");
+  assert.equal(safeAccountReturnPath("/member/repairs", ["MEMBER"]), "/member/repairs");
+  // 非法 / 无权目标由编排层回角色默认页，不是把原始值透传出去。
+  assert.equal(loginDestination({ roles: ["MEMBER"], mustChangePassword: false }), "/member");
 });

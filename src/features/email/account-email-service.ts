@@ -14,11 +14,16 @@ import {
 import { AppError } from "@/lib/api/errors";
 import { appendAuditLog } from "@/lib/audit/audit-service";
 import { maskEmail } from "@/lib/audit/redaction";
+import { decideAccountAccess, safeAccountReturnPath } from "@/lib/auth/account-access";
 import { permissionsForRoles, requirePermission } from "@/lib/auth/permissions";
-import { loginDestination } from "@/lib/auth/login-destination";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { getMailConfig } from "@/lib/env";
+import { getEmailGateMode, getMailConfig } from "@/lib/env";
+import {
+  classifyCurrentEmail,
+  readEmailAccessState,
+  readEmailIdentities,
+} from "@/features/email/email-access-state";
 import { normalizeEmail } from "@/lib/security/normalization";
 import { digestSessionToken, generateSessionToken, verifyPassword } from "@/lib/security/secrets";
 import type {
@@ -42,16 +47,6 @@ type Tx = Prisma.TransactionClient;
 const invalid = () => new AppError("EMAIL_CHALLENGE_INVALID", "邮箱状态或验证已失效，请刷新后重试");
 const passwordBucket = (userId: string) => ({ userId, purpose: "ACCOUNT_EMAIL_PASSWORD" });
 
-export function emailReturnDestination(value: string | undefined, roles: RoleCode[]): string {
-  const fallback = loginDestination({ roles, mustChangePassword: false });
-  if (!value || /[\\\u0000-\u0020\u007f%?#]/.test(value)) return fallback;
-  // 仅允许当前权限对应的业务页；拒绝编码、查询串和非规范路径，避免重定向歧义。
-  if (!/^\/(member|admin)(\/[-a-zA-Z0-9]+)*\/?$/.test(value)) return fallback;
-  if (value.startsWith("/admin") && !roles.includes("ADMIN")) return fallback;
-  if (value.startsWith("/member") && !roles.includes("MEMBER")) return fallback;
-  return value;
-}
-
 async function eligible(tx: Tx, userId: string, allowForced = false) {
   const user = await tx.user.findUnique({ where: { id: userId }, include: userInclude });
   if (!user || resolveAccountBlockedReason(user, null))
@@ -62,13 +57,11 @@ async function eligible(tx: Tx, userId: string, allowForced = false) {
   return user;
 }
 async function currentEmail(tx: Tx, userId: string) {
-  const rows = await tx.userIdentity.findMany({
-    where: { userId, type: "EMAIL", deletedAt: null },
-  });
-  if (rows.length > 1) throw invalid();
-  // 历史 activeEmailKey=NULL 的有效已验证身份也算已绑定；不猜选、不全库回填。
-  if (rows[0] && !rows[0].verifiedAt) throw invalid();
-  return rows[0] ?? null;
+  // 判定与门禁共用同一份读取：历史 activeEmailKey=NULL 的有效已验证身份也算已绑定；
+  // 多条身份或有身份但未验证都受控拒绝，不猜选、不全库回填。
+  const outcome = classifyCurrentEmail(await readEmailIdentities(tx, userId));
+  if (outcome.kind === "UNVERIFIED" || outcome.kind === "CONFLICT") throw invalid();
+  return outcome.kind === "VERIFIED" ? outcome.identity : null;
 }
 async function available(tx: Tx, userId: string, email: string) {
   const row = await tx.userIdentity.findUnique({
@@ -101,23 +94,23 @@ async function assistance(
   if (id && !row) throw invalid();
   return row;
 }
-/** 内部状态查询：不认证、不读取 SMTP，不接入本轮门禁；允许调用方复用事务。 */
+/**
+ * 本人 / 管理侧共用的邮箱状态查询：不认证、不读取 SMTP。
+ *
+ * 判定口径与统一门禁同源（`email-access-state`）：这里保留业务侧需要的
+ * 豁免原因与异常身份受控拒绝，门禁侧只取「已验证 / 有效豁免」两件事。
+ */
 export async function getEmailVerificationState(
   userId: string,
   tx: Tx = getDb(),
   now: () => Date = () => new Date(),
 ) {
-  const identity = await currentEmail(tx, userId);
-  const rows = await tx.emailExemption.findMany({
-    where: { userId, revokedAt: null },
-    orderBy: { createdAt: "desc" },
-  });
-  const at = now();
-  const row = rows.find((r) => r.expiresAt > at);
+  const { outcome, exemption } = await readEmailAccessState(tx, userId, now);
+  if (outcome.kind === "UNVERIFIED" || outcome.kind === "CONFLICT") throw invalid();
   return {
-    verified: !!identity,
-    exemption: row
-      ? { id: row.id, reason: row.reason, expiresAt: row.expiresAt.toISOString() }
+    verified: outcome.kind === "VERIFIED",
+    exemption: exemption
+      ? { id: exemption.id, reason: exemption.reason, expiresAt: exemption.expiresAt.toISOString() }
       : null,
   };
 }
@@ -436,15 +429,23 @@ export class AccountEmailService
         await this.audit(tx, actor, fresh.user.id, "auth.session.revoked", {
           reason: "EMAIL_CHANGED",
         });
+        const roles = fresh.user.roles
+          .map((entry) => entry.role.code)
+          .filter((role): role is RoleCode => role === "ADMIN" || role === "MEMBER");
         return {
           token: newToken,
           expiresAt: fresh.session.expiresAt.toISOString(),
-          destination: emailReturnDestination(
-            input.returnTo,
-            fresh.user.roles
-              .map((r) => r.role.code)
-              .filter((r): r is RoleCode => r === "ADMIN" || r === "MEMBER"),
-          ),
+          // 落点走统一编排（任务 6）：本次事务已写入验证身份并撤销豁免，
+          // 因此按「已验证」判定，回到合法原目标；非法或无权目标自动回角色默认页。
+          destination: decideAccountAccess({
+            mustChangePassword: false,
+            roles,
+            mode: getEmailGateMode(),
+            emailVerified: true,
+            exemptionExpiresAt: null,
+            now: at,
+            returnTo: safeAccountReturnPath(input.returnTo, roles),
+          }).destination,
         };
       });
     } catch (e) {
