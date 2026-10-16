@@ -587,7 +587,7 @@ else
   BUILD_LOG="$BUILD_DIR/build-$TARGET_SHA.log"
   say "构建 pnpm build（含站内文档），日志：$BUILD_LOG"
   # 不用 env 前缀：个别开发机 PATH 里有自造的 env 脚本，会把整条命令静默吞掉
-  if ! ( cd "$WT" && export NEXT_TELEMETRY_DISABLED=1 MDBOOK_BIN="$MDBOOK_BIN" "${DOCS_ENV[@]}"; "${PNPM[@]}" build ) >"$BUILD_LOG" 2>&1; then
+  if ! ( cd "$WT" && export NEXT_TELEMETRY_DISABLED=1 MDBOOK_BIN="$MDBOOK_BIN" "${DOCS_ENV[@]}" && "${PNPM[@]}" build ) >"$BUILD_LOG" 2>&1; then
     tail -40 "$BUILD_LOG" | sed 's/^/    /' || true
     die "本地构建失败（服务器未做任何变更）。完整日志：$BUILD_LOG"
   fi
