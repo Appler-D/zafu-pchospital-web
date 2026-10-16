@@ -53,7 +53,7 @@
 
 ## 邮箱边界（issue #146，主动绑定与管理兜底已接入）
 
-基础设施已由 PR #150 合并。主动绑定、正常换绑及管理员协助 / 临时豁免通过独立邮箱页面接入；匿名找回、自设密码恢复和全员邮箱门禁仍未接入。
+基础设施已由 PR #150 合并。主动绑定、正常换绑及管理员协助 / 临时豁免通过独立邮箱页面接入；匿名找回与自设密码恢复已接入，全员邮箱门禁仍未启用。
 
 - 邮箱身份存 `user_identities(type='EMAIL')`；规范化（`normalizeEmail`）只接受 ASCII：
   trim → 小写 → 单个 `@` → 本地部 dot-atom ≤64 字符 → 域名 ≥2 段、每段 1–63 字母数字
@@ -341,3 +341,13 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 - 邮箱切换的新 Session 保留原 rememberMe 与原到期时刻，不延长期限；新 token 仅 HTTP-only Cookie 交付，JSON 只含 changed / destination。
 - 业务审计：`email.bound / changed / password.rejected / assistance.created / assistance.revoked / exemption.granted / exemption.revoked / detail.revealed` 与 `auth.session.revoked`。管理员 actorUserId 和目标 userId 分开，邮箱摘要脱敏；验证码 / 密码 / Session token 不进入审计。
 - 成员后台 DTO 仅增加 `emailMasked / emailVerified`，显示在原联系方式单元格；公开成员 DTO 不带邮箱，不允许邮箱搜索 / 筛选 / 导出。精确 QQ 查询沿用原 POST lookup 语义。
+
+## 匿名邮箱找回编排（Refs #146 / Refs #113）
+
+无新增表、列或 Migration。复用 `email_security_counters`，新增 `recovery:request:ip:*` / `recovery:request:qq:cooldown:*` / `recovery:request:qq:daily:*` 独立 HMAC key 命名空间；请求预占先提交再查询账号，不因未知 / 不合格、目标额度或 SMTP 结果回滚。验证码 / 一次性授权的数据结构、哈希、凭据代次、清理策略沿用邮箱基础设施。
+
+`PasswordRecoveryServiceContract` 连接 QQ 发起、固定 PASSWORD_RESET 验码与最终改密。发起仅解析服务端当前有效已验证 EMAIL，兼容历史 activeEmailKey 为空的有效身份；不接受邮箱或 userId。临时豁免与恢复资格独立，无档案管理员可恢复，需改密不阻止找回；禁用 / 软删 / 无效成员身份仍拒绝。
+
+最终事务以授权摘要预读定位目标，再锁 `password_credentials`，调用既有授权锁定消费原语，读取账号资格 / 当前邮箱 / 凭据代次并以锁后时间复核有效期，条件消费授权与更新凭据。原语先写的消费状态仍在同一事务；后续失败整体回滚。新哈希、mustChangePassword=false、临时状态清空、credentialVersion + 1、目标全部 Session 撤销、其他 ACTIVE/PENDING 邮箱挑战及 ISSUED 重置授权作废与审计同事务完成，不建立 Session。
+
+与 #113 管理员重置 / 已登录改密、邮箱切换交叉时沿用 Serializable 有界重试；凭据先锁、授权后锁，其他事务的读 / 写冲突由数据库检测并重试，回调重新取时，不在可重试事务内发送 SMTP。不修改角色、MemberProfile、账号状态、邮箱或临时豁免。HTTP 使用独立 Strict / HttpOnly Cookie 交付授权，公共 JSON 不暴露授权与内部主体。统一邮箱门禁未启用。

@@ -16,6 +16,7 @@ export function SessionMonitor() {
         setToast({ text: loginCopy.sessionExpired, tone: "neutral" });
       return;
     }
+    if (pathname === "/account/forgot-password") return;
     if (!/^\/(member|admin|account)(\/|$)/.test(pathname)) return;
 
     let cancelled = false;

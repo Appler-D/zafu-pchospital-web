@@ -1634,6 +1634,8 @@ export interface EmailChallengeServiceContract {
   requestEmailChallenge(
     input: RequestEmailChallengeInput,
     context: PublicRequestContext,
+    /** 仅服务端可信调用：未证明本人的匿名发起不记为 USER 操作。 */
+    options?: { anonymous?: boolean },
   ): Promise<EmailChallengeRequestResult>;
   verifyEmailChallenge(
     input: VerifyEmailChallengeInput,
@@ -1729,4 +1731,31 @@ export interface AdminAccountEmailServiceContract {
     actor: AuthorizedActor,
   ): Promise<void>;
   revokeExemption(userId: string, id: string, actor: AuthorizedActor): Promise<void>;
+}
+
+// 匿名邮箱找回（Refs #146 / #113）。授权 token 只供服务端设置专用 Cookie。
+export type PasswordRecoveryRequestInput = { qq: string };
+export type PasswordRecoveryRequestResult = {
+  challengeId: string;
+  expiresAt: string;
+  message: string;
+};
+export type PasswordRecoveryConfirmInput = { newPassword: string; newPasswordConfirmation: string };
+/** HTTP 验码结果；内部授权由 HttpOnly Cookie 交付，不属于 JSON DTO。 */
+export type PasswordRecoveryVerifyResult = { authorized: true; expiresAt: string };
+export type PasswordRecoveryConfirmResult = { changed: true; destination: "/login" };
+export interface PasswordRecoveryServiceContract {
+  request(
+    input: PasswordRecoveryRequestInput,
+    context: PublicRequestContext,
+  ): Promise<PasswordRecoveryRequestResult>;
+  verify(
+    input: EmailCodeInput,
+    context: PublicRequestContext,
+  ): Promise<{ token: string; expiresAt: string }>;
+  confirm(
+    token: string,
+    input: PasswordRecoveryConfirmInput,
+    context: PublicRequestContext,
+  ): Promise<PasswordRecoveryConfirmResult>;
 }
