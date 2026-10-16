@@ -2995,6 +2995,83 @@ html[data-theme="black-yellow"] {
     }
   }
 
+  /* 账号功能页：复用登录面板，按步骤展示表单与次级帮助。 */
+  .auth-flow {
+    display: grid;
+    gap: var(--s-4);
+    min-width: 0;
+  }
+  .auth-flow__hint {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+  }
+  .auth-flow__identity {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    min-width: 0;
+  }
+  .auth-flow__identity > div {
+    min-width: 0;
+  }
+  .auth-flow__email {
+    margin: var(--s-2) 0 0;
+    font-size: 1rem;
+    font-weight: 650;
+    overflow-wrap: anywhere;
+  }
+  .auth-flow__badge {
+    flex-shrink: 0;
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--ink-3);
+  }
+  .auth-flow__code-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--s-2);
+  }
+  .auth-flow__code-row .field__input {
+    min-width: 0;
+    flex: 1;
+  }
+  .auth-flow__code-row .btn {
+    flex-shrink: 0;
+    padding-inline: var(--s-3);
+    font-size: 0.8125rem;
+    letter-spacing: 0;
+  }
+  .auth-flow__secondary,
+  .auth-flow__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-2) var(--s-4);
+  }
+  .auth-flow__help {
+    padding-top: var(--s-4);
+    border-top: 1px solid var(--line-soft);
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    color: var(--ink-3);
+  }
+  .auth-flow__help summary {
+    cursor: pointer;
+  }
+  .auth-flow__help p {
+    margin: var(--s-3) 0 0;
+  }
+  .auth-flow__help .auth-flow__secondary {
+    margin-top: var(--s-3);
+  }
+
   /* ---------------------------------------------------- 维修记录工作台
      成员需要快速查找和补录维修记录，因此这里采用紧凑页头、渐进筛选与单列数据表。
      窄屏仍保留同一信息顺序，仅把表格行重排为可点击的纵向记录，不复制第二套内容。 */

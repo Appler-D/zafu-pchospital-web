@@ -1,5 +1,5 @@
 import { AccountEmailForm } from "@/components/account/AccountEmailForm";
-import { PageHead } from "@/components/layout/PageHead";
+import { AuthPanel } from "@/components/auth/AuthPanel";
 import { Section } from "@/components/ui/Section";
 import { accountEmailCopy as copy } from "@/config/account-email";
 import { requireEmailStepPage } from "@/lib/auth/member-page";
@@ -16,17 +16,10 @@ export default async function AccountEmailPage({ searchParams }: AccountEmailPag
   const canRecover =
     principal.roles.includes("ADMIN") && principal.permissions.includes("member:manage");
   return (
-    <>
-      <PageHead
-        id="email-title"
-        index="11"
-        label={copy.label}
-        title={copy.title}
-        lead={copy.lead}
-      />
-      <Section labelledBy="email-title">
+    <Section variant="page-head" className="auth-login" labelledBy="email-title">
+      <AuthPanel titleId="email-title" eyebrow={copy.label} title={copy.title} lead={copy.lead}>
         <AccountEmailForm continueTo={continueTo} returnTo={target} canRecover={canRecover} />
-      </Section>
-    </>
+      </AuthPanel>
+    </Section>
   );
 }

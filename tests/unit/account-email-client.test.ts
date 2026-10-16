@@ -20,6 +20,7 @@ type Props = {
   role?: string;
   name?: string;
   href?: string;
+  "aria-label"?: string;
   onSubmit?: (event: { preventDefault(): void }) => void;
   onChange?: (event: { target: { value: string } }) => void;
   onClick?: () => void;
@@ -120,7 +121,9 @@ async function form(
   };
   const button = (label: string) => {
     const found = elements(view()).find(
-      (element) => typeof element.type !== "string" && element.props.children === label,
+      (element) =>
+        typeof element.type !== "string" &&
+        (element.props.children === label || element.props["aria-label"] === label),
     );
     assert.ok(found, `Missing button: ${label}`);
     return found.props;
@@ -193,7 +196,11 @@ test("发码密码错误后，修改密码即可再次手动发送，不制造 6
     { success: false, error: { code: "PASSWORD_CURRENT_INVALID", message: "mock rejection" } },
     challenge,
   ]);
-  assert.ok(text(ui.view()).includes(copy.sessionNotice));
+  assert.equal(
+    elements(ui.view()).some((element) => element.type === "input"),
+    false,
+  );
+  ui.button(copy.change).onClick!();
   assert.equal(text(ui.view()).includes(copy.success), false);
   ui.input("password").onChange!({ target: { value: "wrong" } });
   ui.button(copy.sendOld).onClick!();
@@ -227,27 +234,101 @@ test("目标邮箱重发 SMTP 失败后，清除旧证明及验证码，禁用�
     ],
   );
   ui.input("password").onChange!({ target: { value: "correct" } });
-  ui.button(copy.sendNew).onClick!();
+  ui.submit();
   await ui.settle();
   ui.code().onChange!({ target: { value: "123456" } });
   assert.equal(ui.button(copy.confirm).disabled, false);
   t.mock.timers.tick(60_000);
-  assert.equal(ui.button(copy.sendNew).disabled, false);
-  ui.button(copy.sendNew).onClick!();
+  assert.equal(ui.button(copy.resend).disabled, false);
+  ui.button(copy.resend).onClick!();
   await ui.settle();
   assert.equal(ui.code().value, "");
   assert.equal(ui.button(copy.confirm).disabled, true);
-  assert.equal(ui.button(copy.sendNew).disabled, true);
+  assert.equal(ui.button(copy.resend).disabled, true);
   assert.ok(text(ui.view()).includes(`60${copy.seconds}`));
   assert.ok(text(ui.view()).includes(state.email!));
   assert.equal(ui.requests.length, 2);
 });
 
-test("门禁未清时「继续」置灰且不给出落点，成员看不到恢复入口", async (t) => {
+test("首次绑定按邮箱、验证码分两步，返回修改后旧证明不能提交，确认使用服务端落点", async (t) => {
+  const ui = await form(
+    t,
+    { ...state, email: null, verified: false },
+    [challenge, challenge, { success: true, data: { destination: "/member/repairs" } }],
+    undefined,
+    { returnTo: "/member/repairs" },
+  );
+  ui.input("email").onChange!({ target: { value: "first@example.com" } });
+  assert.equal(
+    elements(ui.view()).some((element) => element.props.name === "newCode"),
+    false,
+  );
+  ui.submit();
+  await ui.settle();
+  assert.equal(
+    elements(ui.view()).some((element) => element.props.type === "email"),
+    false,
+  );
+  ui.field("newCode").onChange!({ target: { value: "123456" } });
+  ui.button(copy.previous).onClick!();
+  ui.input("email").onChange!({ target: { value: "second@example.com" } });
+  t.mock.timers.tick(60_000);
+  ui.submit();
+  await ui.settle();
+  assert.equal(ui.field("newCode").value, "");
+  assert.equal(ui.button(copy.confirm).disabled, true);
+  ui.field("newCode").onChange!({ target: { value: "654321" } });
+  ui.submit();
+  await ui.settle();
+  assert.deepEqual(ui.requests, [
+    { mode: "BIND", targetEmail: "first@example.com" },
+    { mode: "BIND", targetEmail: "second@example.com" },
+    {
+      mode: "BIND",
+      targetEmail: "second@example.com",
+      proof: { challengeId: challenge.data.challengeId, code: "654321" },
+      returnTo: "/member/repairs",
+    },
+  ]);
+  assert.deepEqual(ui.destinations, ["/member/repairs"]);
+});
+
+test("换绑先保留密码与旧邮箱证明，下一步仅显示新邮箱验证码并完整提交", async (t) => {
+  const ui = await form(t, state, [
+    challenge,
+    challenge,
+    { success: true, data: { destination: "/admin" } },
+  ]);
+  ui.button(copy.change).onClick!();
+  ui.input("password").onChange!({ target: { value: "current password" } });
+  ui.button(copy.sendOld).onClick!();
+  await ui.settle();
+  ui.field("oldCode").onChange!({ target: { value: "123456" } });
+  ui.input("email").onChange!({ target: { value: "next@example.com" } });
+  assert.equal(ui.button(copy.sendNew).disabled, true);
+  t.mock.timers.tick(60_000);
+  ui.submit();
+  await ui.settle();
+  assert.equal(elements(ui.view()).filter((element) => element.type === "input").length, 1);
+  ui.field("newCode").onChange!({ target: { value: "654321" } });
+  ui.submit();
+  await ui.settle();
+  assert.deepEqual(ui.requests.at(-1), {
+    mode: "CHANGE",
+    targetEmail: "next@example.com",
+    currentPassword: "current password",
+    old: { challengeId: challenge.data.challengeId, code: "123456" },
+    proof: { challengeId: challenge.data.challengeId, code: "654321" },
+  });
+  assert.deepEqual(ui.destinations, ["/admin"]);
+});
+
+test("服务端未授予继续落点时不显示链接，成员看不到恢复入口", async (t) => {
   const blocked = await form(t, state, []);
-  assert.equal(blocked.button(copy.continueAction).disabled, true);
-  assert.equal(blocked.button(copy.continueAction).href, undefined);
-  assert.ok(text(blocked.view()).includes(copy.continueBlocked));
+  assert.equal(
+    elements(blocked.view()).some((element) => element.props.children === copy.continueAction),
+    false,
+  );
   assert.equal(
     elements(blocked.view()).some((element) => element.props.children === copy.adminTitle),
     false,
@@ -265,7 +346,10 @@ test("服务端授予落点后「继续」成为链接；恢复窗口常驻但�
   });
   assert.equal(granted.button(copy.continueAction).href, "/member/repairs");
   assert.equal(granted.button(copy.continueAction).disabled, undefined);
-  assert.ok(text(granted.view()).includes(copy.continueReady));
+  assert.equal(
+    elements(granted.view()).some((element) => element.type === "input"),
+    false,
+  );
   granted.button(adminCopy.members.account.action).onClick!();
   assert.equal(dialogs(granted.view()).length, 1);
   granted.button(copy.adminTitle).onClick!();
@@ -280,7 +364,10 @@ test("「刷新状态」同时刷新服务端授予的继续落点，不是只�
     canRecover: boolean;
   } = { continueTo: null, returnTo: "/member/repairs", canRecover: false };
   const ui = await form(t, state, [], undefined, props);
-  assert.equal(ui.button(copy.continueAction).disabled, true);
+  assert.equal(
+    elements(ui.view()).some((element) => element.props.children === copy.continueAction),
+    false,
+  );
   assert.equal(ui.refreshes.length, 0);
 
   // 期间另一位管理员授予了有效豁免。客户端唯一能做的是让**服务端**重算本页 props ——
@@ -293,7 +380,7 @@ test("「刷新状态」同时刷新服务端授予的继续落点，不是只�
   const after = ui.button(copy.continueAction);
   assert.equal(after.href, "/member/repairs");
   assert.equal(after.disabled, undefined);
-  assert.ok(text(ui.view()).includes(copy.continueReady));
+  assert.equal(after.href, props.continueTo);
 });
 
 test("匿名找回在途互斥、验码后自设密码、字段错误保留授权并可纠正重提", async (t) => {
