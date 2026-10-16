@@ -26,6 +26,7 @@
     "db:seed": "prisma db seed",
     "db:health": "tsx tools/db-health.ts",
     "import:repair-history": "tsx --env-file=.env tools/import-repair-history.ts",
+    "email:cleanup": "tsx --env-file=.env tools/email-cleanup.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "test:unit": "tsx --test tests/unit/**/*.test.ts",
     "test:db": "tsx --env-file=.env --test --test-concurrency=1 tests/integration/**/*.test.ts"
@@ -37,6 +38,7 @@
     "exceljs": "^4.4.0",
     "mariadb": "3.4.5",
     "next": "^15.5.4",
+    "nodemailer": "10.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -44,6 +46,7 @@
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^22.15.3",
+    "@types/nodemailer": "8.0.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "eslint": "^9.32.0",

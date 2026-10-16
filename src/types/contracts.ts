@@ -5,7 +5,7 @@ import type { SortRule } from "@/types/table";
 export const UserStatus = ["ACTIVE", "DISABLED"] as const;
 export const RoleCode = ["MEMBER", "ADMIN"] as const;
 export const MemberStatus = ["ACTIVE", "REVOKED"] as const;
-export const IdentityType = ["PHONE", "QQ", "QQ_OAUTH", "WECHAT_OAUTH"] as const;
+export const IdentityType = ["PHONE", "QQ", "QQ_OAUTH", "WECHAT_OAUTH", "EMAIL"] as const;
 export const JoinApplicationStatus = [
   "SUBMITTED",
   "INTERVIEW_PENDING",
@@ -1537,6 +1537,116 @@ export interface RepairFavoriteServiceContract {
   list(input: PaginationInput, actor: AuthorizedActor): Promise<FavoriteListResult>;
   add(repairRecordId: string, actor: AuthorizedActor): Promise<FavoriteView>;
   remove(repairRecordId: string, actor: AuthorizedActor): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// 邮箱身份与验证基础设施（issue #146）
+// ---------------------------------------------------------------------------
+
+/**
+ * 邮箱验证码用途（issue #146）。四种用途严格隔离：验证码的 HMAC 摘要上下文
+ * 绑定用途，一种用途的验证码不能被另一种用途消费（`不得混用`）。
+ *
+ * - `EMAIL_BIND`：为当前账号绑定一个新邮箱（目标 = 调用方提交的新邮箱）；
+ * - `EMAIL_CHANGE_OLD`：换绑前验证**原邮箱**（目标由服务端按当前有效邮箱解析）；
+ * - `EMAIL_CHANGE_NEW`：换绑验证**新邮箱**（目标 = 调用方提交的新邮箱）；
+ * - `PASSWORD_RESET`：邮箱找回密码（目标由服务端解析），只能兑换为一次性重置授权。
+ */
+export const EmailChallengePurpose = [
+  "EMAIL_BIND",
+  "EMAIL_CHANGE_OLD",
+  "EMAIL_CHANGE_NEW",
+  "PASSWORD_RESET",
+] as const;
+export type EmailChallengePurpose = ValueOf<typeof EmailChallengePurpose>;
+
+/** 发放验证码挑战的入参。`EMAIL_BIND` / `EMAIL_CHANGE_NEW` 必须给 `targetEmail`；
+ *  其余用途的收件地址由服务端按当前有效已验证邮箱解析，不接受调用方指定。 */
+export type RequestEmailChallengeInput = {
+  userId: string;
+  purpose: EmailChallengePurpose;
+  targetEmail?: string;
+};
+
+/**
+ * 发放结果（只给 UI 需要的字段）：验证码明文不返回给调用方（它只经邮件送达），
+ * 邮箱回显**脱敏值**，完整地址不回传。`expiresAt` 为上海时区无关的 UTC ISO 时刻。
+ */
+export type EmailChallengeRequestResult = {
+  challengeId: string;
+  maskedEmail: string;
+  expiresAt: string;
+};
+
+/** 校验验证码的入参。`code` 只作为一次性输入使用，不落库、不进日志。 */
+export type VerifyEmailChallengeInput = {
+  challengeId: string;
+  code: string;
+  /**
+   * 服务端调用方的用途 / 目标约束（可选）：不符即拒绝，且**不计入**用户失败次数
+   * （用途不符是流量链路用错原语，不是用户在猜验证码）。
+   */
+  expectedPurpose?: EmailChallengePurpose;
+  expectedEmailNormalized?: string;
+};
+
+/**
+ * 校验成功的证明。**不是**登录凭据、不能跨用途使用：
+ * 调用方拿到它后仍必须在自己的事务里用 `consumeEmailChallenge` 原语做
+ * 「条件消费」—— 同一挑战并发下最多一份有效证明。
+ */
+export type EmailChallengeProof = {
+  challengeId: string;
+  userId: string;
+  purpose: EmailChallengePurpose;
+  emailNormalized: string;
+};
+
+/** 重置授权签发结果。`token` 明文**只在本返回值里出现一次**，库里只存摘要。 */
+export type IssuePasswordResetAuthorizationResult = {
+  grantId: string;
+  userId: string;
+  token: string;
+  expiresAt: string;
+};
+
+/** 重置授权消费证明（事务内原语返回）。后续阶段据此在同一事务里写新密码、
+ *  递增凭据代次并撤销全部 Session / 其他授权。 */
+export type PasswordResetAuthorizationProof = {
+  grantId: string;
+  userId: string;
+  emailIdentityId: string;
+  emailNormalized: string;
+  /** 签发时快照的凭据代次；消费时与当前值一致才放行（管理员重置后旧授权自动失效）。 */
+  credentialVersion: number | null;
+};
+
+/**
+ * 邮箱验证码挑战服务（服务端基础设施，issue #146 本阶段**不接 HTTP 端点**）。
+ *
+ * 事务内条件消费原语不在此接口上：它需要调用方的 Prisma 事务，
+ * 由 `src/features/email/email-challenge-service.ts` 的 `consumeEmailChallenge` 导出。
+ */
+export interface EmailChallengeServiceContract {
+  requestEmailChallenge(
+    input: RequestEmailChallengeInput,
+    context: PublicRequestContext,
+  ): Promise<EmailChallengeRequestResult>;
+  verifyEmailChallenge(
+    input: VerifyEmailChallengeInput,
+    context: PublicRequestContext,
+  ): Promise<EmailChallengeProof>;
+}
+
+/**
+ * 密码重置授权服务（服务端基础设施，HTTP 找回端点属后续阶段）。
+ * 消费原语 `consumePasswordResetAuthorization` 同样在 Feature 模块导出（需调用方事务）。
+ */
+export interface PasswordResetServiceContract {
+  verifyChallengeAndIssue(
+    input: VerifyEmailChallengeInput,
+    context: PublicRequestContext,
+  ): Promise<IssuePasswordResetAuthorizationResult>;
 }
 
 export interface NotificationServiceContract {

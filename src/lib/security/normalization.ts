@@ -48,6 +48,64 @@ export function normalizeInviteCode(value: string): string {
   return normalized;
 }
 
+/* ------------------------------------------------- 邮箱（issue #146） */
+
+/**
+ * 邮箱规范化（issue #146）：整个系统里**唯一**的邮箱比较与存储口径。
+ *
+ * 规则（任务书 §3.1，产品口径）：
+ * 1. 先 trim 并拒绝非 ASCII 输入 —— 顺序很关键：先查 ASCII 再转小写，
+ *    否则某些 Unicode 字符经小写映射会「洗白」成合法字符（本地部分出现
+ *    Unicode 小写变体），把原本不支持的输入变成可接受输入；
+ * 2. 整个地址统一转小写（本产品的账号比较规则，不区分大小写）；
+ * 3. local-part 为 dot-atom：允许的字符集取自 RFC 5321，最长 64 字符，
+ *    不以点开头 / 结尾、不含连续点；**保留 `+tag` 与 local-part 中的点**
+ *    （不做 Gmail 式去点、去加号、别名归并 —— 归并会造成不同用户邮箱互相撞键）；
+ * 4. 域名是合法 DNS 标签（字母数字与连字符、不以连字符开头 / 结尾）且含域名分隔点；
+ * 5. 整个规范化地址最长 {@link EMAIL_MAX_LENGTH} 字符，与身份列宽度一致。
+ *
+ * 拒绝：内部空白、控制字符、显示名 / 多地址（超过一个 `@`）、带引号的 local-part、
+ * 域字面量（`[127.0.0.1]`）与 Unicode 邮箱；本期不做 SMTPUTF8 / 国际化邮箱支持，
+ * 也不做 DNS / MX 查询（那是投递环节的事，不是表单校验）。
+ */
+export const EMAIL_MAX_LENGTH = 191;
+export const EMAIL_LOCAL_MAX_LENGTH = 64;
+
+const EMAIL_LOCAL_ATOM = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+$/;
+const ASCII_PRINTABLE_NO_SPACE = /^[\x21-\x7e]+$/;
+const DNS_LABEL = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+/** 规范化失败时统一的 fieldErrors（返回 `null`，由调用方决定抛错文案）。 */
+function tryNormalizeEmail(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!ASCII_PRINTABLE_NO_SPACE.test(trimmed)) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower.length > EMAIL_MAX_LENGTH) return null;
+  const at = lower.indexOf("@");
+  if (at <= 0 || at !== lower.lastIndexOf("@")) return null;
+  const local = lower.slice(0, at);
+  const domain = lower.slice(at + 1);
+  if (local.length > EMAIL_LOCAL_MAX_LENGTH) return null;
+  if (local.startsWith(".") || local.endsWith(".") || local.includes("..")) return null;
+  if (!local.split(".").every((atom) => EMAIL_LOCAL_ATOM.test(atom))) return null;
+  const labels = domain.split(".");
+  if (labels.length < 2) return null;
+  if (!labels.every((label) => label.length <= 63 && DNS_LABEL.test(label))) return null;
+  return lower;
+}
+
+/** 校验并规范化邮箱；参数取 `unknown`：HTTP 边界上非字符串值必须拒绝而不是转换。 */
+export function normalizeEmail(value: unknown): string {
+  const normalized = tryNormalizeEmail(value);
+  if (normalized === null) {
+    throw new AppError("VALIDATION_FAILED", "邮箱格式不正确", {
+      fieldErrors: { email: ["请输入有效的邮箱地址（仅支持普通 ASCII 邮箱）"] },
+    });
+  }
+  return normalized;
+}
+
 /* ------------------------------------------------- 学号 / 班级（issue #147） */
 
 /**

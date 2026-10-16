@@ -85,6 +85,16 @@ export const ApiErrorCode = [
   "ACTIVITY_SERVE_DRAFT_PENDING",
   "ACTIVITY_CATEGORY_MISSING",
   "ACTIVITY_CONSENT_REQUIRED",
+  // 邮箱验证与重置授权（issue #146）：未启用、验证码、占用、发信结果与限流 / 预算。
+  "EMAIL_NOT_ENABLED",
+  "EMAIL_CHALLENGE_INVALID",
+  "EMAIL_ALREADY_BOUND",
+  "EMAIL_NOT_VERIFIED",
+  "EMAIL_SEND_FAILED",
+  "EMAIL_SEND_UNCERTAIN",
+  "EMAIL_RATE_LIMITED",
+  "EMAIL_BUDGET_EXHAUSTED",
+  "EMAIL_RESET_AUTHORIZATION_INVALID",
   "INTERNAL_ERROR",
 ] as const;
 
@@ -183,6 +193,20 @@ const defaultStatus: Record<ApiErrorCode, number> = {
   ACTIVITY_CATEGORY_MISSING: 500,
   // 400 而不是 409：请求本身缺了「已同意」这一项，不是系统状态不允许。
   ACTIVITY_CONSENT_REQUIRED: 400,
+  // 未启用邮件时不伪装成功：功能不可用（503），调用方应显式呈现「未开放」。
+  EMAIL_NOT_ENABLED: 503,
+  // 验证码错误 / 过期 / 已消费 / 已失效 / 用途或目标不符统一一个码：不向调用方区分，
+  // 避免成为「这个验证码存在吗」的探测面（与登录统一 AUTH_INVALID_CREDENTIALS 同一思路）。
+  EMAIL_CHALLENGE_INVALID: 400,
+  // 409 而不是 400：请求本身合法，是当前系统状态不允许（该邮箱已有归属）。
+  EMAIL_ALREADY_BOUND: 409,
+  EMAIL_NOT_VERIFIED: 409,
+  // 502：上游（SMTP 服务商）的受控失败分类，不是本站内部错误。
+  EMAIL_SEND_FAILED: 502,
+  EMAIL_SEND_UNCERTAIN: 502,
+  EMAIL_RATE_LIMITED: 429,
+  EMAIL_BUDGET_EXHAUSTED: 429,
+  EMAIL_RESET_AUTHORIZATION_INVALID: 400,
   INTERNAL_ERROR: 500,
 };
 export class AppError extends Error {

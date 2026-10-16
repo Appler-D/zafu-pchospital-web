@@ -13,6 +13,26 @@ const BLOCKED_KEY =
   /(password|credential|secret|token|digest|hash|authorization|cookie|^(invite|verify|verification|redeem|reset|otp|sms)_?code(s)?$|^(invite|verify|verification|redeem|reset|otp|sms)?code(s)?$)/i;
 const QQ_KEY = /(^|_)(qq)($|_)/i;
 const PHONE_KEY = /(phone|mobile)/i;
+/**
+ * 邮箱字段（issue #146）：`email` / `targetEmail` / `emailNormalized` 都命中。
+ * 只对**字符串值**打码，布尔值（如 `emailVerified: true`）原样保留 ——
+ * 脱敏规则要窄，不能把正常业务字段一起丢掉（见上面 `code` 的教训）。
+ */
+const EMAIL_KEY = /email/i;
+
+export function maskEmail(value: string): string {
+  const masked = maskEmailOrNull(value);
+  return masked ?? "***";
+}
+
+/** 结构像邮箱时返回 `a***@example.com`，否则返回 `null` 交由调用方保守替换。 */
+function maskEmailOrNull(value: string): string | null {
+  const at = value.lastIndexOf("@");
+  if (at <= 0 || at >= value.length - 1) return null;
+  const domain = value.slice(at + 1);
+  if (!domain.includes(".") || /\s/.test(value)) return null;
+  return `${value.slice(0, 1)}***@${domain}`;
+}
 
 export function maskQq(value: string): string {
   if (value.length <= 4) return "****";
@@ -31,6 +51,7 @@ export function redactAuditSummary(value: unknown): unknown {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
       if (BLOCKED_KEY.test(key)) return [];
+      if (typeof entry === "string" && EMAIL_KEY.test(key)) return [[key, maskEmail(entry)]];
       if (typeof entry === "string" && PHONE_KEY.test(key)) return [[key, maskPhone(entry)]];
       if (typeof entry === "string" && QQ_KEY.test(key)) return [[key, maskQq(entry)]];
       return [[key, redactAuditSummary(entry)]];

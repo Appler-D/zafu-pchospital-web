@@ -111,6 +111,14 @@ Route、调用方、Contract、测试与文档；不能留下字段、Enum、错
 - 公开内容与展示策略是**单行配置**（`public_content_settings`，主键固定为 `public-content`），
   写入走 upsert 而不是 insert；表里没有行时按契约默认值（全部关闭 + 仅昵称）处理，
   读不到配置**不等于**可以公开。
+- 邮箱验证码挑战与重置授权只存摘要（挑战码绑定 userId / 用途 / 邮箱的上下文 HMAC，
+  授权令牌独立 HMAC），明文只在签发返回值出现一次。重发会先把旧的
+  `PENDING / ACTIVE` 挑战置为 `INVALIDATED`（含目标地址变化）；发送结果回写只在
+  挑战仍为 `PENDING` 且未过期时激活它 —— 迟到的 SMTP 结果不会复活被替代的挑战。
+- 邮箱限流 / 预算计数全部持久化在 `email_security_counters`：桶键是不可逆摘要，
+  计数在行锁事务内「先持久化再返回失败」；发送前的预占（冷却 / 每日 / 预算）在
+  同一事务内按固定键序取锁，任一桶超限整笔回滚、不消耗任何额度。
+  验证失败计数用独立提交的事务写入，不随调用方事务回滚。
 
 M3 引入 `skills` 与 `user_skills` 两张表（Migration `20260917100000_p2_m3_member_dashboard`）。
 两者都不含 QQ 或任何联系方式，成员侧的引用键始终是 `member_profiles.id`。
@@ -153,6 +161,16 @@ M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列
   历史初始密码（QQ 后六位）不被误认为有过期时间。`credential_version` 用于
   「验密 → 建 Session / 改密」之间的代次复核，每次重置与改密递增；
   不建索引与唯一约束。
+- `20261016140000_email_security_infrastructure`：邮箱验证与重置授权基础设施
+  （issue #146，HTTP 端点尚未接入）。`user_identities` 加 `active_email_key VARCHAR(80) NULL`
+  与唯一索引：只有 `type = 'EMAIL'` 的行能写该键（手写 CHECK 约束保证），值为
+  `email:{userId}` —— 「一名用户至多一个有效邮箱」由数据库兜底，软删除时置空释放槽位；
+  「一个规范化邮箱全局只归属一个用户」继续由既有 `(type, identifier_normalized)` 唯一保证；
+  历史行保持 `NULL`。同批新增三张表，均为 InnoDB、`utf8mb4_unicode_ci`，外键
+  `ON DELETE RESTRICT`：`email_challenges`（验证码只存上下文绑定的 HMAC 摘要，不存明文）、
+  `email_security_counters`（限流 / 预算计数，桶键不可逆摘要为主键，行锁串行化）、
+  `password_reset_authorizations`（重置授权只存令牌摘要，一次性消费）。
+  三张表都不含明文验证码、令牌或原始邮箱 / IP。
 
 完整字段与状态语义见 `docs/contracts/data-contract.md`。
 

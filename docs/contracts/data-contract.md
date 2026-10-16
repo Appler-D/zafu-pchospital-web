@@ -51,6 +51,49 @@
   建 Session / 改密必须复核代次 —— 旧校验结果不能作用到新一代凭据上。
 - 改密和管理员重置密码必须撤销已有 Session；改密成功轮换当前 Session。
 
+## 邮箱边界（issue #146，基础设施，HTTP 端点尚未接入）
+
+本轮只落公共基础设施：邮箱规范化、EMAIL 身份约束、验证码挑战与重置授权原语、
+可注入 SMTP Sender、持久化限流 / 预算与清理脚本；绑定 / 换绑页面、匿名找回与自设密码、
+登录邮箱门禁均留待后续步骤。Service 未挂载到任何 HTTP 路由是本阶段的**预期交付状态**。
+
+- 邮箱身份存 `user_identities(type='EMAIL')`；规范化（`normalizeEmail`）只接受 ASCII：
+  trim → 小写 → 单个 `@` → 本地部 dot-atom ≤64 字符 → 域名 ≥2 段、每段 1–63 字母数字
+  或连字符 → 全长 ≤191。不合规输入拒绝，不做任何静默修复。
+- 新增 `active_email_key VARCHAR(80) NULL`：只有 EMAIL 行能写该键（迁移里手写 CHECK
+  约束保证），值为 `email:{userId}`；唯一索引让**一名用户至多一个有效邮箱**由数据库兜底，
+  软删除身份时置空、释放槽位。**一个规范化邮箱全局只归属一个用户**继续由既有
+  `(type, identifier_normalized)` 唯一保证（软删除也不释放，与其它身份一致）。
+  历史行保持 `NULL`。
+- `email_challenges` 只存验证码的 **HMAC 摘要**（绑定 challengeId / userId / purpose /
+  规范化邮箱；pepper 独立为 `EMAIL_CODE_PEPPER`），不存明文。6 位数字、10 分钟有效；
+  状态机 `PENDING → ACTIVE（SMTP 已接受）→ CONSUMED`，被替代转 `INVALIDATED`，
+  到期由 `expires_at` 派生。同一用途重新签发会把旧的 `PENDING / ACTIVE` 挑战置为
+  `INVALIDATED`（含换目标地址）；发送结果只在挑战仍为 `PENDING` 且未过期时激活。
+- `email_security_counters`：桶键为主键，存 `HMAC(PII_AUDIT_PEPPER, 'email:' + key)`
+  摘要，不落明文邮箱 / IP / 用户 ID。计数在 `SELECT … FOR UPDATE` 行锁事务内进行，
+  多桶预占按**明文键排序后的固定顺序**取锁（防死锁）；窗口过期按清零重新计时
+  （滚动窗口锚定首次事件；每日窗口锚定 Asia/Shanghai 自然日，数据库存 UTC）。口径：
+  - 验码失败（账号 + 用途，跨目标）：15 分钟 5 次 → `blocked_until` 阻断 15 分钟；
+    重发 / 换 IP 不清零；失败计数在独立提交的事务里先落库再返回失败；
+  - 验码 IP：15 分钟 30 次；
+  - 发送冷却：账号、目标各 60 秒（跨用途共享）；
+  - 每日：账号 10 / 目标 10 / IP 100；
+  - 全站预算：缺省 150 封 / 天 + 10 封 / 分钟（`EMAIL_DAILY_BUDGET` 可调），
+    发送前在同一事务原子预占；任一桶超限整笔回滚、不消耗任何额度。
+- `password_reset_authorizations`：只存令牌摘要（`HMAC(EMAIL_CODE_PEPPER,
+'password-reset:' + token)` 唯一索引），32 字节随机令牌只在签发返回值出现一次；
+  10 分钟、一次性（条件更新消费，同事务只允许成功一次）。签发与消费都重查账号资格、
+  邮箱身份仍在（同 id / 未软删 / 已验证 / 同属该账号）与 `credential_version`
+  未被重置推进 —— 管理员刚重置过密码时，旧验证码不能兑换新代次授权。
+- 消费原语（`consumeEmailChallenge` / `consumePasswordResetAuthorization`）与调用方
+  事务共享：传入既有事务，成功即改状态，失败整笔回滚。
+- 审计动作：`email.challenge.requested / sent / send_discarded / send_failed / verified /
+verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`；
+  审计摘要里的邮箱字段统一打码（`a***@example.com`），验证码与令牌绝不进审计。
+- 清理：`pnpm email:cleanup`（`tools/email-cleanup.ts`）分批删除 7 天前已结束的挑战、
+  过期授权与过期计数桶，幂等、可重复执行。
+
 ## 招募与发放边界
 
 - `join_applications` 可独立存在，不要求先创建用户。

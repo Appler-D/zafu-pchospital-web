@@ -15,6 +15,7 @@ import { assertSameOrigin, sessionCookie } from "../../src/lib/auth/request";
 import { authenticateRequest } from "../../src/lib/auth/request";
 import { submitMemberSignup } from "../../src/lib/member-signup";
 import {
+  IdentityType,
   JoinApplicationStatus,
   Permission,
   RepairStatus,
@@ -92,6 +93,39 @@ test("审计脱敏只拦凭据类 code 字段，不误伤普通业务字段", ()
   assert.equal("inviteCode" in redacted, false);
   assert.equal("verificationCode" in redacted, false);
   assert.doesNotMatch(JSON.stringify(redacted), /should-be-removed/);
+});
+
+test("邮箱基础设施错误码与身份类型已进入公共契约（issue #146）", () => {
+  for (const code of [
+    "EMAIL_NOT_ENABLED",
+    "EMAIL_CHALLENGE_INVALID",
+    "EMAIL_ALREADY_BOUND",
+    "EMAIL_NOT_VERIFIED",
+    "EMAIL_SEND_FAILED",
+    "EMAIL_SEND_UNCERTAIN",
+    "EMAIL_RATE_LIMITED",
+    "EMAIL_BUDGET_EXHAUSTED",
+    "EMAIL_RESET_AUTHORIZATION_INVALID",
+  ]) {
+    assert.equal(ApiErrorCode.includes(code as (typeof ApiErrorCode)[number]), true);
+  }
+  assert.equal(IdentityType.includes("EMAIL"), true);
+});
+
+test("审计脱敏：邮箱字段统一打码，非字符串值不误伤", () => {
+  const redacted = redactAuditSummary({
+    email: "alice@example.com",
+    targetEmail: "bob.smith@sub.example.co",
+    emailNormalized: "carol@example.com",
+    emailVerified: true, // 布尔值不是联系方式，保留
+    malformedEmail: "not-an-email", // 缺结构 → 保守替换
+  }) as Record<string, unknown>;
+  assert.equal(redacted.email, "a***@example.com");
+  assert.equal(redacted.targetEmail, "b***@sub.example.co");
+  assert.equal(redacted.emailNormalized, "c***@example.com");
+  assert.equal(redacted.emailVerified, true);
+  assert.equal(redacted.malformedEmail, "***");
+  assert.doesNotMatch(JSON.stringify(redacted), /alice@|bob\.smith|carol@|not-an-email/);
 });
 
 test("公开端点限流返回稳定错误码", () => {
