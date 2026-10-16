@@ -8,6 +8,10 @@ import {
   setInitialPassword,
 } from "@/features/accounts/account-repository";
 import { movedRowIds } from "@/features/admin/reorder";
+import {
+  resolveAccountBlockedReason,
+  type AccountRecoveryTarget,
+} from "@/features/auth/account-recovery";
 import { memberRepository } from "@/features/members/member-repository";
 import { saveMemberSkills } from "@/features/member-profile/member-profile-service";
 import { claimHistoryForNewMember } from "@/features/repairs/repair-history-import-service";
@@ -465,7 +469,7 @@ export class MemberService implements MemberServiceContract {
     if (!identity || identity.deletedAt)
       throw new AppError("RESOURCE_NOT_FOUND", "未找到该 QQ 对应的账号");
     const user = identity.user;
-    const blockedReason = resetBlockedReason(user, actor);
+    const blockedReason = resolveAccountBlockedReason(user, actor.userId);
     return {
       userId: user.id,
       displayName: user.displayName,
@@ -701,51 +705,23 @@ function memberAdminRoles(codes: string[]): RoleCode[] {
   return codes.filter((role): role is RoleCode => role === "MEMBER" || role === "ADMIN");
 }
 
-type ResetTargetUser = {
-  id: string;
-  deletedAt: Date | null;
-  status: string;
-  memberProfile: { deletedAt: Date | null; status: string } | null;
-  roles: { role: { code: string } }[];
-};
-
-/**
- * 恢复资格判定（查询与签发共用），与登录的 `readPrincipal` 守卫同义：
- * 「签发出去能登进来」才允许重置。`SELF` 是自助恢复例外 ——
- * 不能给自己签临时密码，否则「改密要先验当前密码」的要求就被重置入口绕过。
- */
-function resetBlockedReason(
-  user: ResetTargetUser,
-  actor: AuthorizedActor,
-): AdminAccountLookupResult["blockedReason"] {
-  if (user.id === actor.userId) return "SELF";
-  if (user.deletedAt || user.status !== "ACTIVE") return "DISABLED";
-  const codes = user.roles.map((entry) => entry.role.code);
-  const activeMember =
-    user.memberProfile &&
-    !user.memberProfile.deletedAt &&
-    user.memberProfile.status === "ACTIVE" &&
-    codes.includes("MEMBER");
-  if (!codes.includes("ADMIN") && (user.memberProfile ? !activeMember : codes.includes("MEMBER")))
-    return "MEMBER_INACTIVE";
-  return null;
-}
-
-/** 事务内校验恢复资格；不合格直接抛对应错误，合格返回目标用户（供结果组装）。 */
+/** 事务内校验恢复资格；不合格直接抛对应错误，合格返回目标用户（供结果组装）。
+ *  资格判定口径在 `@/features/auth/account-recovery`（issue #146 起邮箱找回复用同一份）。 */
 async function assertResetTargetUsable(
   tx: Prisma.TransactionClient,
   userId: string,
   actor: AuthorizedActor,
 ) {
-  const user = await tx.user.findUnique({
-    where: { id: userId },
-    include: {
-      memberProfile: true,
-      roles: { where: { revokedAt: null }, include: { role: true } },
-    },
-  });
+  const user: (AccountRecoveryTarget & { displayName: string | null }) | null =
+    await tx.user.findUnique({
+      where: { id: userId },
+      include: {
+        memberProfile: true,
+        roles: { where: { revokedAt: null }, include: { role: true } },
+      },
+    });
   if (!user) throw new AppError("RESOURCE_NOT_FOUND", "账号不存在");
-  switch (resetBlockedReason(user, actor)) {
+  switch (resolveAccountBlockedReason(user, actor.userId)) {
     case "SELF":
       throw new AppError("FORBIDDEN", "不能通过手动重置恢复自己的密码，请使用「修改密码」");
     case "DISABLED":

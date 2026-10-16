@@ -735,3 +735,36 @@ DELETE /api/v1/member/notifications/:id
   `/join` 的姓名不再设整串 `pattern`（此前是 `\S{2,20}`，会拒掉含空格的姓名
   并卡在 20 字符）；客户端只 trim，不再删除姓名内部空白；
 - 密码、QQ / 手机号与学号 / 班级规则不变。
+
+## 邮箱验证与重置授权基础设施（issue #146，HTTP 端点尚未接入）
+
+本轮只落公共基础设施：邮箱规范化、`user_identities` 的 EMAIL 身份约束、验证码挑战与
+重置授权的 Service 原语、可注入 SMTP Sender、持久化限流 / 预算与 7 天清理脚本。
+**不新增任何 HTTP 端点** —— 绑定 / 换绑 / 管理端豁免、匿名找回与自设密码流程、
+登录邮箱门禁都留待后续步骤接线；本节记录已冻结的契约，供接线阶段直接消费。
+Service 层未挂路由是本阶段的预期交付状态，不是缺失。
+
+- 新增错误码（唯一事实来源仍是 `src/lib/api/errors.ts`）：
+  `EMAIL_NOT_ENABLED`、`EMAIL_NOT_VERIFIED`、`EMAIL_ALREADY_BOUND`、
+  `EMAIL_CHALLENGE_INVALID`、`EMAIL_SEND_FAILED`、`EMAIL_SEND_UNCERTAIN`、
+  `EMAIL_RESET_AUTHORIZATION_INVALID`、`EMAIL_RATE_LIMITED`、`EMAIL_BUDGET_EXHAUSTED`；
+- 新增契约类型（`src/types/contracts.ts`）：`EmailChallengePurpose`
+  （`EMAIL_BIND` / `EMAIL_CHANGE_OLD` / `EMAIL_CHANGE_NEW` / `PASSWORD_RESET`）、
+  `EmailChallengeServiceContract`、`PasswordResetServiceContract` 及配套输入 / 结果类型；
+  `IdentityType` 增加 `EMAIL`（`user_identities` 早已预留该枚举，无需迁移旧数据）；
+- 固定参数：验证码 6 位 / 10 分钟；账号 + 用途 15 分钟 5 次错码 → 阻断 15 分钟
+  （重发 / 换 IP 不清零）；验码 IP 15 分钟 30 次；发送冷却 60 秒（账号 / 目标各一）；
+  每日 10 / 10 / 100（账号 / 目标 / IP，上海自然日）；全站预算缺省 150 封 / 天 +
+  10 封 / 分钟；重置授权令牌 32 字节随机 / 10 分钟 / 一次性；安全记录保留 7 天；
+- 邮件**缺省关闭**：`MAIL_ENABLED=false`（`MAIL_ENABLED` 未设置同理）时所有邮箱 Service
+  抛 `EMAIL_NOT_ENABLED`，站点启动、构建与其它模块完全不受影响；启用时缺 SMTP 配置
+  会在取配置时报 `INTERNAL_ERROR`（fail fast，不空跑）；
+- 发送结果语义：SMTP 明确拒绝 → `EMAIL_SEND_FAILED`；超时 / 连接中断等不确定结果 →
+  `EMAIL_SEND_UNCERTAIN`（挑战保持 `PENDING` 直到过期，不激活、也不退预算 ——
+  用户可在冷却后重发）；两者都不泄露 SMTP 细节；
+- 审计动作 `email.challenge.requested / sent / send_discarded / send_failed / verified /
+  verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`；
+  邮箱在审计中打码，验证码 / 令牌不落审计；
+- 新增环境变量：`MAIL_ENABLED`、`SMTP_HOST`、`SMTP_PORT`（默认 465）、`SMTP_USER`、
+  `SMTP_PASSWORD`、`MAIL_FROM`、`EMAIL_CODE_PEPPER`（独立 pepper）、
+  `EMAIL_DAILY_BUDGET`；清理入口 `pnpm email:cleanup`。

@@ -34,6 +34,8 @@ model User {
   skillsCreated      Skill[]                 @relation("SkillCreator")
   publicSettings     PublicContentSetting[]  @relation("PublicContentSettingUpdater")
   repairActivities   RepairActivity[]        @relation("RepairActivityCreator")
+  emailChallenges    EmailChallenge[]
+  passwordResetAuthorizations PasswordResetAuthorization[]
 
   @@index([status, deletedAt], map: "users_status_deleted_idx")
   @@map("users")
@@ -74,10 +76,18 @@ model UserIdentity {
   type                 String    @db.VarChar(32)
   identifierNormalized String    @map("identifier_normalized") @db.VarChar(191)
   verifiedAt           DateTime? @map("verified_at") @db.DateTime(3)
+  /// 有效邮箱唯一键（issue #146）：仅 `type = EMAIL` 且生效（未软删除）的行填
+  /// `email:{userId}`，其它类型与全部历史行保持 NULL；撤销时清空。
+  /// 与 `(type, identifier_normalized)` 全局唯一一起构成两条不变量：
+  /// 一名用户至多一个有效邮箱、一个规范化邮箱全局只归属一个用户。
+  /// 数据库 CHECK 约束保证非 EMAIL 行不得携带该键。
+  activeEmailKey       String?   @unique(map: "user_identities_active_email_uq") @map("active_email_key") @db.VarChar(80)
   createdAt            DateTime  @map("created_at") @db.DateTime(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
   deletedAt            DateTime? @map("deleted_at") @db.DateTime(3)
   user                 User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  emailChallenges      EmailChallenge[] @relation("EmailChallengeIdentity")
+  passwordResetAuthorizations PasswordResetAuthorization[] @relation("PasswordResetAuthorizationIdentity")
 
   @@unique([type, identifierNormalized], map: "user_identities_type_identifier_uq")
   @@index([userId, deletedAt], map: "user_identities_user_deleted_idx")
@@ -649,4 +659,81 @@ model RepairActivityAttendance {
   @@unique([activityId, memberProfileId], map: "repair_activity_attendance_activity_member_uq")
   @@index([memberProfileId], map: "repair_activity_attendance_member_idx")
   @@map("repair_activity_attendances")
+}
+
+/// 邮箱验证码挑战（issue #146）。只存带独立密钥的 HMAC 摘要，明文验证码
+/// 只在生成它的进程内存里存在过；验证码与「是否已验证」分表存放 ——
+/// 待验证地址只放这里，不写 `user_identities`。
+///
+/// 状态机：`PENDING`（已预占额度、等待发信结果）→ `ACTIVE`（服务商已接受，可验证）；
+/// `ACTIVE` → `CONSUMED`（成功消费，同一挑战最多一次）；任何未终结挑战被
+/// 同一（用户, 用途）的新签发替代时 → `INVALIDATED`。过期由 `expires_at` 派生，
+/// 不落存储态；`PENDING` 过期行不可验证、由清理收走，不恢复发送。
+model EmailChallenge {
+  id                    String    @id @db.Char(36)
+  userId                String    @map("user_id") @db.Char(36)
+  purpose               String    @db.VarChar(32)
+  /// 发信目标（规范化邮箱）。待验证的新邮箱只存在于挑战行，不冒充已绑定身份。
+  targetEmailNormalized String    @map("target_email_normalized") @db.VarChar(191)
+  /// 目标为「当前有效邮箱」的用途（CHANGE_OLD / PASSWORD_RESET）在签发时快照身份 ID，
+  /// 兑换重置授权时复核仍是同一身份；绑定 / 换新邮箱为 NULL。
+  emailIdentityId       String?   @map("email_identity_id") @db.Char(36)
+  /// PASSWORD_RESET 在签发时快照的凭据代次：管理员重置推进代次后，
+  /// 旧验证码不得再兑换成新一代授权。其它用途为 NULL。
+  credentialVersion     Int?      @map("credential_version")
+  codeDigest            Bytes     @map("code_digest") @db.Binary(32)
+  status                String    @db.VarChar(32)
+  expiresAt             DateTime  @map("expires_at") @db.DateTime(3)
+  /// 终结时刻（CONSUMED / INVALIDATED）；清理按 finished_at 判保留期。
+  finishedAt            DateTime? @map("finished_at") @db.DateTime(3)
+  createdAt             DateTime  @map("created_at") @db.DateTime(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  emailIdentity         UserIdentity? @relation("EmailChallengeIdentity", fields: [emailIdentityId], references: [id], onDelete: Restrict)
+
+  @@index([userId, purpose, status], map: "email_challenges_user_purpose_status_idx")
+  @@index([status, expiresAt], map: "email_challenges_status_expires_idx")
+  @@index([finishedAt], map: "email_challenges_finished_idx")
+  @@map("email_challenges")
+}
+
+/// 邮箱安全计数 / 预算桶（issue #146）。持久化、跨进程 / 重启生效：
+/// 账号 / 目标 / IP 纬度的发信冷却与每日上限、验证失败与阻断、IP 校验请求、
+/// 全站每日与每分钟预算共用这一张表，靠带用途命名空间的不可逆键摘要区分
+/// （明文键不落库）。窗口为固定窗口：滚动类锚定首次事件，日类锚定上海自然日。
+model EmailSecurityCounter {
+  bucketKeyDigest Bytes     @id @map("bucket_key_digest") @db.Binary(32)
+  counter         Int       @default(0)
+  windowStartedAt DateTime  @map("window_started_at") @db.DateTime(3)
+  windowExpiresAt DateTime  @map("window_expires_at") @db.DateTime(3)
+  /// 仅验证失败桶使用：达到失败上限后的阻断截止时刻。
+  blockedUntil    DateTime? @map("blocked_until") @db.DateTime(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([windowExpiresAt, blockedUntil], map: "email_security_counters_window_blocked_idx")
+  @@map("email_security_counters")
+}
+
+/// 一次性密码重置授权（issue #146）。只存令牌摘要；明文只在签发响应里出现一次。
+/// 签发时保存账号与邮件身份资格快照（用户 / 身份 / 规范化邮箱 / 凭据代次 / 期限），
+/// 兑换授权时逐项复核 —— 管理员重置推进代次后，旧授权自动失效。
+model PasswordResetAuthorization {
+  id                String    @id @db.Char(36)
+  userId            String    @map("user_id") @db.Char(36)
+  emailIdentityId   String    @map("email_identity_id") @db.Char(36)
+  emailNormalized   String    @map("email_normalized") @db.VarChar(191)
+  credentialVersion Int?      @map("credential_version")
+  tokenDigest       Bytes     @unique(map: "password_reset_authorizations_token_uq") @map("token_digest") @db.Binary(32)
+  status            String    @db.VarChar(32)
+  expiresAt         DateTime  @map("expires_at") @db.DateTime(3)
+  finishedAt        DateTime? @map("finished_at") @db.DateTime(3)
+  createdAt         DateTime  @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  emailIdentity     UserIdentity @relation("PasswordResetAuthorizationIdentity", fields: [emailIdentityId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status], map: "pwd_reset_auth_user_status_idx")
+  @@index([status, expiresAt], map: "pwd_reset_auth_status_expires_idx")
+  @@index([finishedAt], map: "pwd_reset_auth_finished_idx")
+  @@map("password_reset_authorizations")
 }
