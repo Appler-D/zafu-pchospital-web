@@ -2941,6 +2941,9 @@ html[data-theme="black-yellow"] {
     font-size: var(--t-xs);
     line-height: 1.7;
     color: var(--accent-deep);
+    /* 注册表单（InviteRegistrationForm）常驻这一行：空着也占一行高，
+       错误出现/消失不改面板高度，页面上已渲染的内容不会位移（issue #147 反馈规则）。 */
+    min-height: calc(var(--t-xs) * 1.7);
   }
   .auth-login__links {
     display: grid;

@@ -46,6 +46,12 @@
 - 面试状态与账号发放状态使用两个独立字段。
 - `account_provisions` 同时约束幂等键以及 `(source_type, source_id)` 唯一。
 - Review、Redemption、Provision、AuditLog 不提供业务删除入口。
+- 招募与邀请码注册都要求学号 / 班级**必填**（issue #147）：学号是保留前导零的自由字符串，
+  trim 后 1–32 字符，不要求纯数字、不做唯一性校验、不进入 `user_identities`、不参与去重；
+  班级 trim 后 1–80 字符。`join_applications` 的两列为可空列 —— 迁移前的历史报名没有
+  该信息，保持 `NULL`、不批量回填；新提交由应用层保证必填。
+- 面试通过发放把报名上的有效学号 / 班级带入成员档案；历史 `NULL` / 空白值转为
+  「不更新该字段」，不会清空档案里已有的有效值。`MemberProfile` 的历史可空性不变。
 
 ## 邀请码不变量
 

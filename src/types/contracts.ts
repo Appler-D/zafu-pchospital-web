@@ -228,6 +228,13 @@ export type SubmitJoinApplicationInput = {
   realName: string;
   qq: string;
   phone: string;
+  /**
+   * 学号 / 班级（issue #147）：**必填**。约束与邀请码注册同一来源
+   * （`src/lib/security/normalization.ts`）：学号 trim 后 1–32 字符、保留前导零、不唯一；
+   * 班级 trim 后 1–80 字符。历史报名没有这两列（读模型保持可空），新提交由服务端保证必填。
+   */
+  studentId: string;
+  className: string;
   selfIntroduction?: string;
   preferredDirection?: string;
   applicantRemark?: string;
@@ -279,6 +286,9 @@ export type JoinApplicationDetail = JoinApplicationView & {
   ticketNo: string;
   recruitmentCycle: string;
   realName: string;
+  /** 学号 / 班级（issue #147）：历史报名为 `null`（迁移前没有这两列），界面显示 `—`。 */
+  studentId: string | null;
+  className: string | null;
   qq: string;
   phone: string;
   selfIntroduction: string | null;
@@ -325,8 +335,9 @@ export type RedeemInviteCodeInput = {
   realName: string;
   qq: string;
   phone: string;
-  studentId?: string;
-  className?: string;
+  /** 学号 / 班级（issue #147）：**必填**，约束来源与公开招募同一份（`normalization.ts`）。 */
+  studentId: string;
+  className: string;
   password: string;
 };
 
@@ -879,6 +890,9 @@ export type JoinApplicationExportRow = {
   ticketNo: string;
   recruitmentCycle: string;
   realName: string;
+  /** 学号（issue #147）：列在姓名后；历史空值导出空字符串，不写字面量 `null`。 */
+  studentId: string;
+  className: string;
   qq: string;
   phone: string;
   status: string;

@@ -164,6 +164,9 @@ model JoinApplication {
   ticketNo           String                  @unique(map: "join_applications_ticket_uq") @map("ticket_no") @db.VarChar(32)
   recruitmentCycle   String                  @map("recruitment_cycle") @db.VarChar(32)
   realName           String                  @map("real_name") @db.VarChar(64)
+  // 学号 / 班级（issue #147）：新报名由应用层保证必填；迁移前的历史报名保持 NULL，不批量回填。
+  studentId          String?                 @map("student_id") @db.VarChar(32)
+  className          String?                 @map("class_name") @db.VarChar(80)
   qqNormalized       String                  @map("qq_normalized") @db.VarChar(32)
   phoneNormalized    String                  @map("phone_normalized") @db.VarChar(32)
   selfIntroduction   String?                 @map("self_introduction") @db.Text

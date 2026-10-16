@@ -203,7 +203,13 @@ test("/join 重复报名信封映射为成功回执", async () => {
     );
   try {
     assert.deepEqual(
-      await submitMemberSignup({ qq: "123456789", realName: "测试成员", phone: "13800000000" }),
+      await submitMemberSignup({
+        qq: "123456789",
+        realName: "测试成员",
+        phone: "13800000000",
+        studentId: "001234",
+        className: "计算机 231",
+      }),
       {
         ok: true,
         ticket: "JA-TEST",

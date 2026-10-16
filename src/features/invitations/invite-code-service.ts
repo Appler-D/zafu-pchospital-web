@@ -15,7 +15,14 @@ import { maskPhone, maskQq } from "@/lib/audit/redaction";
 import { requirePermission } from "@/lib/auth/permissions";
 import { inSerializableTransaction } from "@/lib/db/transaction";
 import { getDb } from "@/lib/db/client";
-import { normalizePhone, normalizeQq } from "@/lib/security/normalization";
+import {
+  normalizeClassName,
+  normalizePhone,
+  normalizeQq,
+  normalizeStudentId,
+  PERSON_NAME_LENGTH_MESSAGE,
+  trimPersonName,
+} from "@/lib/security/normalization";
 import { digestInviteCode, generateInviteCode } from "@/lib/security/secrets";
 import { claimHistoryForNewMember } from "@/features/repairs/repair-history-import-service";
 import type {
@@ -207,11 +214,20 @@ export class InviteCodeService implements InviteCodeServiceContract {
     if (!isPasswordLengthValid(input.password)) {
       throw new AppError("VALIDATION_FAILED", passwordLengthMessage());
     }
-    if (input.realName.trim().length < 2 || input.realName.trim().length > 64) {
-      throw new AppError("VALIDATION_FAILED", "姓名长度应为 2–64 个字符");
+    // 姓名（issue #147 返修）：与公开招募同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
+    // 保留内部字符与空格；字段错误沿用统一信封（与学号 / 班级同款）。
+    const realName = trimPersonName(input.realName);
+    if (realName === null) {
+      throw new AppError("VALIDATION_FAILED", PERSON_NAME_LENGTH_MESSAGE, {
+        fieldErrors: { realName: [PERSON_NAME_LENGTH_MESSAGE] },
+      });
     }
     const qq = normalizeQq(input.qq);
     const phone = normalizePhone(input.phone);
+    // 学号 / 班级必填（issue #147）：服务端独立校验（路由已把非字符串拒掉，这里保住
+    // 直接调用 Service 的入口），规范化结果（trim、保留前导零）用于建档。
+    const studentId = normalizeStudentId(input.studentId);
+    const className = normalizeClassName(input.className);
     const digest = digestInviteCode(input.code);
     const redeemed = await inSerializableTransaction(async (tx) => {
       const replay = await tx.inviteCodeRedemption.findUnique({
@@ -257,12 +273,12 @@ export class InviteCodeService implements InviteCodeServiceContract {
       if (!code || code.deletedAt) throw new AppError("INVITE_CODE_INVALID", "邀请码无效");
       assertRedeemable(code, qq, phone);
 
-      const userId = await resolveOrCreateUser(tx, { qq, phone }, input.realName.trim());
+      const userId = await resolveOrCreateUser(tx, { qq, phone }, realName);
       const memberProfileId = await ensureMemberProfile(tx, {
         userId,
-        realName: input.realName.trim(),
-        studentId: input.studentId?.trim(),
-        className: input.className?.trim(),
+        realName,
+        studentId,
+        className,
       });
       await grantMemberRole(tx, {
         userId,
@@ -319,7 +335,7 @@ export class InviteCodeService implements InviteCodeServiceContract {
     // 也会走到这里，但暂存行已认领过，第二次是空操作。
     await claimHistoryForNewMember({
       memberProfileId: redeemed.memberProfileId,
-      realName: input.realName.trim(),
+      realName,
       actor: context,
       actorType: "SYSTEM",
       actorUserId: redeemed.userId,

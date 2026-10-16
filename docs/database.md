@@ -142,6 +142,10 @@ M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列
   `owner_phone VARCHAR(11) NULL`（issue #79 第 6 项）。接待落单自动带自报名，手工建单由成员
   填写；历史记录不回填，保持 `NULL`（旧数据没有该信息）。不建外键；可见性收口在视图层
   （`ownerPhone` 仅归属人与 `repair:review` 可读），详见 `docs/contracts/data-contract.md`。
+- `20261016000000_join_application_student_fields`：`join_applications` 加
+  `student_id VARCHAR(32) NULL` 与 `class_name VARCHAR(80) NULL`（issue #147），
+  字段名与长度和 `member_profiles` 同名列一致。历史报名保持 `NULL`、不批量回填，
+  新版应用层保证必填；不建索引与唯一约束，学号也不进入 `user_identities`。
 
 完整字段与状态语义见 `docs/contracts/data-contract.md`。
 

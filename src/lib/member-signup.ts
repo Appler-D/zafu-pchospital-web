@@ -3,8 +3,13 @@
 /** 提交给后端的登记数据。字段名即接口字段名，不要在页面里另起别名。 */
 export type MemberSignupInput = {
   qq: string;
+  /** 姓名：只去首尾空白（trim 后 2–64 字符），保留内部字符与空格。 */
   realName: string;
   phone: string;
+  /** 学号：保留前导零的字符串，只做 trim（不剔字符、不转数字）。 */
+  studentId: string;
+  /** 班级：自由文本，只做 trim。 */
+  className: string;
 };
 
 export type MemberSignupReceipt = {
@@ -31,15 +36,19 @@ export type MemberSignupResult = MemberSignupReceipt | MemberSignupFailure;
  *
  * 必填与格式约束由原生约束校验（required / pattern / maxLength）负责，
  * 这里是「用户已经填对」之后的清理：去掉首尾空白、去掉 QQ 与手机号里的
- * 分隔符（138 0000 0000 这类写法很常见），并统一姓名中的空白。
+ * 分隔符（138 0000 0000 这类写法很常见）；姓名只去首尾空白，内部字符与
+ * 空格原样保留（issue #147 返修：此前会删掉姓名里的全部空白）。
  */
 export function normalizeMemberSignup(data: FormData): MemberSignupInput {
   const text = (key: string) => String(data.get(key) ?? "").trim();
 
   return {
     qq: text("qq").replace(/\D/g, ""),
-    realName: text("realName").replace(/\s+/g, ""),
+    realName: text("realName"),
     phone: text("phone").replace(/\D/g, ""),
+    // 学号只去首尾空白：保留前导零与其中的任何字符（学号不要求纯数字）。
+    studentId: text("studentId"),
+    className: text("className"),
   };
 }
 

@@ -67,6 +67,10 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
         const memberProfileId = await ensureMemberProfile(tx, {
           userId,
           realName: application.realName,
+          // 学号 / 班级（issue #147）：有效新值沿既有发放更新语义写入档案；
+          // 历史报名的 NULL / 空白转为 `undefined`（不更新该字段），不能清空档案里已有的有效值。
+          studentId: blankToUndefined(application.studentId),
+          className: blankToUndefined(application.className),
         });
         await grantMemberRole(tx, {
           userId,
@@ -165,6 +169,15 @@ function toResult(provision: {
     attemptCount: provision.attemptCount,
     lastErrorCode: provision.lastErrorCode,
   };
+}
+
+/**
+ * 历史报名上的学号 / 班级是 `NULL`（迁移前没有这两列）：转为 `undefined` 让
+ * `ensureMemberProfile` 跳过该字段，而不是写入 `null` 把档案里的有效值抹掉。
+ */
+function blankToUndefined(value: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 export const accountProvisionService = new AccountProvisionService();

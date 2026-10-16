@@ -57,9 +57,10 @@
 
 ### `POST /api/v1/join-applications`
 
-请求字段：`realName`、`qq`、`phone`、可选 `selfIntroduction`、可选
-`preferredDirection`、`privacyConsent: true`。招募批次由服务端
-`RECRUITMENT_CYCLE` 配置，不接受客户端指定。
+请求字段：`realName`、`qq`、`phone`、`studentId`、`className`、可选 `selfIntroduction`、
+可选 `preferredDirection`、`privacyConsent: true`。招募批次由服务端
+`RECRUITMENT_CYCLE` 配置，不接受客户端指定。学号与班级为必填（issue #147，见下方
+「学号与班级」一节）。
 
 首次创建返回 201；同一批次相同规范化 QQ 或手机号的重复有效提交返回原回执和 200，
 `data.duplicate=true`。该公开入口保留独立的公开报名限流，并且与其他写接口一样执行
@@ -666,3 +667,35 @@ DELETE /api/v1/member/notifications/:id
 `getBoard`）→ `MemberRepairActivityBoard.tsx` 弹层；集成测试
 `tests/integration/repair-activity-board.test.ts` 钉住排序、名字解析与
 「成员不下发」红线。
+
+## 学号与班级（issue #147）
+
+两个公开入口——邀请码注册（`POST /api/v1/member-registrations/invite`）与公开招募
+（`POST /api/v1/join-applications`）——都要求 `studentId` 与 `className` **必填**：
+
+- 约束只有一份（`src/lib/security/normalization.ts`）：学号 trim 后 1–32 字符、
+  **保留前导零**，不要求纯数字 / 固定长度，**不做唯一性校验**（学号不是身份，
+  不进 `user_identities`，两人同学号合法）；班级 trim 后 1–80 字符，不引入命名规则；
+- 缺失、空串、纯空白、**非字符串值**（对象 / 数字不做强制转换）与超长输入返回
+  400 `VALIDATION_FAILED`，`fieldErrors` 带 `studentId` / `className`；
+- 校验失败不创建报名 / 账号，也不消耗邀请码次数；密码、QQ / 手机号与招募批次规则不变；
+- 管理员详情的 `JoinApplicationDetail` 新增可空 `studentId` / `className`
+  （历史报名为 `null`，界面显示 `—`）；报名导出在「姓名」后新增「学号」「班级」两列，
+  历史空值导出空字符串，XLSX 的学号为文本单元格（保住前导零）；
+- 面试通过发放时，报名上的有效值带入成员档案；历史 `NULL` / 空白值**不更新**该字段，
+  不会清空档案里已有的有效值。
+
+不新增端点、权限码、错误码或数据库索引；`join_applications` 新增的两列可空，见
+数据契约的对应条目。
+
+## 姓名（issue #147 返修）
+
+两个公开入口（邀请码注册与公开招募）的 `realName` 共用一份约束
+（`src/lib/security/normalization.ts`）：**只去首尾空白**，trim 后 2–64 字符，
+内部字符与空格原样保留 —— 不引入「只能中文 / 不能有空格」等格式规则。
+
+- 不满足时返回 400 `VALIDATION_FAILED`，`fieldErrors` 带 `realName`；
+- 两个表单的原生约束（`minLength=2` / `maxLength=64`）由同一组常量生成，
+  `/join` 的姓名不再设整串 `pattern`（此前是 `\S{2,20}`，会拒掉含空格的姓名
+  并卡在 20 字符）；客户端只 trim，不再删除姓名内部空白；
+- 密码、QQ / 手机号与学号 / 班级规则不变。

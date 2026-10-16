@@ -31,6 +31,8 @@ export const APPLICATION_EXPORT_COLUMNS: readonly ExportColumn<JoinApplicationEx
   { key: "ticketNo", header: "报名编号" },
   { key: "recruitmentCycle", header: "招募批次" },
   { key: "realName", header: "姓名" },
+  { key: "studentId", header: "学号" },
+  { key: "className", header: "班级" },
   { key: "qq", header: "QQ 号" },
   { key: "phone", header: "手机号" },
   { key: "status", header: "报名状态" },
@@ -45,6 +47,8 @@ const COLUMN_WIDTHS: Record<string, number> = {
   ticketNo: 30,
   recruitmentCycle: 14,
   realName: 14,
+  studentId: 18,
+  className: 18,
   qq: 16,
   phone: 16,
   status: 14,
@@ -78,8 +82,9 @@ export const joinApplicationExportService: JoinApplicationExportServiceContract 
             sheetName: "报名记录",
             columns: APPLICATION_EXPORT_COLUMNS,
             widths: COLUMN_WIDTHS,
-            // QQ 与手机号是长数字：按文本写入，避免 Excel 转成科学计数法丢精度。
-            textColumns: ["qq", "phone", "applicationId"],
+            // QQ / 手机号是长数字，学号要保住前导零：一律按文本写入，
+            // 避免 Excel 转成科学计数法或把 `001234` 改成 `1234`。
+            textColumns: ["qq", "phone", "studentId", "applicationId"],
           });
     const fileName = buildFileName(format);
     await inSerializableTransaction(async (tx) => {
@@ -115,6 +120,8 @@ async function loadRows(input: JoinApplicationExportInput): Promise<JoinApplicat
       ticketNo: true,
       recruitmentCycle: true,
       realName: true,
+      studentId: true,
+      className: true,
       qqNormalized: true,
       phoneNormalized: true,
       status: true,
@@ -137,6 +144,9 @@ async function loadRows(input: JoinApplicationExportInput): Promise<JoinApplicat
     ticketNo: record.ticketNo,
     recruitmentCycle: record.recruitmentCycle,
     realName: record.realName,
+    // 历史报名（issue #147 迁移前）两列为 NULL：导出空字符串，不出现字面量 `null`。
+    studentId: record.studentId ?? "",
+    className: record.className ?? "",
     qq: record.qqNormalized,
     phone: record.phoneNormalized,
     status: joinApplicationStatusLabels[record.status as JoinApplicationStatus],

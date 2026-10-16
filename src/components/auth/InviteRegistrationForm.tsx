@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { registerCopy } from "@/config/auth";
+import {
+  CLASS_NAME_MAX_LENGTH,
+  PERSON_NAME_MAX_LENGTH,
+  PERSON_NAME_MIN_LENGTH,
+  STUDENT_ID_MAX_LENGTH,
+} from "@/lib/security/normalization";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
 
 type FieldSpec = {
@@ -15,6 +21,10 @@ type FieldSpec = {
   type: "text" | "tel" | "password";
   autoComplete: string;
   required: boolean;
+  /** HTML minLength（非密码字段）；密码用全局密码策略，不走这里。 */
+  minLength?: number;
+  /** 非密码字段的长度上限；缺省沿用 80（历史行为）。 */
+  maxLength?: number;
 };
 
 const inviteFields: readonly FieldSpec[] = [
@@ -36,6 +46,9 @@ const identityFields: readonly FieldSpec[] = [
     type: "text",
     autoComplete: "name",
     required: true,
+    // 姓名（issue #147 返修）：只去首尾空白，trim 后 2–64 字符；此前落到默认 80 上限。
+    minLength: PERSON_NAME_MIN_LENGTH,
+    maxLength: PERSON_NAME_MAX_LENGTH,
   },
   {
     name: "qq",
@@ -59,7 +72,8 @@ const identityFields: readonly FieldSpec[] = [
     placeholder: registerCopy.studentIdPlaceholder,
     type: "text",
     autoComplete: "off",
-    required: false,
+    required: true,
+    maxLength: STUDENT_ID_MAX_LENGTH,
   },
   {
     name: "className",
@@ -67,7 +81,8 @@ const identityFields: readonly FieldSpec[] = [
     placeholder: registerCopy.classNamePlaceholder,
     type: "text",
     autoComplete: "off",
-    required: false,
+    required: true,
+    maxLength: CLASS_NAME_MAX_LENGTH,
   },
 ];
 
@@ -143,11 +158,11 @@ export function InviteRegistrationForm() {
       <Button className="auth-login__submit" type="submit" variant="solid" disabled={busy}>
         {busy ? registerCopy.submitting : registerCopy.submit}
       </Button>
-      {problem ? (
-        <p className="auth-login__problem" role="alert">
-          {problem}
-        </p>
-      ) : null}
+      {/* 错误提示常驻一行（空时也占位，min-height 见 globals.css）：就地替换文案，
+          不插入元素 —— 面板上下不再因错误出现而位移。 */}
+      <p className="auth-login__problem" role="alert">
+        {problem}
+      </p>
     </form>
   );
 }
@@ -172,8 +187,8 @@ function RegisterField({ field }: { field: FieldSpec }) {
           inputMode={field.name === "qq" ? "numeric" : undefined}
           placeholder={field.placeholder}
           autoComplete={field.autoComplete}
-          minLength={isPassword ? PASSWORD_MIN_LENGTH : undefined}
-          maxLength={isPassword ? PASSWORD_MAX_LENGTH : 80}
+          minLength={isPassword ? PASSWORD_MIN_LENGTH : field.minLength}
+          maxLength={isPassword ? PASSWORD_MAX_LENGTH : (field.maxLength ?? 80)}
           required={field.required}
         />
         {isPassword ? (

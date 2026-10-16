@@ -883,6 +883,10 @@ export const adminCopy = {
       title: "报名详情",
       contacts: "联系方式",
       contactsNote: "查看报名明文联系方式会写入审计记录。",
+      /** 学号 / 班级（issue #147）：历史报名未填写时显示 adminShared.none。 */
+      student: "学号与班级",
+      studentId: "学号",
+      className: "班级",
       selfIntroduction: "自我介绍",
       preferredDirection: "意向方向",
       applicantRemark: "报名备注",

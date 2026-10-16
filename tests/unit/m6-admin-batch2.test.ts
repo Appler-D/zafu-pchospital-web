@@ -119,6 +119,8 @@ test("报名导出的列顺序与 JoinApplicationExportRow 的键逐一对应", 
     ticketNo: "JA-1",
     recruitmentCycle: "2026",
     realName: "张三",
+    studentId: "001234",
+    className: "计算机 231",
     qq: "1234567",
     phone: "13900000000",
     status: "已提交",
@@ -134,6 +136,8 @@ test("报名导出的列顺序与 JoinApplicationExportRow 的键逐一对应", 
   // 报名的 QQ 与手机号必须是独立列：招募要按联系方式联系人。
   assert.ok(keys.includes("qq"));
   assert.ok(keys.includes("phone"));
+  // 学号 / 班级（issue #147）：插在「姓名」之后。
+  assert.deepEqual(keys.slice(0, 5), ["ticketNo", "recruitmentCycle", "realName", "studentId", "className"]);
 });
 
 test("维修导出列保持批次 1 的顺序（不得被批次 2 改动）", () => {
@@ -162,6 +166,8 @@ test("报名 CSV 复用同一套转义：BOM、CRLF、公式注入防护", () =>
       ticketNo: "JA-1",
       recruitmentCycle: "2026",
       realName: '=HYPERLINK("http://evil")',
+      studentId: "001234",
+      className: "计算机 231",
       qq: "1234567",
       phone: "13900000000",
       status: "已提交",
