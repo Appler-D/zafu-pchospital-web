@@ -73,6 +73,9 @@
   `VALIDATION_FAILED`。登录页默认不勾选「保持登录状态」。
 - `POST /api/v1/auth/logout`：撤销当前 Session 并清除 Cookie。
 - `POST /api/v1/auth/password/change`：验证当前密码、修改密码、撤销其他 Session 并轮换当前 Session。
+  管理员签发的临时密码完成恢复也走这条入口（当前密码填临时密码，见下方「管理员手动重置与
+  临时密码恢复」）。响应带 `destination`：按登录页同一份 `loginDestination` 规则给出改密后的
+  落点（管理员 `/admin`、成员 `/member`），客户端不自行按角色判断。
 - `GET /api/v1/me`：返回当前 User、Role、Permission、MemberProfile 状态、首次改密标记与
   `rememberMe`。只更新最后访问时间，不延长 Session 或 Cookie 到期时间。
 
@@ -83,7 +86,8 @@ Cookie 的写接口校验 `Origin`：`Origin` 必须等于服务端配置的 `AP
 白名单（2026-09 安全审计 F4）。Cookie 名为 `pc_hospital_session`，使用
 HttpOnly、SameSite=Lax、Path=/，生产环境启用 Secure。
 Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 Session 时保留
-`rememberMe`；登出、管理员重置密码和成员禁用仍撤销有效 Session。
+`rememberMe`（恢复态改为普通 1 天）；登出、管理员手动重置（改为签发 1 小时临时密码，
+见下方「管理员手动重置与临时密码恢复」）和成员禁用仍撤销有效 Session。
 `/login` 会识别有效 Session，按首次改密 / 管理员 / 成员身份跳转对应页面。
 受保护页面在到期时跳转 `/login?reason=expired`，登录页通过浮层显示过期提醒；
 浏览器恢复焦点或标签恢复可见时重新校验，网络异常不会被当作过期。
@@ -106,6 +110,8 @@ Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 
 - `POST /api/v1/admin/members/:id/enable`
 - `POST /api/v1/admin/members/move`
 - `POST /api/v1/admin/members/:id/password-reset`
+- `POST /api/v1/admin/accounts/lookup`
+- `POST /api/v1/admin/accounts/:userId/password-reset`
 
 报名列表接受 `page`、`pageSize`、`status`、`provisionStatus`、`submittedFrom`、
 `submittedTo` 与 `query`；列表只返回脱敏 QQ/手机号，完整联系方式、内部备注和审核记录只在
@@ -114,6 +120,36 @@ Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 
 这些端点的输入/输出 Service 契约位于 `src/types/contracts.ts`。管理员路径不是权限边界；
 Route Handler 必须从数据库 Session、账号状态和有效 UserRole 构造 actor，Service 再
 调用 `requirePermission`；不得信任客户端传入的角色或权限。
+
+#### 管理员手动重置与临时密码恢复（issue #113）
+
+两条入口都要求 `member:manage` + 同源校验，响应 `Cache-Control: private, no-store`，
+只返回管理操作所需的最小信息：
+
+- `POST /api/v1/admin/accounts/lookup`：请求体 `{ qq }`（QQ 只在请求体，不进 URL / 日志），
+  按规范化 QQ 精确匹配（不做模糊搜索），返回 `userId`、`displayName`、`roles`、
+  `canReset` 与 `blockedReason`；`blockedReason` 取值 `SELF` / `DISABLED` /
+  `MEMBER_INACTIVE` / `null`，与登录资格判定同义。管理员可以没有成员档案，因此不经过
+  成员列表。
+- `POST /api/v1/admin/members/:id/password-reset` 与
+  `POST /api/v1/admin/accounts/:userId/password-reset` 共用签发核心：6 位安全随机数字
+  （保留前导零）、1 小时有效、强制改密、撤销该账号全部有效 Session。响应复用
+  `initializationSecret` 字段承载明文（仅本次响应，关闭后无法再次读取），并附
+  `temporaryExpiresAt`；成员详情入口另带 `member`。服务端拒绝自助恢复
+  （`actor.userId` 即目标 → `FORBIDDEN`）、禁用 / 软删账号（`ACCOUNT_DISABLED`）
+  与成员身份失效（`MEMBER_PROFILE_INACTIVE`），不顺手改动状态 / 角色 / 档案。
+- 是否临时凭据**只由 `temporary_expires_at` 非空判定**，先判定期限与消费状态再验密：
+  过期 / 已消费的凭据即使密码正确也统一返回 `AUTH_INVALID_CREDENTIALS`，不落回普通密码
+  分支。首次成功登录在 Serializable 事务内原子消费，并发登录最多一次成功，只建立一个
+  最长 10 分钟、不晚于口令原到期时间、`rememberMe` 强制 `false`、不滑动续期的受限
+  Session。失败尝试沿用既有 `(QQ, IP)` 节流，另加账号维度的持久化节流（15 分钟 5 次
+  失败阻断 15 分钟）；过期 / 已消费只有 `(QQ, IP)` 桶计数。
+- 恢复态改密复用 `POST /api/v1/auth/password/change`：当前密码填本次临时密码，必须同时
+  持有该受限 Session；新密码不得与本次临时密码相同（`VALIDATION_FAILED`）。改密事务内
+  重查 Session 与凭据代次（`credential_version`），管理员再次签发在先时旧代次改密返回
+  `AUTH_SESSION_INVALID`，不得覆盖新凭据；成功后清除临时状态并轮换为普通 1 天 Session。
+  所有登录建立 Session 前都复核验密对应的凭据代次，重置与普通登录竞争时不会用旧校验
+  结果建立有效会话。
 
 ## 稳定错误码
 

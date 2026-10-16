@@ -32,6 +32,16 @@ export function digestLoginThrottleKey(qq: string, ipAddress: string): Uint8Arra
   return digestSecret(`${qq}:${ipAddress}`, getServerEnv().PII_AUDIT_PEPPER);
 }
 
+/**
+ * 账号维度节流键（issue #113）：`login_throttles` 的独立命名空间。
+ *
+ * 前缀 `account:` 与登录键的 `qq:ip` 形式天然不撞键，且互相删除时按 key 精确匹配，
+ * 不会把对方清掉 —— 6 位临时密码防换 IP 猜解靠这条键，普通登录的清除不能误伤它。
+ */
+export function digestAccountThrottleKey(userId: string): Uint8Array<ArrayBuffer> {
+  return digestSecret(`account:${userId}`, getServerEnv().PII_AUDIT_PEPPER);
+}
+
 function digestSecret(value: string, secret: string): Uint8Array<ArrayBuffer> {
   const digest = createHmac("sha256", secret).update(value).digest();
   return new Uint8Array(

@@ -21,13 +21,18 @@ export function ChangePasswordForm() {
         newPasswordConfirmation: data.get("newPasswordConfirmation"),
       }),
     });
-    const payload = (await response.json()) as { success: boolean; error?: { message?: string } };
+    const payload = (await response.json()) as {
+      success: boolean;
+      data?: { destination?: string };
+      error?: { message?: string };
+    };
     if (!response.ok || !payload.success) {
       setProblem(payload.error?.message ?? "修改失败");
       setBusy(false);
       return;
     }
-    router.replace("/member");
+    // 落点由服务端按统一角色规则给出（管理员 /admin、成员 /member），这里不再自行判断。
+    router.replace(payload.data?.destination ?? "/member");
     router.refresh();
   }
   return (

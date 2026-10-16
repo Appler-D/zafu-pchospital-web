@@ -378,7 +378,42 @@ export type MemberView = {
   className: string | null;
   status: MemberStatus;
 };
-export type MemberMutationResult = { member: MemberView; initializationSecret?: string };
+export type MemberMutationResult = {
+  member: MemberView;
+  initializationSecret?: string;
+  /** 临时密码到期时间（issue #113）：仅管理员重置 / 账号恢复签发时存在。 */
+  temporaryExpiresAt?: string;
+};
+
+/**
+ * 「账号恢复」精确查询入口（issue #113）：按 QQ 精确定位账号，返回管理操作所需的
+ * 最小信息 —— 不含 QQ / 手机号明文，不返回密码状态细节，避免变成账号检索平台。
+ *
+ * `blockedReason` 与登录资格判定（`readPrincipal`）同义：
+ * `SELF` 不能自我恢复（服务端拒绝，不只隐藏按钮）；`DISABLED` 账号不可用 / 已删除；
+ * `MEMBER_INACTIVE` 成员身份被撤且无管理员角色，重置也登不进来。
+ */
+export type AdminAccountLookupInput = { qq: string };
+
+export type AdminAccountLookupResult = {
+  userId: string;
+  displayName: string | null;
+  roles: RoleCode[];
+  canReset: boolean;
+  blockedReason: "SELF" | "DISABLED" | "MEMBER_INACTIVE" | null;
+};
+
+/**
+ * 账号恢复签发结果：明文口令仅出现在本次成功响应里（`private, no-store`），
+ * 后端只存 scrypt 哈希；`temporaryExpiresAt` 必须随口令一起展示给管理员转达。
+ */
+export type AdminAccountResetResult = {
+  userId: string;
+  displayName: string | null;
+  roles: RoleCode[];
+  initializationSecret: string;
+  temporaryExpiresAt: string;
+};
 
 /**
  * 管理端编辑成员后的返回值：{@link MemberView} 之上带**新的 `version`**。
@@ -1326,6 +1361,19 @@ export interface MemberServiceContract {
     actor: AuthorizedActor,
   ): Promise<MemberBatchToggleResult>;
   resetPassword(memberId: string, actor: AuthorizedActor): Promise<MemberMutationResult>;
+  /**
+   * 账号恢复（issue #113）：按 QQ 精确查询账号（成员或管理员，管理员可以没有成员档案）。
+   * 只返回最小信息；`canReset=false` 时给出与登录资格一致的 `blockedReason`。
+   */
+  lookupAccount(
+    input: AdminAccountLookupInput,
+    actor: AuthorizedActor,
+  ): Promise<AdminAccountLookupResult>;
+  /**
+   * 为目标账号签发临时密码：6 位安全随机数字、1 小时有效、强制改密、
+   * 撤销全部旧 Session；拒绝自助恢复（`actor.userId` 即目标）与不可用账号。
+   */
+  resetAccountPassword(userId: string, actor: AuthorizedActor): Promise<AdminAccountResetResult>;
   /**
    * 拖动排序：把 `memberIds`（1..50 位，保持它们之间的原有先后）整体挪到 `beforeId` 之前
    * （`null` = 挪到末尾）。落在原位时幂等成功（返回 `false`，不写审计）；任一位成员不存在则 404。

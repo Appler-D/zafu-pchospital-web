@@ -85,13 +85,16 @@ model UserIdentity {
 }
 
 model PasswordCredential {
-  userId             String    @id @map("user_id") @db.Char(36)
-  passwordHash       String    @map("password_hash") @db.VarChar(255)
-  mustChangePassword Boolean   @default(true) @map("must_change_password")
-  passwordChangedAt  DateTime? @map("password_changed_at") @db.DateTime(3)
-  createdAt          DateTime  @map("created_at") @db.DateTime(3)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
-  user               User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId               String    @id @map("user_id") @db.Char(36)
+  passwordHash         String    @map("password_hash") @db.VarChar(255)
+  mustChangePassword   Boolean   @default(true) @map("must_change_password")
+  passwordChangedAt    DateTime? @map("password_changed_at") @db.DateTime(3)
+  temporaryExpiresAt   DateTime? @map("temporary_expires_at") @db.DateTime(3)
+  temporaryConsumedAt  DateTime? @map("temporary_consumed_at") @db.DateTime(3)
+  credentialVersion    Int       @default(0) @map("credential_version")
+  createdAt            DateTime  @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@map("password_credentials")
 }
