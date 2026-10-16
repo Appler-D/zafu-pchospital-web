@@ -19,6 +19,7 @@ import { useRowSelect } from "@/components/admin/useRowSelect";
 import { movingRowIds } from "@/lib/list-order";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage } from "@/components/admin/AdminToast";
+import { AdminAccountResetDialog } from "@/components/admin/AdminAccountResetDialog";
 import { MemberCreateForm } from "@/components/admin/MemberCreateForm";
 import { MemberDetailPanel } from "@/components/admin/MemberDetailPanel";
 import { Button } from "@/components/ui/Button";
@@ -91,6 +92,7 @@ export function MemberAdminPanel() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 表头排序（三态循环由内核的 `cycleSortRule` 算好；空数组 = 按拖动顺序）。 */
   const [sortRules, setSortRules] = useState<SortRule[]>([]);
@@ -304,8 +306,10 @@ export function MemberAdminPanel() {
     await load();
   }
 
-  /* 重置密码只在成员详情窗口里做：那里有展示新密码的内联区块，
-     列表里再放一个按钮等于同一件事两处实现（第七轮：列表的操作列整体撤掉）。 */
+  /* 「重置密码」仍然只在成员详情窗口里做（先看到人、再重置；列表里再放一个等于
+     同一件事两处实现）。工具栏的「账号恢复」是另一件事（issue #113）：忘记密码时
+     按 QQ 精确查到账号再签发临时密码 —— 目标可以是**没有成员档案的管理员**，
+     成员列表里根本没有这一行，所以它必须常驻在列表外面。 */
 
   const allSelected = items.length > 0 && items.every((item) => selected.includes(item.id));
 
@@ -436,6 +440,9 @@ export function MemberAdminPanel() {
               count={filterRules.length}
               onClick={() => setFiltering(true)}
             />
+            <Button icon="key" onClick={() => setRecovering(true)}>
+              {copy.account.action}
+            </Button>
             <Button variant="solid" icon="plus" onClick={() => setCreating(true)}>
               {copy.create.title}
             </Button>
@@ -505,6 +512,9 @@ export function MemberAdminPanel() {
           <MemberCreateForm onCreated={() => void load()} onClose={() => setCreating(false)} />
         </AdminModal>
       ) : null}
+
+      {/* 账号恢复（issue #113）：按 QQ 精确查询成员或管理员并签发临时密码。 */}
+      {recovering ? <AdminAccountResetDialog onClose={() => setRecovering(false)} /> : null}
 
       {/* 列筛选弹层：草稿在弹层里，只有「应用」才落到 `filterRules`（进而重新取数）。 */}
       {filtering ? (

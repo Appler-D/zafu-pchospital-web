@@ -146,6 +146,13 @@ M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列
   `student_id VARCHAR(32) NULL` 与 `class_name VARCHAR(80) NULL`（issue #147），
   字段名与长度和 `member_profiles` 同名列一致。历史报名保持 `NULL`、不批量回填，
   新版应用层保证必填；不建索引与唯一约束，学号也不进入 `user_identities`。
+- `20261016120000_password_credential_temporary`：`password_credentials` 加
+  `temporary_expires_at DATETIME(3) NULL`、`temporary_consumed_at DATETIME(3) NULL`
+  与 `credential_version INT NOT NULL DEFAULT 0`（issue #113）。历史凭据保持
+  `NULL` / `0`、不批量回填：是否临时凭据**只由 `temporary_expires_at` 非空判定**，
+  历史初始密码（QQ 后六位）不被误认为有过期时间。`credential_version` 用于
+  「验密 → 建 Session / 改密」之间的代次复核，每次重置与改密递增；
+  不建索引与唯一约束。
 
 完整字段与状态语义见 `docs/contracts/data-contract.md`。
 

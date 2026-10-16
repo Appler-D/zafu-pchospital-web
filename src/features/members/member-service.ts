@@ -1,5 +1,6 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
+import type { Prisma } from "@/generated/prisma/client";
 import {
   ensureMemberProfile,
   grantMemberRole,
@@ -18,10 +19,17 @@ import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
 import { initialPasswordFromQq, normalizePhone, normalizeQq } from "@/lib/security/normalization";
-import { hashGeneratedPassword } from "@/lib/security/secrets";
+import { hashGeneratedPassword, verifyPassword } from "@/lib/security/secrets";
+import {
+  generateTemporaryPassword,
+  TEMPORARY_PASSWORD_TTL_MS,
+} from "@/lib/security/temporary-password";
 import {
   ADMIN_BATCH_LIMIT,
   MEMBER_NICKNAME_MAX_LENGTH,
+  type AdminAccountLookupInput,
+  type AdminAccountLookupResult,
+  type AdminAccountResetResult,
   type AuthorizedActor,
   type CreateMemberInput,
   type MemberBatchToggleInput,
@@ -404,56 +412,95 @@ export class MemberService implements MemberServiceContract {
     return { succeeded, failed };
   }
 
+  /**
+   * 管理员重置成员密码（issue #113 起改为**临时密码**）：6 位安全随机数字、1 小时有效、
+   * 首次登录原子消费、强制改密、撤销全部旧 Session。与账号恢复共用签发核心。
+   *
+   * 注意与发放路径的区别：`create` 与招募发放保持 QQ 后 6 位初始密码（issue #93 规则），
+   * 只有手动重置走临时密码。
+   */
   async resetPassword(memberId: string, actor: AuthorizedActor): Promise<MemberMutationResult> {
     requirePermission(actor, "member:manage");
-    let secret = "";
-    await inSerializableTransaction(async (tx) => {
+    const issued = await inSerializableTransaction(async (tx) => {
       const profile = await tx.memberProfile.findUnique({ where: { id: memberId } });
       if (!profile || profile.deletedAt) throw new AppError("RESOURCE_NOT_FOUND", "成员不存在");
-      // 重置口令与发放同一规则（issue #93）：QQ 后 6 位；查不到 QQ 身份时退回随机口令。
-      const qqIdentity = await tx.userIdentity.findFirst({
-        where: { userId: profile.userId, type: "QQ", deletedAt: null },
-        select: { identifierNormalized: true },
-      });
-      secret = qqIdentity
-        ? initialPasswordFromQq(qqIdentity.identifierNormalized)
-        : randomBytes(18).toString("base64url");
-      const passwordHash = await hashGeneratedPassword(secret);
-      await tx.passwordCredential.upsert({
-        where: { userId: profile.userId },
-        create: {
-          userId: profile.userId,
-          passwordHash,
-          mustChangePassword: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        update: { passwordHash, mustChangePassword: true, passwordChangedAt: null },
-      });
-      await tx.authSession.updateMany({
-        where: { userId: profile.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await appendAuditLog(tx, {
+      await assertResetTargetUsable(tx, profile.userId, actor);
+      return issueTemporaryCredential(tx, {
+        userId: profile.userId,
         actor,
-        actorType: "USER",
-        actorUserId: actor.userId,
-        action: "auth.password.reset",
         targetType: "MemberProfile",
         targetId: memberId,
-        result: "SUCCESS",
-      });
-      await appendAuditLog(tx, {
-        actor,
-        actorType: "USER",
-        actorUserId: actor.userId,
-        action: "auth.session.revoked",
-        targetType: "User",
-        targetId: profile.userId,
-        result: "SUCCESS",
       });
     });
-    return { member: await this.getView(memberId), initializationSecret: secret };
+    return {
+      member: await this.getView(memberId),
+      initializationSecret: issued.secret,
+      temporaryExpiresAt: issued.expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * 账号恢复（issue #113）：按 QQ 精确定位账号，返回管理操作所需的最小信息。
+   *
+   * 管理员可以没有成员档案（`ADMIN` 直建），恢复能力按 `userId` 定位，不要求出现在
+   * 成员列表里；查询只认精确 QQ，不做模糊匹配 —— 这是恢复入口，不是账号检索平台。
+   */
+  async lookupAccount(
+    input: AdminAccountLookupInput,
+    actor: AuthorizedActor,
+  ): Promise<AdminAccountLookupResult> {
+    requirePermission(actor, "member:manage");
+    const qq = normalizeQq(input.qq);
+    const identity = await getDb().userIdentity.findUnique({
+      where: { type_identifierNormalized: { type: "QQ", identifierNormalized: qq } },
+      include: {
+        user: {
+          include: {
+            memberProfile: true,
+            roles: { where: { revokedAt: null }, include: { role: true } },
+          },
+        },
+      },
+    });
+    if (!identity || identity.deletedAt)
+      throw new AppError("RESOURCE_NOT_FOUND", "未找到该 QQ 对应的账号");
+    const user = identity.user;
+    const blockedReason = resetBlockedReason(user, actor);
+    return {
+      userId: user.id,
+      displayName: user.displayName,
+      roles: memberAdminRoles(user.roles.map((entry) => entry.role.code)),
+      canReset: blockedReason === null,
+      blockedReason,
+    };
+  }
+
+  /**
+   * 账号恢复签发：管理员为成员或另一管理员（含无成员档案的管理员）签发临时密码。
+   * 资格判定与登录对齐 —— 禁用 / 软删 / 成员身份已撤且无管理角色的账号拒绝重置，
+   * 「重置出来也登不进去」不是恢复。自助恢复被服务端拒绝，不只是隐藏按钮。
+   */
+  async resetAccountPassword(
+    userId: string,
+    actor: AuthorizedActor,
+  ): Promise<AdminAccountResetResult> {
+    requirePermission(actor, "member:manage");
+    return inSerializableTransaction(async (tx) => {
+      const target = await assertResetTargetUsable(tx, userId, actor);
+      const issued = await issueTemporaryCredential(tx, {
+        userId,
+        actor,
+        targetType: "User",
+        targetId: userId,
+      });
+      return {
+        userId,
+        displayName: target.displayName,
+        roles: memberAdminRoles(target.roles.map((entry) => entry.role.code)),
+        initializationSecret: issued.secret,
+        temporaryExpiresAt: issued.expiresAt.toISOString(),
+      };
+    });
   }
 
   /**
@@ -646,4 +693,140 @@ export class MemberService implements MemberServiceContract {
 function clean(value?: string): string | undefined {
   return value?.trim() || undefined;
 }
+
+/* ------------------------------------------------ 账号恢复（issue #113） */
+
+/** 只保留后台展示与判定的两个角色码；过滤口径与 `authService.readPrincipal` 一致。 */
+function memberAdminRoles(codes: string[]): RoleCode[] {
+  return codes.filter((role): role is RoleCode => role === "MEMBER" || role === "ADMIN");
+}
+
+type ResetTargetUser = {
+  id: string;
+  deletedAt: Date | null;
+  status: string;
+  memberProfile: { deletedAt: Date | null; status: string } | null;
+  roles: { role: { code: string } }[];
+};
+
+/**
+ * 恢复资格判定（查询与签发共用），与登录的 `readPrincipal` 守卫同义：
+ * 「签发出去能登进来」才允许重置。`SELF` 是自助恢复例外 ——
+ * 不能给自己签临时密码，否则「改密要先验当前密码」的要求就被重置入口绕过。
+ */
+function resetBlockedReason(
+  user: ResetTargetUser,
+  actor: AuthorizedActor,
+): AdminAccountLookupResult["blockedReason"] {
+  if (user.id === actor.userId) return "SELF";
+  if (user.deletedAt || user.status !== "ACTIVE") return "DISABLED";
+  const codes = user.roles.map((entry) => entry.role.code);
+  const activeMember =
+    user.memberProfile &&
+    !user.memberProfile.deletedAt &&
+    user.memberProfile.status === "ACTIVE" &&
+    codes.includes("MEMBER");
+  if (!codes.includes("ADMIN") && (user.memberProfile ? !activeMember : codes.includes("MEMBER")))
+    return "MEMBER_INACTIVE";
+  return null;
+}
+
+/** 事务内校验恢复资格；不合格直接抛对应错误，合格返回目标用户（供结果组装）。 */
+async function assertResetTargetUsable(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  actor: AuthorizedActor,
+) {
+  const user = await tx.user.findUnique({
+    where: { id: userId },
+    include: {
+      memberProfile: true,
+      roles: { where: { revokedAt: null }, include: { role: true } },
+    },
+  });
+  if (!user) throw new AppError("RESOURCE_NOT_FOUND", "账号不存在");
+  switch (resetBlockedReason(user, actor)) {
+    case "SELF":
+      throw new AppError("FORBIDDEN", "不能通过手动重置恢复自己的密码，请使用「修改密码」");
+    case "DISABLED":
+      throw new AppError("ACCOUNT_DISABLED", "账号当前不可用");
+    case "MEMBER_INACTIVE":
+      throw new AppError("MEMBER_PROFILE_INACTIVE", "成员身份当前不可用");
+    default:
+      return user;
+  }
+}
+
+/**
+ * 签发临时凭据的统一核心（成员详情重置与账号恢复共用）：
+ * 生成候选 → 排除与当前密码相同 → 覆盖凭据并推进代次 → 撤销全部旧 Session → 写审计。
+ * 全程在调用方的事务内执行，任一步失败整体回滚；明文只随返回值交给本次响应。
+ */
+async function issueTemporaryCredential(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    actor: AuthorizedActor;
+    targetType: "MemberProfile" | "User";
+    targetId: string;
+  },
+): Promise<{ secret: string; expiresAt: Date }> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + TEMPORARY_PASSWORD_TTL_MS);
+  const current = await tx.passwordCredential.findUnique({ where: { userId: input.userId } });
+  let secret = generateTemporaryPassword();
+  // 新口令不得与当前密码相同：用既有验密能力比对候选值与当前哈希，不读旧明文。
+  // 6 位随机数撞上旧值的概率约百万分之一，循环几乎从不重试。
+  if (current) {
+    while (await verifyPassword(secret, current.passwordHash)) secret = generateTemporaryPassword();
+  }
+  const passwordHash = await hashGeneratedPassword(secret);
+  await tx.passwordCredential.upsert({
+    where: { userId: input.userId },
+    create: {
+      userId: input.userId,
+      passwordHash,
+      mustChangePassword: true,
+      temporaryExpiresAt: expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    },
+    update: {
+      passwordHash,
+      mustChangePassword: true,
+      passwordChangedAt: null,
+      temporaryExpiresAt: expiresAt,
+      temporaryConsumedAt: null,
+      // 推进代次：并发中的「验密 → 建 Session / 改密」必须复核代次，
+      // 旧校验结果不能作用到新一代凭据上。
+      credentialVersion: { increment: 1 },
+    },
+  });
+  await tx.authSession.updateMany({
+    where: { userId: input.userId, revokedAt: null },
+    data: { revokedAt: now },
+  });
+  await appendAuditLog(tx, {
+    actor: input.actor,
+    actorType: "USER",
+    actorUserId: input.actor.userId,
+    action: "auth.password.reset",
+    targetType: input.targetType,
+    targetId: input.targetId,
+    result: "SUCCESS",
+    // 明文绝不进审计（redaction 对 `secret` 键也会拦），只记「临时凭据」与期限。
+    after: { temporary: true, expiresAt: expiresAt.toISOString() },
+  });
+  await appendAuditLog(tx, {
+    actor: input.actor,
+    actorType: "USER",
+    actorUserId: input.actor.userId,
+    action: "auth.session.revoked",
+    targetType: "User",
+    targetId: input.userId,
+    result: "SUCCESS",
+  });
+  return { secret, expiresAt };
+}
+
 export const memberService = new MemberService();

@@ -6,9 +6,11 @@ import { MemberCategoryDistribution } from "@/components/analytics/MemberCategor
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage, AdminToastTone } from "@/components/admin/AdminToast";
+import { formatDateTime } from "@/components/admin/invite-code-table-spec";
 import { MemberIdentityFields } from "@/components/member/MemberIdentityFields";
 import { MemberMetrics } from "@/components/member/MemberMetrics";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TagPicker } from "@/components/ui/TagPicker";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
 import { adminFetch, firstFieldError } from "@/features/admin/admin-client";
@@ -49,7 +51,20 @@ export function MemberDetailPanel({
   const [problem, setProblem] = useState("");
   /** 一次性成功反馈：走顶部浮层（层级高于本窗口），不把窗口内容顶下去。 */
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
-  const [secret, setSecret] = useState("");
+  /**
+   * 重置密码（issue #113）：确认弹层 → 独立结果弹层，结果不内联插在本窗口里。
+   *
+   * 三个阶段**同时只挂载一个弹层**：`AdminModal` / `ConfirmDialog` 各自在 document 上
+   * 注册 Esc 监听、卸载时清空 `body` 滚动锁 —— 叠加挂载会出现「取消确认后详情还开着、
+   * 滚动锁却被解开」「按一次 Esc 连详情一起关」这类互相干扰（首轮审查实测）。
+   * 阶段切换只换挂载的弹层，详情数据仍在组件 state 里，回到详情不重取。
+   */
+  const [stage, setStage] = useState<"detail" | "confirm" | "result">("detail");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetProblem, setResetProblem] = useState("");
+  const [resetOutcome, setResetOutcome] = useState<{ secret: string; expiresAt: string } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     // 只有**首次**打开才切到 `loading`：保存一次之后重新拉数据时窗口不该整块消失再长回来
@@ -95,128 +110,178 @@ export function MemberDetailPanel({
   }
 
   return (
-    <AdminModal
-      title={copy.detail.title}
-      subtitle={
-        detail
-          ? `${detail.realName}${detail.nickname ? `（${detail.nickname}）` : ""} · ${memberStatusLabels[detail.status]}`
-          : undefined
-      }
-      onClose={onClose}
-    >
-      {state === "loading" ? (
-        // 骨架而不是一行「正在加载…」：打开窗口时结构先立住，数据填进来时不再整块替换。
-        <div className="admin-skeleton" aria-busy="true">
-          <p className="sr-only" role="status">
-            {adminShared.loading}
-          </p>
-          <span className="admin-skeleton__title" />
-          <span className="admin-skeleton__line" />
-          <span className="admin-skeleton__block" />
-        </div>
-      ) : null}
-
-      <AdminToast toast={toast} onDismiss={() => setToast(null)} />
-
-      {state === "error" ? (
-        <>
-          <p className="admin-status admin-status--error" role="alert">
-            {problem || adminShared.loadFailed}
-          </p>
-          <div className="signup__actions">
-            <Button onClick={() => void load()}>{adminShared.reload}</Button>
-          </div>
-        </>
-      ) : null}
-
-      {state === "ready" && detail ? (
-        <>
-          {problem ? (
-            <p className="admin-status admin-status--error" role="alert">
-              {problem}
-            </p>
+    <>
+      {stage === "detail" ? (
+        <AdminModal
+          title={copy.detail.title}
+          subtitle={
+            detail
+              ? `${detail.realName}${detail.nickname ? `（${detail.nickname}）` : ""} · ${memberStatusLabels[detail.status]}`
+              : undefined
+          }
+          onClose={onClose}
+        >
+          {state === "loading" ? (
+            // 骨架而不是一行「正在加载…」：打开窗口时结构先立住，数据填进来时不再整块替换。
+            <div className="admin-skeleton" aria-busy="true">
+              <p className="sr-only" role="status">
+                {adminShared.loading}
+              </p>
+              <span className="admin-skeleton__title" />
+              <span className="admin-skeleton__line" />
+              <span className="admin-skeleton__block" />
+            </div>
           ) : null}
 
-          <div className="admin-modal__facts">
-            {/* 联系方式用 `MemberIdentityFields`（`<dl>` 只读字段表）而不是 Readout：
+          <AdminToast toast={toast} onDismiss={() => setToast(null)} />
+
+          {state === "error" ? (
+            <>
+              <p className="admin-status admin-status--error" role="alert">
+                {problem || adminShared.loadFailed}
+              </p>
+              <div className="signup__actions">
+                <Button onClick={() => void load()}>{adminShared.reload}</Button>
+              </div>
+            </>
+          ) : null}
+
+          {state === "ready" && detail ? (
+            <>
+              {problem ? (
+                <p className="admin-status admin-status--error" role="alert">
+                  {problem}
+                </p>
+              ) : null}
+
+              <div className="admin-modal__facts">
+                {/* 联系方式用 `MemberIdentityFields`（`<dl>` 只读字段表）而不是 Readout：
                 Readout 是首页那种等宽大写读数面板，不适合放联系方式；
                 而这个组件正是 M3 用来展示「管理员维护、成员不可自助修改」字段的既有原语，
                 还能带上「仅内部可见」的可见性标记。 */}
-            <MemberIdentityFields
-              fields={[
-                { label: "QQ", value: detail.qq, visibilityTag: "仅内部可见" },
-                { label: "手机号", value: detail.phone, visibilityTag: "仅内部可见" },
-                { label: "学号", value: detail.studentId, muted: !detail.studentId },
-                { label: "班级", value: detail.className, muted: !detail.className },
-              ]}
-            />
-            <p className="admin-note">{copy.detail.contactsNote}</p>
-          </div>
+                <MemberIdentityFields
+                  fields={[
+                    { label: "QQ", value: detail.qq, visibilityTag: "仅内部可见" },
+                    { label: "手机号", value: detail.phone, visibilityTag: "仅内部可见" },
+                    { label: "学号", value: detail.studentId, muted: !detail.studentId },
+                    { label: "班级", value: detail.className, muted: !detail.className },
+                  ]}
+                />
+                <p className="admin-note">{copy.detail.contactsNote}</p>
+              </div>
 
-          {stats ? (
-            <div className="admin-stats">
-              {/* 复用 M3/M5 的指标卡与分布表：UNCONFIGURED（学期未配置）等口径由它们统一处理，
+              {stats ? (
+                <div className="admin-stats">
+                  {/* 复用 M3/M5 的指标卡与分布表：UNCONFIGURED（学期未配置）等口径由它们统一处理，
                   后台不重新解释 MetricValue，避免出现「伪造 0 次」这类口径漂移。 */}
-              <MemberMetrics summary={stats.summary} />
-              <MemberCategoryDistribution items={stats.categoryDistribution} />
-            </div>
-          ) : (
-            <p className="admin-note">{copy.detail.statsUnavailable}</p>
-          )}
+                  <MemberMetrics summary={stats.summary} />
+                  <MemberCategoryDistribution items={stats.categoryDistribution} />
+                </div>
+              ) : (
+                <p className="admin-note">{copy.detail.statsUnavailable}</p>
+              )}
 
-          <EditMemberForm detail={detail} onSave={mutate} />
-          <RolesForm detail={detail} onSave={mutate} />
-          <SkillsForm detail={detail} skills={skills} onSave={mutate} />
+              <EditMemberForm detail={detail} onSave={mutate} />
+              <RolesForm detail={detail} onSave={mutate} />
+              <SkillsForm detail={detail} skills={skills} onSave={mutate} />
 
-          <div className="signup__actions">
-            <Button
-              icon="check"
-              onClick={() =>
-                void mutate(async () => {
-                  const result = await adminFetch<MemberMutationResult>(
-                    `/api/v1/admin/members/${memberId}/password-reset`,
-                    { method: "POST" },
-                  );
-                  if (!result.ok) return { ok: false, message: result.message };
-                  setSecret(result.data.initializationSecret ?? "");
-                  return { ok: true };
-                }, adminCopy.members.resetResult.toast)
-              }
-            >
-              {copy.action.resetPassword}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() =>
-                void mutate(async () => {
-                  const path = detail.status === "ACTIVE" ? "disable" : "enable";
-                  const result = await adminFetch<MemberView>(
-                    `/api/v1/admin/members/${memberId}/${path}`,
-                    { method: "POST" },
-                  );
-                  return result.ok ? { ok: true } : { ok: false, message: result.message };
-                },
-                detail.status === "ACTIVE" ? copy.edit.disabled : copy.edit.enabled,
-                detail.status === "ACTIVE" ? "neutral" : "success",
-              )
-              }
-            >
-              {detail.status === "ACTIVE" ? copy.action.disable : copy.action.enable}
-            </Button>
-          </div>
-
-          {secret ? (
-            <div role="status" aria-live="polite">
-              <p className="admin-status">{copy.resetResult.title}</p>
-              <p className="admin-status">
-                <code>{secret}</code>
-              </p>
-              <p className="admin-note">{copy.resetResult.note}</p>
-            </div>
+              <div className="signup__actions">
+                <Button
+                  icon="key"
+                  onClick={() => {
+                    setResetProblem("");
+                    setStage("confirm");
+                  }}
+                >
+                  {copy.action.resetPassword}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void mutate(
+                      async () => {
+                        const path = detail.status === "ACTIVE" ? "disable" : "enable";
+                        const result = await adminFetch<MemberView>(
+                          `/api/v1/admin/members/${memberId}/${path}`,
+                          { method: "POST" },
+                        );
+                        return result.ok ? { ok: true } : { ok: false, message: result.message };
+                      },
+                      detail.status === "ACTIVE" ? copy.edit.disabled : copy.edit.enabled,
+                      detail.status === "ACTIVE" ? "neutral" : "success",
+                    )
+                  }
+                >
+                  {detail.status === "ACTIVE" ? copy.action.disable : copy.action.enable}
+                </Button>
+              </div>
+            </>
           ) : null}
-        </>
+        </AdminModal>
       ) : null}
-    </AdminModal>
+
+      {stage === "confirm" ? (
+        <ConfirmDialog
+          title={copy.resetConfirm.title}
+          confirmLabel={copy.resetConfirm.confirm}
+          cancelLabel={adminShared.cancel}
+          closeLabel={adminShared.close}
+          busy={resetBusy}
+          onClose={() => setStage("detail")}
+          onConfirm={() => {
+            void (async () => {
+              setResetBusy(true);
+              setResetProblem("");
+              const result = await adminFetch<MemberMutationResult>(
+                `/api/v1/admin/members/${memberId}/password-reset`,
+                { method: "POST" },
+              );
+              setResetBusy(false);
+              if (!result.ok) {
+                // 失败留在确认弹层里等管理员决定重试或取消（不自动重放）。
+                setResetProblem(result.message);
+                return;
+              }
+              setResetOutcome({
+                secret: result.data.initializationSecret ?? "",
+                expiresAt: result.data.temporaryExpiresAt ?? "",
+              });
+              setStage("result");
+            })();
+          }}
+        >
+          <p className="admin-note">{copy.resetConfirm.body}</p>
+          {resetProblem ? (
+            <p className="admin-status admin-status--error" role="alert">
+              {resetProblem}
+            </p>
+          ) : null}
+        </ConfirmDialog>
+      ) : null}
+
+      {/* 结果独立成层：临时密码只出现一次，由管理员主动关闭，关闭即清空并回到详情。 */}
+      {stage === "result" && resetOutcome ? (
+        <AdminModal
+          title={copy.resetResult.title}
+          onClose={() => {
+            setResetOutcome(null);
+            setStage("detail");
+          }}
+        >
+          <div role="status" aria-live="polite">
+            <p className="admin-status">
+              <code>{resetOutcome.secret}</code>
+            </p>
+            {resetOutcome.expiresAt ? (
+              <p className="admin-note">
+                {copy.resetResult.expires.replace("{time}", formatDateTime(resetOutcome.expiresAt))}
+              </p>
+            ) : null}
+            <p className="admin-note">{copy.resetResult.note}</p>
+          </div>
+        </AdminModal>
+      ) : null}
+    </>
   );
 }
 
