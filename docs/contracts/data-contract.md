@@ -51,11 +51,9 @@
   建 Session / 改密必须复核代次 —— 旧校验结果不能作用到新一代凭据上。
 - 改密和管理员重置密码必须撤销已有 Session；改密成功轮换当前 Session。
 
-## 邮箱边界（issue #146，基础设施，HTTP 端点尚未接入）
+## 邮箱边界（issue #146，主动绑定与管理兜底已接入）
 
-本轮只落公共基础设施：邮箱规范化、EMAIL 身份约束、验证码挑战与重置授权原语、
-可注入 SMTP Sender、持久化限流 / 预算与清理脚本；绑定 / 换绑页面、匿名找回与自设密码、
-登录邮箱门禁均留待后续步骤。Service 未挂载到任何 HTTP 路由是本阶段的**预期交付状态**。
+基础设施已由 PR #150 合并。主动绑定、正常换绑及管理员协助 / 临时豁免通过独立邮箱页面接入；匿名找回、自设密码恢复和全员邮箱门禁仍未接入。
 
 - 邮箱身份存 `user_identities(type='EMAIL')`；规范化（`normalizeEmail`）只接受 ASCII：
   trim → 小写 → 单个 `@` → 本地部 dot-atom ≤64 字符 → 域名 ≥2 段、每段 1–63 字母数字
@@ -326,3 +324,20 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 - **日期筛选口径**：所有面向界面的日期区间按 `Asia/Shanghai` 自然日解释，
   **结束日包含全天**（排他上界 = 次日 00:00），与学期统计区间同一套换算。
   `repairDateFrom/To` 例外：那一列是 `DATE`（本身就存上海自然日），不做时刻换算。
+
+## 邮箱管理状态（Refs #146 / Refs #113）
+
+前向 Migration `20261016150000_email_binding_support` 新建两张表，不改历史迁移，不回填身份或验证时间：
+
+- `email_assistances`：目标 userId、固定规范化新邮箱、旧身份 ID 快照（初绑为 NULL）、凭据代次、操作人、2–500 字原因及创建 / 到期 / 消费 / 撤销时刻。旧身份 ID 为快照，身份记录沿用软删除保留。30 分钟、一次性；同用户新建使旧记录和相关新邮箱码失效；撤销按具体记录 ID；过期惰性判断，原身份 / 凭据改变即失效。不能给自己创建；需改密对象先改密。
+- `email_exemptions`：目标 userId、原因、操作人、创建 / 到期 / 撤销时刻及撤销人。默认 24 小时、整数 1–168 小时；重新授予撤销原记录，记录 ID 撤销不影响后续记录。禁止给自己授予或续期。已到期即无效，无定时任务或自动续期。
+- 两表均按 userId 与有效性字段建索引，User 外键 RESTRICT；不依赖 MemberProfile。管理员无成员档案也可操作 / 绑定。豁免不修改 Session、密码、账号或邮箱身份，不授予找回资格，不绕过强制改密。
+- `getEmailVerificationState(userId, tx?, now?)` 返回验证 / 当前有效豁免状态；无 SMTP / HTTP / authenticate 依赖，供后续门禁复用，本轮不接守卫。
+- 历史未软删且 verifiedAt 非空、activeEmailKey 为空仍是有效邮箱；当前用户多条未软删 EMAIL 受控拒绝，不全库清洗。新增身份使用 `email:{userId}` 唯一键；软删地址不释放给其他账号，原账号重用仍需重新验证。
+- 所有新绑定挑战保存发码时凭据代次与旧身份快照；最终核验必须匹配当前账号、用途和目标，切换事务再复核快照。协助请求不接受可替换的新邮箱。
+- 当前密码现验独立使用 `verify:fail:{userId}:ACCOUNT_EMAIL_PASSWORD` 摘要桶：15 分钟 5 次错误后阻断 15 分钟；不清验证码桶、登录桶或临时凭据桶。
+- 最终切换在 Serializable / 有界重试中重查 Session、凭据、强制改密、资格、当前身份、协助和期限；同事务消费两份正常换绑证明（协助仅新证明）、更新身份、使旧挑战 / 重置授权 / 待办失效、撤销旧 Session 并创建当前新 Session、撤销豁免、写审计。失败全回滚。
+- 取锁链：Session 读取、凭据行锁、资格 / 身份 / 待办、目标归属、按 ID 排序的挑战行锁、消费与写入。锁等待后的当前服务端时间判期限，重试重新取时；不改 #113 的现有逻辑。计数决策独立事务提交，SMTP 仍在预占事务外发送一次，不退款 / 补发。
+- 邮箱切换的新 Session 保留原 rememberMe 与原到期时刻，不延长期限；新 token 仅 HTTP-only Cookie 交付，JSON 只含 changed / destination。
+- 业务审计：`email.bound / changed / password.rejected / assistance.created / assistance.revoked / exemption.granted / exemption.revoked / detail.revealed` 与 `auth.session.revoked`。管理员 actorUserId 和目标 userId 分开，邮箱摘要脱敏；验证码 / 密码 / Session token 不进入审计。
+- 成员后台 DTO 仅增加 `emailMasked / emailVerified`，显示在原联系方式单元格；公开成员 DTO 不带邮箱，不允许邮箱搜索 / 筛选 / 导出。精确 QQ 查询沿用原 POST lookup 语义。

@@ -1,3 +1,4 @@
+import { accountEmailCopy } from "@/config/account-email";
 import { useRowDragSort } from "@/components/admin/useRowDragSort";
 import { useRowSelect } from "@/components/admin/useRowSelect";
 import { Icon } from "@/components/ui/Icon";
@@ -304,6 +305,10 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
         <span className="admin-contacts">
           <span>{member.qqMasked ?? adminShared.none}</span>
           <span>{member.phoneMasked ?? adminShared.none}</span>
+          <span>
+            {member.emailMasked ?? accountEmailCopy.unbound} ·{" "}
+            {member.emailVerified ? accountEmailCopy.verified : accountEmailCopy.unbound}
+          </span>
         </span>
       ),
     },

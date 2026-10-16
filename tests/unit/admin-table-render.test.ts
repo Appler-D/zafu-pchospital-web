@@ -92,6 +92,8 @@ function member(overrides: Partial<MemberListEntry> = {}): MemberListEntry {
       { id: "s2", name: "系统重装", isActive: true },
       { id: "s3", name: "焊接", isActive: false },
     ],
+    emailMasked: "a***@example.com",
+    emailVerified: true,
     qqMasked: "123****789",
     phoneMasked: "138****0000",
     approvedRepairCount: 3,
@@ -240,6 +242,7 @@ test("单元格内容：行号、昵称、技能收尾、角色、状态、统�
       html.includes(formatDurationMinutes(99)),
   );
   assert.ok(html.includes(item.qqMasked as string) && html.includes(item.phoneMasked as string));
+  assert.ok(html.includes(item.emailMasked as string) && html.includes("已验证"));
   assert.equal(html.includes(adminShared.none), false, "有值时不该出现空值占位");
 });
 

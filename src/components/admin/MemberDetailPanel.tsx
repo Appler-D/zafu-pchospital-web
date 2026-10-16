@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import { MemberCategoryDistribution } from "@/components/analytics/MemberCategoryDistribution";
+import { AdminAccountEmailPanel } from "@/components/admin/AdminAccountEmailPanel";
+import { accountEmailCopy } from "@/config/account-email";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage, AdminToastTone } from "@/components/admin/AdminToast";
@@ -59,7 +61,7 @@ export function MemberDetailPanel({
    * 滚动锁却被解开」「按一次 Esc 连详情一起关」这类互相干扰（首轮审查实测）。
    * 阶段切换只换挂载的弹层，详情数据仍在组件 state 里，回到详情不重取。
    */
-  const [stage, setStage] = useState<"detail" | "confirm" | "result">("detail");
+  const [stage, setStage] = useState<"detail" | "confirm" | "result" | "email">("detail");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetProblem, setResetProblem] = useState("");
   const [resetOutcome, setResetOutcome] = useState<{ secret: string; expiresAt: string } | null>(
@@ -186,6 +188,7 @@ export function MemberDetailPanel({
               <SkillsForm detail={detail} skills={skills} onSave={mutate} />
 
               <div className="signup__actions">
+                <Button onClick={() => setStage("email")}>{accountEmailCopy.adminTitle}</Button>
                 <Button
                   icon="key"
                   onClick={() => {
@@ -220,6 +223,11 @@ export function MemberDetailPanel({
         </AdminModal>
       ) : null}
 
+      {stage === "email" && detail ? (
+        <AdminModal title={accountEmailCopy.adminTitle} onClose={() => setStage("detail")}>
+          <AdminAccountEmailPanel initialUserId={detail.userId} />
+        </AdminModal>
+      ) : null}
       {stage === "confirm" ? (
         <ConfirmDialog
           title={copy.resetConfirm.title}

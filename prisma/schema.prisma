@@ -34,6 +34,11 @@ model User {
   skillsCreated      Skill[]                 @relation("SkillCreator")
   publicSettings     PublicContentSetting[]  @relation("PublicContentSettingUpdater")
   repairActivities   RepairActivity[]        @relation("RepairActivityCreator")
+  emailAssistances EmailAssistance[] @relation("EmailAssistanceTarget")
+  emailAssistancesCreated EmailAssistance[] @relation("EmailAssistanceCreator")
+  emailExemptions EmailExemption[] @relation("EmailExemptionTarget")
+  emailExemptionsCreated EmailExemption[] @relation("EmailExemptionCreator")
+  emailExemptionsRevoked EmailExemption[] @relation("EmailExemptionRevoker")
   emailChallenges    EmailChallenge[]
   passwordResetAuthorizations PasswordResetAuthorization[]
 
@@ -736,4 +741,37 @@ model PasswordResetAuthorization {
   @@index([status, expiresAt], map: "pwd_reset_auth_status_expires_idx")
   @@index([finishedAt], map: "pwd_reset_auth_finished_idx")
   @@map("password_reset_authorizations")
+}
+
+model EmailAssistance {
+  id String @id @db.Char(36)
+  userId String @map("user_id") @db.Char(36)
+  targetEmailNormalized String @map("target_email_normalized") @db.VarChar(191)
+  oldEmailIdentityId String? @map("old_email_identity_id") @db.Char(36)
+  credentialVersion Int @map("credential_version")
+  createdByUserId String @map("created_by_user_id") @db.Char(36)
+  reason String @db.VarChar(500)
+  createdAt DateTime @map("created_at") @db.DateTime(3)
+  expiresAt DateTime @map("expires_at") @db.DateTime(3)
+  consumedAt DateTime? @map("consumed_at") @db.DateTime(3)
+  revokedAt DateTime? @map("revoked_at") @db.DateTime(3)
+  user User @relation("EmailAssistanceTarget", fields: [userId], references: [id], onDelete: Restrict)
+  creator User @relation("EmailAssistanceCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  @@index([userId, revokedAt, consumedAt, expiresAt], map: "email_assistances_user_state_idx")
+  @@map("email_assistances")
+}
+model EmailExemption {
+  id String @id @db.Char(36)
+  userId String @map("user_id") @db.Char(36)
+  reason String @db.VarChar(500)
+  createdByUserId String @map("created_by_user_id") @db.Char(36)
+  createdAt DateTime @map("created_at") @db.DateTime(3)
+  expiresAt DateTime @map("expires_at") @db.DateTime(3)
+  revokedByUserId String? @map("revoked_by_user_id") @db.Char(36)
+  revokedAt DateTime? @map("revoked_at") @db.DateTime(3)
+  user User @relation("EmailExemptionTarget", fields: [userId], references: [id], onDelete: Restrict)
+  creator User @relation("EmailExemptionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revoker User? @relation("EmailExemptionRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+  @@index([userId, revokedAt, expiresAt], map: "email_exemptions_user_state_idx")
+  @@map("email_exemptions")
 }
