@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
-export function ChangePasswordForm() {
+export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
   const router = useRouter();
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,6 +19,7 @@ export function ChangePasswordForm() {
         currentPassword: data.get("currentPassword"),
         newPassword: data.get("newPassword"),
         newPasswordConfirmation: data.get("newPasswordConfirmation"),
+        ...(returnTo ? { returnTo } : {}),
       }),
     });
     const payload = (await response.json()) as {
@@ -26,13 +27,14 @@ export function ChangePasswordForm() {
       data?: { destination?: string };
       error?: { message?: string };
     };
-    if (!response.ok || !payload.success) {
+    if (!response.ok || !payload.success || !payload.data?.destination) {
       setProblem(payload.error?.message ?? "修改失败");
       setBusy(false);
       return;
     }
-    // 落点由服务端按统一角色规则给出（管理员 /admin、成员 /member），这里不再自行判断。
-    router.replace(payload.data?.destination ?? "/member");
+    // 落点由服务端统一编排（任务 6）：还要验邮箱就先去邮箱步骤页并带上原目标，
+    // 否则回原目标 / 角色默认页。这里不再按角色自行判断。
+    router.replace(payload.data.destination);
     router.refresh();
   }
   return (

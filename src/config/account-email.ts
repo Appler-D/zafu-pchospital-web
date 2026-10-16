@@ -9,7 +9,7 @@ export const accountEmailCopy = {
   success: "邮箱已更新，其他设备需重新登录。",
   sessionNotice: "绑定或换绑成功后，其他设备需重新登录。",
   sendUnknown: "暂时无法确认验证码是否已发送。请检查邮箱，等待 60 秒后再手动重试，请勿连续提交。",
-  warning: "未绑定邮箱或邮件暂不可用不影响现有功能；如需修改初始密码，请先完成改密。",
+  warning: "是否必须先验证邮箱由服务端门禁档位决定；如需修改初始密码，请先完成改密。",
   loading: "正在读取邮箱状态…",
   current: "当前邮箱",
   unbound: "未绑定",
@@ -50,4 +50,9 @@ export const accountEmailCopy = {
     "协助只豁免旧邮箱收码，用户仍须登录、现验密码和验证固定的新邮箱；临时豁免不等于验证，也不授予找回资格。",
   notFound: "未找到该账号",
   failed: "请求失败，请稍后重试。",
+  /** 统一门禁（任务 6）：本页给出的「继续」落点一律由服务端计算，前端不自行拼路径。 */
+  continueAction: "继续原目标",
+  continueReady: "邮箱验证或临时豁免已生效，可以继续原来的操作。",
+  continueBlocked: "邮箱未验证且没有有效豁免，完成验证或等待管理员豁免后才能继续。",
+  adminEntries: "管理员恢复入口",
 } as const;

@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { loginCopy } from "@/config/auth";
-import { loginDestination } from "@/lib/auth/login-destination";
-import type { RoleCode } from "@/types/contracts";
 
-export function LoginForm() {
+/**
+ * 落点一律由服务端给出（`resolveAccountAccess`：改密 → 邮箱 → 原目标 / 角色默认页）。
+ * 前端不再按角色或 `mustChangePassword` 自行判断，也不参与门禁：请求里只可能带上
+ * 一个候选 `returnTo`，服务端会按白名单与当前角色重新校验。
+ */
+export function LoginForm({ returnTo }: { returnTo?: string | null }) {
   const router = useRouter();
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
@@ -24,26 +27,20 @@ export function LoginForm() {
         qq: data.get("qq"),
         password: data.get("password"),
         rememberMe: data.get("rememberMe") === "on",
+        ...(returnTo ? { returnTo } : {}),
       }),
     });
     const payload = (await response.json()) as {
       success: boolean;
-      data?: { mustChangePassword?: boolean; roles?: RoleCode[] };
+      data?: { destination?: string };
       error?: { message?: string };
     };
-    if (!response.ok || !payload.success) {
+    if (!response.ok || !payload.success || !payload.data?.destination) {
       setProblem(payload.error?.message ?? loginCopy.failed);
       setBusy(false);
       return;
     }
-    // 管理员落到管理后台：只有 ADMIN 角色、没有成员档案的账号在 /member 上只会看到
-    // 「尚未开通成员身份」的空态，等于进不去任何页面（M6 之后 /admin 才是它的落点）。
-    router.replace(
-      loginDestination({
-        mustChangePassword: payload.data?.mustChangePassword ?? false,
-        roles: payload.data?.roles ?? [],
-      }),
-    );
+    router.replace(payload.data.destination);
     router.refresh();
   }
   return (

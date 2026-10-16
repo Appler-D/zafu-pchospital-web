@@ -70,16 +70,23 @@
 
 - `POST /api/v1/auth/login`：QQ + 密码登录并设置数据库 Session Cookie。可选 `rememberMe`
   必须是布尔值，省略或 `false` 为 1 天有效期，`true` 为 30 天；其他类型返回
-  `VALIDATION_FAILED`。登录页默认不勾选「保持登录状态」。
+  `VALIDATION_FAILED`。登录页默认不勾选「保持登录状态」。响应带 `accountAccess` 与
+  `destination`（服务端统一落点编排，见下方「统一账号门禁」）；可选 `returnTo` 只作候选目标，
+  服务端按白名单与**当次角色**复查，非法或无权目标回落到默认页。
 - `POST /api/v1/auth/logout`：撤销当前 Session 并清除 Cookie。
 - `POST /api/v1/auth/password/change`：验证当前密码、修改密码、撤销其他 Session 并轮换当前 Session。
   管理员签发的临时密码完成恢复也走这条入口（当前密码填临时密码，见下方「管理员手动重置与
-  临时密码恢复」）。响应带 `destination`：按登录页同一份 `loginDestination` 规则给出改密后的
-  落点（管理员 `/admin`、成员 `/member`），客户端不自行按角色判断。
+  临时密码恢复」）。响应带 `destination`：由服务端统一落点编排给出（见下方「统一账号门禁」），
+  开启门禁时先引导到邮箱步骤并带上已校验的 `returnTo`，客户端不自行按角色判断。
 - `GET /api/v1/me`：返回当前 User、Role、Permission、MemberProfile 状态、首次改密标记与
-  `rememberMe`。只更新最后访问时间，不延长 Session 或 Cookie 到期时间。
+  `rememberMe`，并新增 `accountAccess`（`state` / 服务端 `destination` / `exemptionExpiresAt`）。
+  受限状态仍返回 **200**（会话有效，只是当前档位不让访问业务），只更新最后访问时间，
+  不延长 Session 或 Cookie 到期时间。
 
-管理员初始密码登录后，除 `/me`、改密和登出外均返回 `PASSWORD_CHANGE_REQUIRED`。所有使用
+管理员初始密码登录后，除 `/me`、改密和登出外均返回 `PASSWORD_CHANGE_REQUIRED`。统一账号门禁
+启用后（见下方「统一账号门禁」），未验证邮箱且无有效豁免的账号在业务接口上返回
+`EMAIL_VERIFICATION_REQUIRED`（403，与 `PASSWORD_CHANGE_REQUIRED` 同一档：会话有效但当前
+资格不足，前端不得当作登录过期）。所有使用
 Cookie 的写接口校验 `Origin`：`Origin` 必须等于服务端配置的 `APP_BASE_URL`（含其 `www`
 变体）的来源，缺失 `Origin` 或非白名单来源返回 403。**不拿请求自带的 `Host` /
 `X-Forwarded-Host` 当比较基准**——那两个头由请求方控制，跟着它们走等于让攻击者自己填写
@@ -88,9 +95,11 @@ HttpOnly、SameSite=Lax、Path=/，生产环境启用 Secure。
 Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 Session 时保留
 `rememberMe`（恢复态改为普通 1 天）；登出、管理员手动重置（改为签发 1 小时临时密码，
 见下方「管理员手动重置与临时密码恢复」）和成员禁用仍撤销有效 Session。
-`/login` 会识别有效 Session，按首次改密 / 管理员 / 成员身份跳转对应页面。
+`/login` 会识别有效 Session，按统一落点编排跳转（未走完的步骤优先，其次原目标 / 角色默认页）。
 受保护页面在到期时跳转 `/login?reason=expired`，登录页通过浮层显示过期提醒；
-浏览器恢复焦点或标签恢复可见时重新校验，网络异常不会被当作过期。
+浏览器恢复焦点或标签恢复可见时重新校验，网络异常不会被当作过期；门禁拒绝与业务错误
+同样**不**当作过期，受限状态由服务端 `/me` 的 `accountAccess` 驱动跳转，已在对应步骤页时
+不重复跳转。豁免早于 Session 到期时，客户端把下一次复查提前到豁免到期点（不新增高频轮询）。
 
 ### 招募、邀请码与成员核心 API
 
@@ -738,7 +747,7 @@ DELETE /api/v1/member/notifications/:id
 
 ## 邮箱验证与重置授权基础设施（issue #146）
 
-PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；主动邮箱管理与匿名邮箱找回已接入，统一邮箱门禁仍未启用。
+PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；主动邮箱管理与匿名邮箱找回已接入；统一账号门禁已实现并按 `EMAIL_GATE_MODE` 分档启用，缺省 `off`（尚未在生产开启）。
 
 - 新增错误码（唯一事实来源仍是 `src/lib/api/errors.ts`）：
   `EMAIL_NOT_ENABLED`、`EMAIL_NOT_VERIFIED`、`EMAIL_ALREADY_BOUND`、
@@ -806,4 +815,73 @@ returnTo 只接受规范站内 /member 或 /admin 业务路径，按当前有效
 
 新 request 清旧授权 Cookie，verify 失败也清旧授权。最终事务与 SMTP 开关无关：凭据锁后复核资格、同一邮箱、凭据代次与期限，消费授权、写密码、代次递增、清临时状态、撤销目标所有 Session、作废其他恢复证明并写审计，失败全部回滚。继续复用有界 Serializable 重试，每次锁等待 / 重试后重新取时。
 
-未经邮箱证明的请求使用 SYSTEM / 空 actorUserId，已知账号仅为 target；验证后才记录本人恢复。服务端可信 `anonymous` 请求审计选项不来自 HTTP；原已登录邮箱管理审计不变。QQ / 邮箱 / IP 沿用脱敏，密码 / 验证码 / 授权 / Cookie 不进审计。登录 / 注册 / 正常改密落点不变，统一邮箱门禁仍未启用。
+未经邮箱证明的请求使用 SYSTEM / 空 actorUserId，已知账号仅为 target；验证后才记录本人恢复。服务端可信 `anonymous` 请求审计选项不来自 HTTP；原已登录邮箱管理审计不变。QQ / 邮箱 / IP 沿用脱敏，密码 / 验证码 / 授权 / Cookie 不进审计。`off` 档下登录 / 注册 / 正常改密落点不变；这三个匿名端点**不套登录守卫**，因此不受门禁档位影响。
+
+## 统一账号门禁与分阶段启用（Refs #146 / Refs #113）
+
+判定只有一份（`src/lib/auth/account-access.ts`），页面守卫与业务 API 共用；每次受保护请求都按**当次**数据库状态重判，不取登录时快照、不接受任何前端标志或请求参数。顺序固定：有效 Session / 账号资格 → 必须改密 → 当前档位需要已验证邮箱且无有效豁免 → 原目标或角色默认页。
+
+档位只有服务端 `EMAIL_GATE_MODE=off|admin|all`（缺省 `off`）：`admin` 约束**当次**持有 ADMIN 的账号（双角色访问成员侧同样受限，绕不过去），`all` 约束全部已认证账号；非法值抛 500 `EMAIL_GATE_MODE_INVALID`，不静默退回 `off`；改值须重启全部实例才生效。无 `NEXT_PUBLIC_*`、无请求参数、无前端存储可参与判定。邮件通道与门禁解耦：`MAIL_ENABLED` 关闭、SMTP 失败或预算耗尽既不会让门禁失效，也不会让门禁额外拦人。
+
+| 状态                          | 含义                                     | HTTP 与用法                                                                                 |
+| ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `PASSWORD_CHANGE_REQUIRED`    | 必须先改密（优先级最高，豁免也不能绕过） | 业务接口 403 `PASSWORD_CHANGE_REQUIRED`；落点 `/account/change-password`                    |
+| `EMAIL_VERIFICATION_REQUIRED` | 当前档位需要已验证邮箱且无有效豁免       | 业务接口 **403** `EMAIL_VERIFICATION_REQUIRED`（不是 401，会话有效）；落点 `/account/email` |
+| `READY`                       | 可以访问业务                             | 落点为原目标或角色默认页                                                                    |
+
+`AccountAccessView`（`src/types/contracts.ts`）= `{ state, destination, exemptionExpiresAt }`：`destination` 一律由服务端计算，`exemptionExpiresAt` 只在豁免仍有效时报出（ISO 串），已到期 / 已撤销为 `null`。`GET /api/v1/me` 在受限态仍是 200 并带该视图；它额外接受一个**候选** `?returnTo=`（客户端跟随器交来的当前业务页或步骤链条里的目标），只用于让受限状态下的 `destination` 接上链条 —— 是否放行、去哪一步仍只看数据库，候选本身不构成任何绕过标志。`POST /api/v1/auth/login`、`POST /api/v1/auth/password/change`、`POST /api/v1/member-registrations/invite` 与邮箱确认都返回同一编排的 `destination`（邀请码注册响应类型为 `InviteRegistrationResponse` = 原 `MemberRegistrationResult` + `accountAccess` + `destination`；登录 / 注册切换的链接与注册表单都带着同一个候选，链条不在切换处断开）。
+
+访问用途由 **Route 在服务端写死**，不由请求里的任何 allow 标志决定（`authenticateRequest(request, requestId, purpose)`，`purpose` 缺省 `business`）：
+
+| 用途               | 放行的受限状态                     | 使用方                                                               |
+| ------------------ | ---------------------------------- | -------------------------------------------------------------------- |
+| `business`         | 无                                 | 全部成员 / 管理业务接口（缺省；82 个调用点中除下列例外均沿用缺省值） |
+| `session-self`     | 改密与邮箱都只报告不拒绝           | `GET /api/v1/me`（登出本来就不经此入口，受限会话仍可登出）           |
+| `email-self`       | 只豁免邮箱门禁，仍需先改密         | `GET /api/v1/account/email`、`POST …/challenges`、`POST …/confirm`   |
+| `account-recovery` | 只豁免邮箱门禁，仍需先改密与有权限 | 见下方窄例外清单                                                     |
+
+窄例外**只**放行这些既有端点：`POST /api/v1/admin/accounts/lookup`、
+`POST /api/v1/admin/accounts/:userId/password-reset`，以及任务 4 的
+`GET /api/v1/admin/accounts/:userId/email`、`POST …/email/reveal`、`POST …/email/assistance`、
+`POST …/email/assistance/:id/revoke`、`POST …/email/exemptions`、`POST …/email/exemptions/:id/revoke`。
+用途在每条 Route 里单独声明，**不给 `/admin/accounts/*` 或 `/admin/*` 前缀式放行**：
+成员名单、导出、角色编辑、审计查询等照常受门禁。同源、权限、Service 二次校验、
+SELF 禁止、资格判定与审计全部不变；豁免不授予任何权限，也不授予找回资格。
+
+页面侧：`requireMemberPage()` / `requireActiveMemberPage()` / `requireAdminPage()` 统一调用
+`enforcePageAccountAccess()`。**后台不能只靠 layout 守卫**：layout 在客户端导航之间保持挂载、
+不为切页重新求值，所以 `/admin/**` 的每个 page 也各自调用同一个 `requireAdminPage()`
+（任务 6 返修 F2）；它被 React `cache()` 包住，同一请求里 layout 与 page 共用一次求值，
+请求之间仍然每次重判。会话缺失 / 失效时去登录页并带上**形状合法**的候选原目标
+（`/login?reason=expired&returnTo=…`，此时还没有角色可查，认证之后由 `safeAccountReturnPath`
+按当次角色复查）。步骤页 `/account/change-password`、`/account/email` 由调用方以编译期常量
+声明自身，不会自环；「允许停留」按判定顺序给出（`isAccountStepPage`）：必须改密只能停在改密页，
+**只差邮箱**的账号可以停在改密页也可以停在邮箱页（任务书要求改密页与改密接口对邮箱受限账号
+照常可用）。`returnTo` 沿「登录 → 改密 → 邮箱」链条传递，沿用任务 4 的安全回跳规则并收敛到
+`safeAccountReturnPath()`：只接受当前角色允许的规范 `/member` / `/admin` 业务 pathname，
+拒绝外部地址、双斜杠、反斜杠、控制字符与空格、查询串 / 片段 / 百分号编码歧义以及登录 /
+API / 两个步骤页的自环，不做二次 decode，非法值回退角色默认页。当前路径取自
+`src/middleware.ts`：它只做一件事 —— 用 `NextRequest.nextUrl.pathname` 无条件覆写内部
+`x-internal-pathname` 头（客户端伪造值被覆盖），Edge 内不查 Prisma、不发信；该头**只**用作
+候选回跳目标，是否重定向、去哪一步只看数据库状态。中间件缺失时读到 `null`，落点退化为
+角色默认页，行为仍安全。
+
+客户端跟随器（`SessionMonitor`）与服务端同源判定：只有 401 算会话失效，门禁拒绝 / 业务错误 /
+网络异常都不写成过期；受限状态按服务端 `destination` **整页跳一次**（重新走文档请求 = 重新判定），
+已经在允许停留的步骤页时不跳。下一次复查按**最近的一个未来到期时间**安排（豁免比会话更早到期就
+提前复查），24 小时只是上限不是下限；拿不到未来的到期时间时（首次、已过期、请求失败）按 60 秒
+固定间隔重试，不出现 0 毫秒连发，也不引入新的高频轮询。
+
+`/account/email` 在门禁下仍保留主动管理能力，并给出服务端授予的「继续原目标」：邮箱已验证
+或豁免仍有效时是可点链接，否则按钮常驻但置灰。「刷新状态」同时重取本人邮箱状态与**服务端授予的
+继续能力**（重放当前页面的 RSC 请求，由服务端重算 `continueTo`；查询串里的 `returnTo` 原样保留，
+这一轮失败就维持原状、不伪造放行）—— 管理员刚授予的豁免不必整页重载就能继续。落点只有一个来源：
+服务端；既不新增「门禁状态」接口，也不允许前端看见豁免就自行拼路径。
+同一页面为完成改密且持有 ADMIN + `member:manage` 的账号常驻
+「账号恢复」「账号邮箱」两个恢复入口，复用既有 `AdminAccountResetDialog` /
+`AdminAccountEmailDialog`，同一时刻只挂一个窗口。
+
+新增错误码：`EMAIL_VERIFICATION_REQUIRED`（403）、`EMAIL_GATE_MODE_INVALID`（500）。
+门禁拒绝不额外逐请求写审计（既有登录 / 改密 / 邮箱管理审计不变），敏感值照旧不落日志。
+无 Migration、无新依赖。启用顺序、冒烟判据与回退动作见
+[门禁启用与回退](../email-gate-rollout.md)。

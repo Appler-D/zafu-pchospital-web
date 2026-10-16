@@ -1,12 +1,20 @@
-import { Suspense } from "react";
 import { AccountEmailForm } from "@/components/account/AccountEmailForm";
 import { PageHead } from "@/components/layout/PageHead";
 import { Section } from "@/components/ui/Section";
 import { accountEmailCopy as copy } from "@/config/account-email";
-import { requireMemberPage } from "@/lib/auth/member-page";
+import { requireEmailStepPage } from "@/lib/auth/member-page";
 export const metadata = { title: copy.title, robots: { index: false, follow: false } };
-export default async function AccountEmailPage() {
-  await requireMemberPage(); // 基础 Session + 强制改密；不要求 MemberProfile。
+
+type AccountEmailPageProps = { searchParams: Promise<{ returnTo?: string | string[] }> };
+
+export default async function AccountEmailPage({ searchParams }: AccountEmailPageProps) {
+  const params = await searchParams;
+  const rawReturnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
+  // 步骤页：基础 Session + 强制改密照旧，邮箱门禁只豁免本步骤；不要求 MemberProfile。
+  const { principal, target, continueTo } = await requireEmailStepPage(rawReturnTo);
+  // 恢复工具入口由服务端按当次角色 + 权限授予；临时豁免不授予任何权限。
+  const canRecover =
+    principal.roles.includes("ADMIN") && principal.permissions.includes("member:manage");
   return (
     <>
       <PageHead
@@ -17,9 +25,7 @@ export default async function AccountEmailPage() {
         lead={copy.lead}
       />
       <Section labelledBy="email-title">
-        <Suspense fallback={<p>{copy.loading}</p>}>
-          <AccountEmailForm />
-        </Suspense>
+        <AccountEmailForm continueTo={continueTo} returnTo={target} canRecover={canRecover} />
       </Section>
     </>
   );

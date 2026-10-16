@@ -62,6 +62,8 @@
 │   │   ├── robots.ts          # robots.txt（构建期生成，屏蔽后台/成员/接口）
 │   │   ├── sitemap.ts         # sitemap.xml（构建期生成，静态公开页 + 文档条目）
 │   │   └── icon.svg           # 站点图标
+│   ├── middleware.ts          # 唯一职责：用 `NextRequest.nextUrl` 覆写内部 pathname 头；
+│   │                          #   Edge 内不查 Prisma、不发信、不做门禁判定
 │   │
 │   ├── components/
 │   │   ├── layout/            # 全站级骨架组件（Header / Footer / Container /
@@ -93,7 +95,7 @@
 │   ├── lib/                   # 无 UI 的纯逻辑
 │   │   ├── db/                # Prisma client、事务和隔离级别
 │   │   ├── api/               # 信封、错误、requestId、分页、限流接口
-│   │   ├── auth/              # 权限定义与授权骨架
+│   │   ├── auth/              # 权限定义、授权骨架与统一账号门禁判定
 │   │   ├── audit/             # 审计写入与脱敏
 │   │   └── security/          # 摘要、规范化、凭据工具
 │   ├── features/              # 按领域组织 Service / Repository
@@ -101,6 +103,8 @@
 │   │   ├── invitations/       # InviteCode 与原子兑换
 │   │   ├── accounts/          # AccountProvision
 │   │   ├── auth/              # 登录、数据库 Session、改密与限流
+│   │   ├── email/             # 邮箱挑战 / 限流预算 / 找回授权 / 主动管理 / 门禁状态读取
+│   │   │                      #   （issue #146；门禁判定本身在 `lib/auth/account-access.ts`）
 │   │   ├── members/           # 成员直建、启停与密码重置
 │   │   ├── repairs/           # 维修草稿、审核、查询
 │   │   ├── member-dashboard/  # 工作台聚合
@@ -189,6 +193,23 @@
 这里放不依赖 React 的共享能力：`db/` 管理 Prisma client 与事务，`api/` 管理响应信封、
 错误码、requestId、分页和限流接口，`auth/` 管理授权骨架，`audit/` 管理审计与脱敏，
 `security/` 管理摘要、身份规范化和凭据工具。现有 `utils.ts`、`theme.ts`、`docs.ts` 继续保留。
+
+统一账号门禁（issue #146 任务 6）在 `auth/` 里分四块，依赖方向固定为
+`守卫 → 判定 → 状态读取`：
+
+| 模块                   | 职责                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `account-steps.ts`     | 两个步骤页常量 + 「当前页是不是这一步」的纯对应关系（服务端与客户端共用）                                                            |
+| `account-access.ts`    | 唯一判定：`decideAccountAccess`（纯函数）与 `resolveAccountAccess`（按当次库状态），外加安全回跳白名单 `safeAccountReturnPath`       |
+| `request.ts`           | 业务 API 入口 `authenticateRequest(request, requestId, purpose)`；`purpose` 是**服务端写死**的用途表，请求里没有任何标志可以跳过检查 |
+| `page-access.ts`       | 页面 / RSC 侧执行同一判定并 `redirect`；`member-page.ts` / `admin-page.ts` 调用它                                                    |
+| `internal-pathname.ts` | 内部 pathname 头名字（Edge 中间件只 import 这个常量）                                                                                |
+
+状态读取放在 `features/email/email-access-state.ts`：只读 `user_identities` 与
+`email_exemptions`，不解析 SMTP 配置、不发信、不引用认证 Service —— 否则会形成
+`request → 邮箱 Service → request` 的依赖环，也会让门禁被邮件故障左右。判定链上「用于安全
+决策的时间」一律在阻塞读取完成之后取得（与返修 F3 同一口径）。`account-access.ts` 不写
+`import "server-only"`：它被 tsx 直接跑的测试导入，而该包只在 Next 打包时可见。
 
 规则：这里不放 React 组件，不放 Feature 专属状态机；敏感值不得写入日志或错误响应。
 
@@ -284,6 +305,14 @@ Browser
 ```
 
 - 配置与数据**只向下流动**：页面读取配置，组件通过 props 接收数据。
+- 受保护请求有两条同源的判定链，**服务端每次都按当前库状态重判**（issue #146 任务 6）：
+  `page.tsx / layout.tsx → auth/member-page|admin-page → auth/page-access → auth/account-access`
+  与 `Route Handler → auth/request.authenticateRequest(purpose) → auth/account-access`；
+  两者只读状态、不缓存登录快照，前端标志与请求参数都不参与判定。
+  layout 在客户端导航之间不重新求值，因此 `/admin/**` 的**每个 page 也各自**调用
+  `requireAdminPage()`（React `cache()` 让同一请求只求值一次，返修 F2）；
+  允许停留的步骤页由 `auth/account-steps.ts` 的 `isAccountStepPage()` 一处定义，
+  服务端守卫与客户端 `SessionMonitor` 共用（只差邮箱的账号可以停在改密页）。
 - 组件**不直接 import** `src/config/` 里的页面文案（`DocList` 这类纯展示组件除外）。
 - 公开内容页仍优先静态生成；Phase 2 API 和数据库访问只在 Node.js 服务端执行。
 - 浏览器不得持有 `DATABASE_URL`、pepper 或数据库权限，也不得直连 GreatSQL。

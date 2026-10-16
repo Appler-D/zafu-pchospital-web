@@ -211,6 +211,33 @@ export type AuthSessionResult = SessionPrincipal & {
   token: string;
   expiresAt: string;
 };
+
+/**
+ * 账号在当前门禁档位下的访问结论（issue #146 任务 6）。
+ *
+ * 判定顺序固定：有效 Session / 账号资格 → 必须改密 → 当前模式需要邮箱且无有效豁免 →
+ * 合法原目标或角色默认页。每次受保护请求都按**当次服务端持久化状态**重判，
+ * 不缓存进登录快照，也不由前端标志、请求参数或存储决定。
+ */
+export type AccountAccessState =
+  "PASSWORD_CHANGE_REQUIRED" | "EMAIL_VERIFICATION_REQUIRED" | "READY";
+
+/** 页面守卫、业务 API 与 `/me` 共用的同一份结论。 */
+export type AccountAccessView = {
+  state: AccountAccessState;
+  /** 服务端给出的落点：受限时为对应步骤页，放行时为合法原目标或角色默认页。 */
+  destination: string;
+  /** 有效豁免的到期时间（供会话监测提前复查）；无豁免为 `null`。不含豁免原因 / 邮箱明文。 */
+  exemptionExpiresAt: string | null;
+};
+
+/** `/api/v1/me` 载荷：Session 主体原字段全部保留，追加当前门禁结论（受限有效会话仍 200）。 */
+export type AccountMeView = SessionPrincipal & {
+  sessionId: string;
+  expiresAt: string;
+  rememberMe: boolean;
+  accountAccess: AccountAccessView;
+};
 export type ChangePasswordInput = {
   currentPassword: string;
   newPassword: string;
@@ -357,6 +384,17 @@ export type MemberRegistrationResult = {
   memberProfileId: string;
   redemptionId: string;
   provisionId: string;
+};
+
+/**
+ * 邀请码注册成功的响应载荷（issue #146 任务 6）：注册结果 + 服务端统一落点。
+ *
+ * 注册本身不新增邮箱字段：先完成注册与建会话，再由 `accountAccess` 决定下一步
+ * （需要验证邮箱时进邮箱步骤，否则进角色默认页）。前端不再固定跳 `/member`。
+ */
+export type InviteRegistrationResponse = MemberRegistrationResult & {
+  accountAccess: AccountAccessView;
+  destination: string;
 };
 
 export type CreateMemberInput = {
