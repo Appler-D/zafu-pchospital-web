@@ -189,7 +189,7 @@ trap on_exit EXIT
 # ---------------------------------------------------------------------------
 # SSH 辅助
 # ---------------------------------------------------------------------------
-SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15)
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=3 -o ServerAliveInterval=15)
 SSH_OPTS_KEY=()
 scp_retry() {
   local f="$1" i=0
@@ -298,6 +298,9 @@ say "服务器：  $SSH_HOST"
 for c in git ssh scp tar curl sha256sum tee; do
   command -v "$c" >/dev/null 2>&1 || die "缺少命令：$c"
 done
+
+# Git Bash（MSYS）下 GNU tar 会把 "E:/…" 当远程主机名解析，导致打包/校验失败
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) export TAR_OPTIONS="--force-local" ;; esac
 
 # 回滚模式只需要 ssh/curl，在工具检查后立即分流（不再要求 node/mdbook/网络 fetch）
 if [ "$DO_ROLLBACK" = 1 ]; then
@@ -583,9 +586,8 @@ else
 
   BUILD_LOG="$BUILD_DIR/build-$TARGET_SHA.log"
   say "构建 pnpm build（含站内文档），日志：$BUILD_LOG"
-  BUILD_ENV=(env NEXT_TELEMETRY_DISABLED=1 MDBOOK_BIN="$MDBOOK_BIN")
-  if [ ${#DOCS_ENV[@]} -gt 0 ]; then BUILD_ENV+=("${DOCS_ENV[@]}"); fi
-  if ! ( cd "$WT" && "${BUILD_ENV[@]}" "${PNPM[@]}" build ) >"$BUILD_LOG" 2>&1; then
+  # 不用 env 前缀：个别开发机 PATH 里有自造的 env 脚本，会把整条命令静默吞掉
+  if ! ( cd "$WT" && export NEXT_TELEMETRY_DISABLED=1 MDBOOK_BIN="$MDBOOK_BIN" "${DOCS_ENV[@]}"; "${PNPM[@]}" build ) >"$BUILD_LOG" 2>&1; then
     tail -40 "$BUILD_LOG" | sed 's/^/    /' || true
     die "本地构建失败（服务器未做任何变更）。完整日志：$BUILD_LOG"
   fi
@@ -613,8 +615,9 @@ else
   tar -czf "$ART" --exclude='.next/cache' -C "$WT" .next public/handbook -C "$BUILD_DIR" BUILD_COMMIT
   CACHE_N="$(tar -tzf "$ART" | grep -c '\.next/cache' || true)"
   [ "$CACHE_N" = "0" ] || die "打包异常：产物里含 .next/cache（$CACHE_N 项）。"
-  tar -tzf "$ART" | grep -q '\.next/BUILD_ID' || die "打包异常：产物里没有 .next/BUILD_ID。"
-  tar -tzf "$ART" | grep -q 'public/handbook/index.html' || die "打包异常：产物里没有 public/handbook/index.html。"
+  # grep -c（而非 -q）：-q 命中即退出会让 tar 收到 SIGPIPE，在 set -o pipefail 下被误判为失败
+  tar -tzf "$ART" | grep -c '\.next/BUILD_ID' >/dev/null || die "打包异常：产物里没有 .next/BUILD_ID。"
+  tar -tzf "$ART" | grep -c 'public/handbook/index.html' >/dev/null || die "打包异常：产物里没有 public/handbook/index.html。"
   ART_SHA256="$(sha256sum "$ART" | awk '{print $1}')"
 fi
 
@@ -836,7 +839,7 @@ ok "迁移与 seed 完成，迁移计数一致。（仍处于停机窗口）"
 # ---------------------------------------------------------------------------
 step 8 "原子切换产物并启动服务"
 
-SWAP_OUT="$(remote_script <<REMOTE | tee /dev/stderr
+SWAP_OUT="$(remote_script <<REMOTE
 set -e
 cd $APP_DIR
 test "\$(git rev-parse HEAD)" = "$TARGET_SHA"
