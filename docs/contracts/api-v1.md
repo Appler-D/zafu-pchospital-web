@@ -738,7 +738,7 @@ DELETE /api/v1/member/notifications/:id
 
 ## 邮箱验证与重置授权基础设施（issue #146）
 
-PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；本阶段接入主动邮箱管理，匿名找回 HTTP、自设密码恢复与登录门禁仍留待后续。
+PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；主动邮箱管理与匿名邮箱找回已接入，统一邮箱门禁仍未启用。
 
 - 新增错误码（唯一事实来源仍是 `src/lib/api/errors.ts`）：
   `EMAIL_NOT_ENABLED`、`EMAIL_NOT_VERIFIED`、`EMAIL_ALREADY_BOUND`、
@@ -794,3 +794,16 @@ PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；本�
 returnTo 只接受规范站内 /member 或 /admin 业务路径，按当前有效角色判定。查询串、片段、编码、控制字符、反斜杠、外部地址、登录 / API / 邮箱页循环均回退角色默认页，客户端只用服务端 destination。
 
 管理端列表不增加邮箱搜索或导出；从常驻“账号邮箱”入口走原 `POST /admin/accounts/lookup` 的 QQ 精确查询（保留 SELF / canReset 语义）；成员详情复用同一管理面板。普通状态与列表只给脱敏地址，只有 reveal 返回完整地址并审计。无 SMTP 时仍能查询 / 管理协助与豁免；不开启全员门禁。操作说明见 [邮箱管理](../email-management.md)。
+
+## 匿名邮箱找回与自设密码（Refs #146 / Refs #113）
+
+三个 POST 不套登录守卫，均同源、严格字段白名单、统一信封 / requestId，成功失败均 `private, no-store`。Service 显式实现 `PasswordRecoveryServiceContract`，Route 不查询 Prisma。
+
+- `POST /api/v1/auth/password-reset/request`：仅 `{qq}`。QQ 规范化后，在账号查询前独立事务持久化 IP 30 次 / 15 分钟、QQ 60 秒冷却及上海自然日 10 次限制，独立 HMAC 命名空间；锁按 key 排序，锁齐后取时。未知 / 不合格 QQ 不退款。真实发送继续受既有账号 / 邮箱 / IP 与全站预算约束，SMTP 在事务外发送一次。
+- request 返回 200 `{challengeId, expiresAt, message}`。符合条件使用真实挑战；未知 / 未验证 / 不合格账号、目标限额 / 预算及 SMTP 失败 / 未知使用安全随机 UUID 占位与相同 10 分钟期限口径及接受提示，不持久化伪挑战。无邮箱（含脱敏）、姓名、角色、资格错误。公共格式 / 同源 / 查询前限流 / 邮件全局关闭可受控拒绝；意外故障保持 `INTERNAL_ERROR`。
+- `POST /api/v1/auth/password-reset/verify`：仅 `{challengeId, code}`（UUID、6 位数字），固定 PASSWORD_RESET，原子消费挑战并签发一次性 10 分钟授权。JSON 仅 `{authorized:true, expiresAt}`，无 token / grantId / userId；内部 32 字节随机 token 仅写 `pc_hospital_password_reset` Cookie（HttpOnly、生产 Secure、SameSite=Strict、Path=/api/v1/auth/password-reset，Expires 不超过数据库期限）。不创建任何 Session。
+- `POST /api/v1/auth/password-reset/confirm`：仅 `{newPassword, newPasswordConfirmation}`，授权仅取专用 Cookie。密码 6–128 字符，不 trim、不要求旧密码或复杂度。成功 `{changed:true,destination:'/login'}`，清重置 Cookie 及当前浏览器登录 Cookie，不自动登录；只撤销授权目标账号的数据库 Session。无效 / 过期授权清 Cookie，可纠正的字段错误保留授权。
+
+新 request 清旧授权 Cookie，verify 失败也清旧授权。最终事务与 SMTP 开关无关：凭据锁后复核资格、同一邮箱、凭据代次与期限，消费授权、写密码、代次递增、清临时状态、撤销目标所有 Session、作废其他恢复证明并写审计，失败全部回滚。继续复用有界 Serializable 重试，每次锁等待 / 重试后重新取时。
+
+未经邮箱证明的请求使用 SYSTEM / 空 actorUserId，已知账号仅为 target；验证后才记录本人恢复。服务端可信 `anonymous` 请求审计选项不来自 HTTP；原已登录邮箱管理审计不变。QQ / 邮箱 / IP 沿用脱敏，密码 / 验证码 / 授权 / Cookie 不进审计。登录 / 注册 / 正常改密落点不变，统一邮箱门禁仍未启用。

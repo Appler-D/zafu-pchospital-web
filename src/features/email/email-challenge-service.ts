@@ -116,6 +116,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
   async requestEmailChallenge(
     input: RequestEmailChallengeInput,
     context: PublicRequestContext,
+    options: { anonymous?: boolean } = {},
   ): Promise<EmailChallengeRequestResult> {
     const mail = requireEnabledMailConfig();
     const purpose = assertChallengePurpose(input.purpose);
@@ -170,8 +171,8 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
         });
         await appendAuditLog(tx, {
           actor: context,
-          actorType: "USER",
-          actorUserId: target.userId,
+          actorType: options.anonymous ? "SYSTEM" : "USER",
+          actorUserId: options.anonymous ? undefined : target.userId,
           action: "email.challenge.requested",
           targetType: "EmailChallenge",
           targetId: challengeId,

@@ -35,6 +35,11 @@ export function LoginPanel({ mode = "login" }: LoginPanelProps) {
       {isRegister ? <InviteRegistrationForm /> : <LoginForm />}
 
       <div className="auth-login__links">
+        {!isRegister ? (
+          <p>
+            <Link href="/account/forgot-password">{loginCopy.forgotPassword}</Link>
+          </p>
+        ) : null}
         {isRegister ? (
           <>
             <p>
@@ -43,8 +48,7 @@ export function LoginPanel({ mode = "login" }: LoginPanelProps) {
               </Link>
             </p>
             <p>
-              {registerCopy.joinPrompt}{" "}
-              <Link href="/join">{registerCopy.joinAction}</Link>
+              {registerCopy.joinPrompt} <Link href="/join">{registerCopy.joinAction}</Link>
             </p>
           </>
         ) : (
@@ -56,8 +60,7 @@ export function LoginPanel({ mode = "login" }: LoginPanelProps) {
               </Link>
             </p>
             <p>
-              {loginCopy.joinPrompt}{" "}
-              <Link href="/join">{loginCopy.joinAction}</Link>
+              {loginCopy.joinPrompt} <Link href="/join">{loginCopy.joinAction}</Link>
             </p>
           </>
         )}

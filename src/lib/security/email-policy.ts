@@ -29,3 +29,9 @@ export const EMAIL_BUDGET_MINUTE_WINDOW_MS = 60 * 1_000;
 export const PASSWORD_RESET_AUTHORIZATION_TTL_MS = 10 * 60 * 1_000;
 /** 已终结 / 过期挑战与授权保留 7 天后可清理。 */
 export const EMAIL_SECURITY_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/** 匿名找回查询前限制；与真实发送桶及登录桶隔离。 */
+export const PASSWORD_RECOVERY_REQUEST_IP_MAX = 30;
+export const PASSWORD_RECOVERY_REQUEST_IP_WINDOW_MS = 15 * 60_000;
+export const PASSWORD_RECOVERY_REQUEST_QQ_COOLDOWN_MS = 60_000;
+export const PASSWORD_RECOVERY_REQUEST_QQ_DAILY_MAX = 10;

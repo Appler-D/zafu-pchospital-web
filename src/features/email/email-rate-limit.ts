@@ -2,6 +2,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import { AppError, type ApiErrorCode } from "@/lib/api/errors";
 import { shanghaiDateOf } from "@/lib/shanghai-date";
 import {
+  PASSWORD_RECOVERY_REQUEST_IP_MAX,
+  PASSWORD_RECOVERY_REQUEST_IP_WINDOW_MS,
+  PASSWORD_RECOVERY_REQUEST_QQ_COOLDOWN_MS,
+  PASSWORD_RECOVERY_REQUEST_QQ_DAILY_MAX,
   EMAIL_BUDGET_MINUTE_MAX,
   EMAIL_BUDGET_MINUTE_WINDOW_MS,
   EMAIL_CODE_BLOCK_MS,
@@ -27,6 +31,9 @@ import { digestEmailBucketKey } from "@/lib/security/email-security";
 
 /** 计数键构造器。测试清理夹具时也要按同一份键算摘要，因此导出。 */
 export const emailBucketKeys = {
+  recoveryRequestIp: (ip: string) => `recovery:request:ip:${ip}`,
+  recoveryRequestQqCooldown: (qq: string) => `recovery:request:qq:cooldown:${qq}`,
+  recoveryRequestQqDaily: (qq: string) => `recovery:request:qq:daily:${qq}`,
   sendCooldownUser: (userId: string) => `send:cooldown:user:${userId}`,
   sendCooldownEmail: (emailNormalized: string) => `send:cooldown:email:${emailNormalized}`,
   sendDailyUser: (userId: string) => `send:daily:user:${userId}`,
@@ -310,4 +317,36 @@ export async function consumeEmailVerifyIpQuota(
     },
     now,
   );
+}
+
+/** 匿名账号查询之前独立提交：未知 / 不合格 QQ 同样计数，不随后续结果回滚。 */
+export async function preoccupyPasswordRecoveryRequestQuota(
+  tx: Prisma.TransactionClient,
+  input: { qq: string; ipAddress?: string; now: () => Date },
+): Promise<Date> {
+  const specs: EmailCounterSpec[] = [
+    {
+      key: emailBucketKeys.recoveryRequestIp(input.ipAddress?.trim() || "unknown"),
+      window: (now) => rollingWindow(now, PASSWORD_RECOVERY_REQUEST_IP_WINDOW_MS),
+      max: PASSWORD_RECOVERY_REQUEST_IP_MAX,
+      errorCode: "EMAIL_RATE_LIMITED",
+    },
+    {
+      key: emailBucketKeys.recoveryRequestQqCooldown(input.qq),
+      window: (now) => rollingWindow(now, PASSWORD_RECOVERY_REQUEST_QQ_COOLDOWN_MS),
+      max: 1,
+      errorCode: "EMAIL_RATE_LIMITED",
+    },
+    {
+      key: emailBucketKeys.recoveryRequestQqDaily(input.qq),
+      window: shanghaiDayWindow,
+      max: PASSWORD_RECOVERY_REQUEST_QQ_DAILY_MAX,
+      errorCode: "EMAIL_RATE_LIMITED",
+    },
+  ];
+  specs.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  for (const spec of specs) await lockEmailCounterBucket(tx, spec.key);
+  const at = input.now();
+  for (const spec of specs) await applyEmailCounter(tx, spec, at);
+  return at;
 }
