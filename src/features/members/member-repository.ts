@@ -4,7 +4,7 @@ import { memberFilterWhere } from "@/features/members/member-filter";
 import { memberOrderBy } from "@/features/members/member-sort";
 import { AppError } from "@/lib/api/errors";
 import { getDb } from "@/lib/db/client";
-import { maskPhone, maskQq } from "@/lib/audit/redaction";
+import { maskEmail, maskPhone, maskQq } from "@/lib/audit/redaction";
 import type { MemberListEntry, MemberListInput, RoleCode } from "@/types/contracts";
 
 /**
@@ -41,7 +41,7 @@ const adminProfileSelect = {
       status: true,
       identities: {
         where: { deletedAt: null },
-        select: { type: true, identifierNormalized: true },
+        select: { type: true, identifierNormalized: true, verifiedAt: true },
       },
       roles: {
         where: { revokedAt: null },
@@ -65,7 +65,7 @@ type AdminProfileRow = {
   userSkills: { skill: { id: string; name: string; isActive: boolean } }[];
   user: {
     status: string;
-    identities: { type: string; identifierNormalized: string }[];
+    identities: { type: string; identifierNormalized: string; verifiedAt: Date | null }[];
     roles: { role: { code: string } }[];
   };
 };
@@ -98,7 +98,11 @@ export const memberRepository = {
               {
                 user: {
                   identities: {
-                    some: { deletedAt: null, identifierNormalized: { contains: query } },
+                    some: {
+                      type: { in: ["QQ", "PHONE"] },
+                      deletedAt: null,
+                      identifierNormalized: { contains: query },
+                    },
                   },
                 },
               },
@@ -231,6 +235,10 @@ async function approvedRepairStats(memberProfileIds: string[]): Promise<Map<stri
 function toEntry(row: AdminProfileRow, stats: RepairStats): MemberListEntry {
   const qq = row.user.identities.find((item) => item.type === "QQ")?.identifierNormalized;
   const phone = row.user.identities.find((item) => item.type === "PHONE")?.identifierNormalized;
+  const emails = row.user.identities.filter(
+    (identity) => identity.type === "EMAIL" && identity.verifiedAt,
+  );
+  const email = emails.length === 1 ? emails[0]! : null;
   return {
     id: row.id,
     userId: row.userId,
@@ -245,6 +253,8 @@ function toEntry(row: AdminProfileRow, stats: RepairStats): MemberListEntry {
       // 稳定顺序，避免同一成员两次请求返回不同顺序导致界面抖动。
       .sort(),
     userStatus: row.user.status as MemberListEntry["userStatus"],
+    emailMasked: email ? maskEmail(email.identifierNormalized) : null,
+    emailVerified: !!email,
     qqMasked: qq ? maskQq(qq) : null,
     phoneMasked: phone ? maskPhone(phone) : null,
     skills: row.userSkills.map((item) => ({

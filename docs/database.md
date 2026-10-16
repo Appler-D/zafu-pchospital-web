@@ -162,7 +162,7 @@ M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列
   「验密 → 建 Session / 改密」之间的代次复核，每次重置与改密递增；
   不建索引与唯一约束。
 - `20261016140000_email_security_infrastructure`：邮箱验证与重置授权基础设施
-  （issue #146，HTTP 端点尚未接入）。`user_identities` 加 `active_email_key VARCHAR(80) NULL`
+  （issue #146，任务 3 基础设施）。`user_identities` 加 `active_email_key VARCHAR(80) NULL`
   与唯一索引：只有 `type = 'EMAIL'` 的行能写该键（手写 CHECK 约束保证），值为
   `email:{userId}` —— 「一名用户至多一个有效邮箱」由数据库兜底，软删除时置空释放槽位；
   「一个规范化邮箱全局只归属一个用户」继续由既有 `(type, identifier_normalized)` 唯一保证；
@@ -216,3 +216,7 @@ Phase 2 完整部署必须运行 `pnpm build && pnpm start`，浏览器不能直
 - [#23 招募批次生命周期](https://github.com/ZAFU-PCHospital/zafu-pchospital-web/issues/23)
 - [#24 数据保留、删除与匿名化](https://github.com/ZAFU-PCHospital/zafu-pchospital-web/issues/24)
 - [#25 PII 权限、脱敏与导出审计](https://github.com/ZAFU-PCHospital/zafu-pchospital-web/issues/25)
+
+## 邮箱协助与临时豁免（任务 4）
+
+`20261016150000_email_binding_support` 追加 email_assistances / email_exemptions；仅新增表与 userId / 有效性索引、User RESTRICT 外键，不触碰历史身份 / 凭据 / 验证时间，不需要回填。字段与事务见 [数据契约](contracts/data-contract.md#邮箱管理状态refs-146--refs-113)。部署沿用版本化 migrate deploy；运行时不需要调度系统。绑定成功原子作废既有豁免；单独管理豁免不改任何 Session、密码或邮箱，且不依赖 SMTP。本阶段不接全员邮箱门禁。

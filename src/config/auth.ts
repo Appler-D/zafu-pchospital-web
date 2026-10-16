@@ -77,6 +77,7 @@ export const accountMenuCopy = {
     ADMIN: "管理员",
   } as Record<string, string>,
   changePassword: "修改密码",
+  email: "邮箱管理",
   /** 双角色：从管理壳切到成员工作台 */
   switchToMember: "切换至成员工作台",
   /** 双角色：从成员壳切到管理后台 */

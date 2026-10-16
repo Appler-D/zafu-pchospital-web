@@ -477,6 +477,8 @@ export type MemberListEntry = {
   skills: MemberSkillTag[];
   qqMasked: string | null;
   phoneMasked: string | null;
+  emailMasked: string | null;
+  emailVerified: boolean;
   /** 正式统计口径：`APPROVED AND deletedAt IS NULL` 的记录数。 */
   approvedRepairCount: number;
   /** 同一口径的维修总时长（分钟）。列表里与次数同格显示，明细见成员详情的统计。 */
@@ -1586,6 +1588,7 @@ export type VerifyEmailChallengeInput = {
    * 服务端调用方的用途 / 目标约束（可选）：不符即拒绝，且**不计入**用户失败次数
    * （用途不符是流量链路用错原语，不是用户在猜验证码）。
    */
+  expectedUserId?: string;
   expectedPurpose?: EmailChallengePurpose;
   expectedEmailNormalized?: string;
 };
@@ -1622,7 +1625,7 @@ export type PasswordResetAuthorizationProof = {
 };
 
 /**
- * 邮箱验证码挑战服务（服务端基础设施，issue #146 本阶段**不接 HTTP 端点**）。
+ * 邮箱验证码挑战服务（服务端基础设施；主动绑定 HTTP 由 AccountEmailService 编排）。
  *
  * 事务内条件消费原语不在此接口上：它需要调用方的 Prisma 事务，
  * 由 `src/features/email/email-challenge-service.ts` 的 `consumeEmailChallenge` 导出。
@@ -1654,4 +1657,76 @@ export interface NotificationServiceContract {
   markRead(notificationId: string, actor: AuthorizedActor): Promise<NotificationView>;
   markAllRead(actor: AuthorizedActor): Promise<{ updatedCount: number }>;
   softDelete(notificationId: string, actor: AuthorizedActor): Promise<void>;
+}
+
+// 邮箱主动管理（Refs #146 / #113）；token 仅供服务端 Cookie 交付。
+export type EmailCodeInput = { challengeId: string; code: string };
+export type AccountEmailChallengeInput =
+  | { mode: "BIND"; targetEmail: string }
+  | { mode: "OLD"; currentPassword: string }
+  | { mode: "NEW"; targetEmail: string; currentPassword: string; old: EmailCodeInput }
+  | { mode: "ASSISTED"; assistanceId: string; currentPassword: string };
+export type AccountEmailConfirmInput =
+  | { mode: "BIND"; targetEmail: string; proof: EmailCodeInput; returnTo?: string }
+  | {
+      mode: "CHANGE";
+      targetEmail: string;
+      currentPassword: string;
+      old: EmailCodeInput;
+      proof: EmailCodeInput;
+      returnTo?: string;
+    }
+  | {
+      mode: "ASSISTED";
+      assistanceId: string;
+      currentPassword: string;
+      proof: EmailCodeInput;
+      returnTo?: string;
+    };
+export type EmailExemptionView = { id: string; reason: string; expiresAt: string };
+export type EmailAssistanceView = { id: string; targetEmail: string; expiresAt: string };
+export type EmailVerificationState = { verified: boolean; exemption: EmailExemptionView | null };
+export type AccountEmailState = EmailVerificationState & {
+  email: string | null;
+  mailEnabled: boolean;
+  assistance: EmailAssistanceView | null;
+};
+export type AdminAccountEmailState = EmailVerificationState & {
+  maskedEmail: string | null;
+  assistance: EmailAssistanceView | null;
+  canAssist: boolean;
+  canExempt: boolean;
+  mustChangePassword: boolean;
+};
+export interface AccountEmailServiceContract {
+  getState(token: string): Promise<AccountEmailState>;
+  requestChallenge(
+    token: string,
+    input: AccountEmailChallengeInput,
+    context: PublicRequestContext,
+  ): Promise<EmailChallengeRequestResult>;
+  confirm(
+    token: string,
+    input: AccountEmailConfirmInput,
+    context: PublicRequestContext,
+  ): Promise<{ token: string; expiresAt: string; destination: string }>;
+}
+export interface AdminAccountEmailServiceContract {
+  getAdminState(userId: string, actor: AuthorizedActor): Promise<AdminAccountEmailState>;
+  reveal(
+    userId: string,
+    actor: AuthorizedActor,
+  ): Promise<{ email: string | null; targetEmail: string | null }>;
+  createAssistance(
+    userId: string,
+    input: { targetEmail: string; reason: string },
+    actor: AuthorizedActor,
+  ): Promise<void>;
+  revokeAssistance(userId: string, id: string, actor: AuthorizedActor): Promise<void>;
+  grantExemption(
+    userId: string,
+    input: { reason: string; durationHours?: number },
+    actor: AuthorizedActor,
+  ): Promise<void>;
+  revokeExemption(userId: string, id: string, actor: AuthorizedActor): Promise<void>;
 }

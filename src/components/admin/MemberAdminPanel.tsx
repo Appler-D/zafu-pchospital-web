@@ -21,6 +21,8 @@ import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage } from "@/components/admin/AdminToast";
 import { AdminAccountResetDialog } from "@/components/admin/AdminAccountResetDialog";
 import { MemberCreateForm } from "@/components/admin/MemberCreateForm";
+import { AdminAccountEmailDialog } from "@/components/admin/AdminAccountEmailPanel";
+import { accountEmailCopy } from "@/config/account-email";
 import { MemberDetailPanel } from "@/components/admin/MemberDetailPanel";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -92,6 +94,7 @@ export function MemberAdminPanel() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [busy, setBusy] = useState(false);
   /** 表头排序（三态循环由内核的 `cycleSortRule` 算好；空数组 = 按拖动顺序）。 */
@@ -440,6 +443,7 @@ export function MemberAdminPanel() {
               count={filterRules.length}
               onClick={() => setFiltering(true)}
             />
+            <Button onClick={() => setEmailOpen(true)}>{accountEmailCopy.adminTitle}</Button>
             <Button icon="key" onClick={() => setRecovering(true)}>
               {copy.account.action}
             </Button>
@@ -514,6 +518,7 @@ export function MemberAdminPanel() {
       ) : null}
 
       {/* 账号恢复（issue #113）：按 QQ 精确查询成员或管理员并签发临时密码。 */}
+      {emailOpen ? <AdminAccountEmailDialog onClose={() => setEmailOpen(false)} /> : null}
       {recovering ? <AdminAccountResetDialog onClose={() => setRecovering(false)} /> : null}
 
       {/* 列筛选弹层：草稿在弹层里，只有「应用」才落到 `filterRules`（进而重新取数）。 */}

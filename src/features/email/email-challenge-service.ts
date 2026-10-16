@@ -291,6 +291,9 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
       throw new AppError("EMAIL_CHALLENGE_INVALID", "验证码无效或已过期");
     }
 
+    if (input.expectedUserId !== undefined && challenge.userId !== input.expectedUserId) {
+      throw new AppError("EMAIL_CHALLENGE_INVALID", "验证码无效或已过期");
+    }
     if (input.expectedPurpose !== undefined && challenge.purpose !== input.expectedPurpose) {
       throw new AppError("EMAIL_CHALLENGE_INVALID", "验证码无效或已过期");
     }
@@ -418,6 +421,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
       where: { id: input.userId },
       include: {
         memberProfile: true,
+        passwordCredential: true,
         roles: { where: { revokedAt: null }, include: { role: true } },
       },
     });
@@ -430,27 +434,25 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
       throw new AppError("MEMBER_PROFILE_INACTIVE", "成员身份当前不可用");
     }
 
+    const emailRows = await db.userIdentity.findMany({
+      where: { userId: user.id, type: "EMAIL", deletedAt: null, verifiedAt: { not: null } },
+    });
+    if (emailRows.length > 1)
+      throw new AppError("EMAIL_ALREADY_BOUND", "当前邮箱身份存在冲突，请联系管理员");
+    const currentEmail = emailRows[0] ?? null;
     if (purpose === "EMAIL_CHANGE_OLD" || purpose === "PASSWORD_RESET") {
       if (input.targetEmail !== undefined) {
         throw new AppError("VALIDATION_FAILED", "该用途的收件地址由服务端按当前有效邮箱解析");
       }
-      const identity = await db.userIdentity.findFirst({
-        where: { userId: user.id, type: "EMAIL", deletedAt: null, verifiedAt: { not: null } },
-        orderBy: { createdAt: "desc" },
-      });
+      const identity = currentEmail;
       if (!identity) {
         throw new AppError("EMAIL_NOT_VERIFIED", "当前账号还没有已验证的邮箱");
       }
-      const credential =
-        purpose === "PASSWORD_RESET"
-          ? await db.passwordCredential.findUnique({ where: { userId: user.id } })
-          : null;
       return {
         userId: user.id,
         emailNormalized: identity.identifierNormalized,
         emailIdentityId: identity.id,
-        credentialVersion:
-          purpose === "PASSWORD_RESET" ? (credential?.credentialVersion ?? null) : null,
+        credentialVersion: user.passwordCredential?.credentialVersion ?? null,
       };
     }
 
@@ -473,8 +475,8 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
     return {
       userId: user.id,
       emailNormalized,
-      emailIdentityId: null,
-      credentialVersion: null,
+      emailIdentityId: currentEmail?.id ?? null,
+      credentialVersion: user.passwordCredential?.credentialVersion ?? null,
     };
   }
 }
@@ -502,11 +504,16 @@ export async function consumeEmailChallenge(
     code: string;
     purpose: EmailChallengePurpose;
     emailNormalized?: string;
+    expectedUserId?: string;
+    now?: () => Date;
   },
 ): Promise<EmailChallengeProof> {
   await tx.$queryRaw`SELECT id FROM email_challenges WHERE id = ${input.challengeId} FOR UPDATE`;
   const row = await tx.emailChallenge.findUnique({ where: { id: input.challengeId } });
-  const now = new Date();
+  const now = input.now?.() ?? new Date();
+  if (row && input.expectedUserId !== undefined && row.userId !== input.expectedUserId) {
+    throw new AppError("EMAIL_CHALLENGE_INVALID", "验证码无效或已过期");
+  }
   if (!row || row.status !== "ACTIVE" || row.expiresAt.getTime() <= now.getTime()) {
     throw new AppError("EMAIL_CHALLENGE_INVALID", "验证码无效或已过期");
   }

@@ -56,11 +56,7 @@ function isDualRole(principal: SessionPrincipal): boolean {
   );
 }
 
-export function AccountMenu({
-  variant = "hero",
-  initialDisplayName,
-  className,
-}: AccountMenuProps) {
+export function AccountMenu({ variant = "hero", initialDisplayName, className }: AccountMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
   const menuId = useId();
@@ -137,7 +133,7 @@ export function AccountMenu({
 
   // 角色标签：双角色账号优先显示「管理员」（在管理壳语义正确）；仅成员显示「成员」。
   const roleLabel: string | null = principal
-    ? accountMenuCopy.roleLabels[principal.roles.includes("ADMIN") ? "ADMIN" : "MEMBER"] ?? null
+    ? (accountMenuCopy.roleLabels[principal.roles.includes("ADMIN") ? "ADMIN" : "MEMBER"] ?? null)
     : null;
 
   const dualRole = principal ? isDualRole(principal) : false;
@@ -192,6 +188,14 @@ export function AccountMenu({
               {switchLabel}
             </Link>
           ) : null}
+          <Link
+            className="account-menu__item"
+            role="menuitem"
+            href={`/account/email?returnTo=${encodeURIComponent(pathname)}`}
+            onClick={() => setOpen(false)}
+          >
+            {accountMenuCopy.email}
+          </Link>
           <Link
             className="account-menu__item"
             role="menuitem"

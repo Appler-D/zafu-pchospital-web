@@ -736,13 +736,9 @@ DELETE /api/v1/member/notifications/:id
   并卡在 20 字符）；客户端只 trim，不再删除姓名内部空白；
 - 密码、QQ / 手机号与学号 / 班级规则不变。
 
-## 邮箱验证与重置授权基础设施（issue #146，HTTP 端点尚未接入）
+## 邮箱验证与重置授权基础设施（issue #146）
 
-本轮只落公共基础设施：邮箱规范化、`user_identities` 的 EMAIL 身份约束、验证码挑战与
-重置授权的 Service 原语、可注入 SMTP Sender、持久化限流 / 预算与 7 天清理脚本。
-**不新增任何 HTTP 端点** —— 绑定 / 换绑 / 管理端豁免、匿名找回与自设密码流程、
-登录邮箱门禁都留待后续步骤接线；本节记录已冻结的契约，供接线阶段直接消费。
-Service 层未挂路由是本阶段的预期交付状态，不是缺失。
+PR #150 已建立验证码、SMTP、限流 / 预算与重置授权原语；本阶段接入主动邮箱管理，匿名找回 HTTP、自设密码恢复与登录门禁仍留待后续。
 
 - 新增错误码（唯一事实来源仍是 `src/lib/api/errors.ts`）：
   `EMAIL_NOT_ENABLED`、`EMAIL_NOT_VERIFIED`、`EMAIL_ALREADY_BOUND`、
@@ -756,7 +752,7 @@ Service 层未挂路由是本阶段的预期交付状态，不是缺失。
   （重发 / 换 IP 不清零）；验码 IP 15 分钟 30 次；发送冷却 60 秒（账号 / 目标各一）；
   每日 10 / 10 / 100（账号 / 目标 / IP，上海自然日）；全站预算缺省 150 封 / 天 +
   10 封 / 分钟；重置授权令牌 32 字节随机 / 10 分钟 / 一次性；安全记录保留 7 天；
-- 邮件**缺省关闭**：`MAIL_ENABLED=false`（`MAIL_ENABLED` 未设置同理）时所有邮箱 Service
+- 邮件**缺省关闭**：`MAIL_ENABLED=false`（`MAIL_ENABLED` 未设置同理）时发信 / 验码 Service
   抛 `EMAIL_NOT_ENABLED`，站点启动、构建与其它模块完全不受影响；启用时缺 SMTP 配置
   会在取配置时报 `INTERNAL_ERROR`（fail fast，不空跑）；
 - 发送结果语义：SMTP 明确拒绝 → `EMAIL_SEND_FAILED`；超时 / 连接中断等不确定结果 →
@@ -768,3 +764,33 @@ Service 层未挂路由是本阶段的预期交付状态，不是缺失。
 - 新增环境变量：`MAIL_ENABLED`、`SMTP_HOST`、`SMTP_PORT`（默认 465）、`SMTP_USER`、
   `SMTP_PASSWORD`、`MAIL_FROM`、`EMAIL_CODE_PEPPER`（独立 pepper）、
   `EMAIL_DAILY_BUDGET`；清理入口 `pnpm email:cleanup`。
+
+## 主动邮箱管理与管理端兜底（Refs #146 / Refs #113）
+
+所有响应（含失败）`private, no-store`，统一信封 / requestId。自助主体只取 Session，不接受 userId；所有写请求同源；管理员另需 member:manage，Service 复核权限。需改密时邮箱页面 / 自助接口优先返回强制改密。无需 MemberProfile。
+
+| 方法 / 路径                                                     | 请求与结果                                                                                                                       |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| GET /api/v1/account/email                                       | 完整本人邮箱、verified、mailEnabled、有效 assistance（id / 固定 targetEmail / expiresAt）及 exemption（id / reason / expiresAt） |
+| POST /api/v1/account/email/challenges                           | 下述 discriminated union；返回 challengeId / maskedEmail / expiresAt                                                             |
+| POST /api/v1/account/email/confirm                              | 下述 union；返回 changed / 服务端 destination，设置轮换 Cookie，不返回 token                                                     |
+| GET /api/v1/admin/accounts/:userId/email                        | maskedEmail、verified、脱敏 assistance、exemption、canAssist、canExempt、mustChangePassword                                      |
+| POST /api/v1/admin/accounts/:userId/email/reveal                | 显式读取 email / targetEmail，写 email.detail.revealed 审计                                                                      |
+| POST /api/v1/admin/accounts/:userId/email/assistance            | {targetEmail, reason}；创建固定目标 30 分钟待办，不发信                                                                          |
+| POST /api/v1/admin/accounts/:userId/email/assistance/:id/revoke | 撤销具体记录，重复已撤销 / 已消费无副作用，不影响后续待办                                                                        |
+| POST /api/v1/admin/accounts/:userId/email/exemptions            | {reason, durationHours?}，默认 24，1–168 整数；替换原有效记录                                                                    |
+| POST /api/v1/admin/accounts/:userId/email/exemptions/:id/revoke | 撤销具体记录，重复撤销无副作用，不影响新记录                                                                                     |
+
+验证码证明结构 `{challengeId, code}`，code 为 6 位数字；严格拒绝未知字段及错误类型，PASSWORD_RESET 不在自助入口中：
+
+- 发码 BIND：`{mode:'BIND', targetEmail}`；初绑无需密码或旧邮箱。
+- 发旧码 OLD：`{mode:'OLD', currentPassword}`，旧地址服务端解析。
+- 发新码 NEW：`{mode:'NEW', currentPassword, targetEmail, old}`，先核验旧码但不消费。旧、新两封共用 60 秒冷却，不降低参数。
+- 协助发码 ASSISTED：`{mode:'ASSISTED', assistanceId, currentPassword}`；目标仅取待办，不允许请求替换。
+- 确认 BIND：`{mode:'BIND', targetEmail, proof, returnTo?}`。
+- 确认 CHANGE：`{mode:'CHANGE', targetEmail, currentPassword, old, proof, returnTo?}`；同事务消费旧 / 新证明。
+- 确认 ASSISTED：`{mode:'ASSISTED', assistanceId, currentPassword, proof, returnTo?}`；同事务消费待办和新邮箱证明。
+
+returnTo 只接受规范站内 /member 或 /admin 业务路径，按当前有效角色判定。查询串、片段、编码、控制字符、反斜杠、外部地址、登录 / API / 邮箱页循环均回退角色默认页，客户端只用服务端 destination。
+
+管理端列表不增加邮箱搜索或导出；从常驻“账号邮箱”入口走原 `POST /admin/accounts/lookup` 的 QQ 精确查询（保留 SELF / canReset 语义）；成员详情复用同一管理面板。普通状态与列表只给脱敏地址，只有 reveal 返回完整地址并审计。无 SMTP 时仍能查询 / 管理协助与豁免；不开启全员门禁。操作说明见 [邮箱管理](../email-management.md)。
