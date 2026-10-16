@@ -480,6 +480,8 @@ dbTest("暂存待认领：注册后自动补录，记录/时间线/审计/暂存
       realName: "HZ待认领",
       qq,
       phone: `136${String(Date.now()).slice(-8)}`,
+      studentId: "20231010",
+      className: "计算机 231",
       password: "Claim-Password-2026",
     },
     { requestId: "req_h72_claim" },

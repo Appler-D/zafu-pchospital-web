@@ -167,6 +167,8 @@ dbTest("重复报名返回原回执且不重复写入", async () => {
     realName: "测试报名者",
     qq: `6${suffix}12345`.slice(0, 10),
     phone: `139${suffix.padEnd(8, "2")}`.slice(0, 11),
+    studentId: "20230001",
+    className: "计算机 231",
     privacyConsent: true,
   };
   const first = await joinApplicationService.submit(input, { requestId: "req_join_1" });
@@ -193,6 +195,8 @@ dbTest("面试通过重复执行不创建重复账号、档案或角色", async 
     realName: "测试成员",
     qq: `7${Date.now()}`.slice(0, 10),
     phone: `138${String(Date.now()).slice(-8)}`,
+    studentId: "20230002",
+    className: "计算机 232",
     privacyConsent: true,
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_review_submit" });
@@ -221,6 +225,8 @@ dbTest("已通过的报名再提交「通过」：状态不回流，携带的备
     realName: "补记成员",
     qq: `6${String(Date.now()).slice(-9)}`,
     phone: `135${String(Date.now()).slice(-8)}`,
+    studentId: "20230003",
+    className: "计算机 233",
     privacyConsent: true,
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_note_submit" });
@@ -270,6 +276,8 @@ dbTest("同一码可限次复用且 10 个并发请求不会超卖最后一个�
         realName: `并发成员${index}`,
         qq: `8${String(Date.now() + index).slice(-9)}`,
         phone: `137${String(Date.now() + index).slice(-8)}`,
+        studentId: `2023110${index}`,
+        className: "计算机 234",
         password: `M0-Test-Password-${index}`,
       },
       { requestId: `req_redeem_${index}` },
@@ -305,6 +313,8 @@ dbTest("报名通过发放的 QQ 身份可登录，首次改密会轮换并撤�
     realName: "认证成员",
     qq: `9${String(Date.now()).slice(-9)}`,
     phone: `136${String(Date.now()).slice(-8)}`,
+    studentId: "20230004",
+    className: "计算机 235",
     privacyConsent: true,
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_auth_submit" });
@@ -387,6 +397,8 @@ dbTest("邀请码注册使用自设密码且不要求首次改密", async () => 
       realName: "邀请成员",
       qq,
       phone: `135${String(Date.now()).slice(-8)}`,
+      studentId: "20230005",
+      className: "计算机 236",
       password,
     },
     { requestId: "req_invite_auth" },

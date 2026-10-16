@@ -1,11 +1,18 @@
 /**
  * /join 页面内容
  *
- * 加入我们。页面主体是「新社员信息登记」：QQ 号 / 姓名 / 联系电话三项必填，
+ * 加入我们。页面主体是「新社员信息登记」：QQ 号 / 姓名 / 联系电话 / 学号 / 班级五项必填，
  * 提交完成后显示招新群二维码。
  *
  * 登记表通过统一 API 写入招募申请；重复提交返回原报名回执。
  */
+
+import {
+  CLASS_NAME_MAX_LENGTH,
+  PERSON_NAME_MAX_LENGTH,
+  PERSON_NAME_MIN_LENGTH,
+  STUDENT_ID_MAX_LENGTH,
+} from "@/lib/security/normalization";
 
 export type JoinItem = { title: string; description: string };
 
@@ -38,17 +45,19 @@ export const joinSections = {
  *   3. 提交给后端的字段名 —— 与 src/lib/member-signup.ts 的 MemberSignupInput 一致。
  *
  * pattern 使用 HTML pattern 的整串匹配语义（不需要 ^ $）。
- * 校验规则只有这一处，页面不再另写一套 JS 校验。
+ * 校验规则只有这一处，页面不再另写一套 JS 校验；服务端仍独立校验（不信浏览器）。
  */
 export type JoinSignupField = {
   /** 提交字段名，与 MemberSignupInput 的键一一对应 */
-  name: "qq" | "realName" | "phone";
+  name: "qq" | "realName" | "phone" | "studentId" | "className";
   label: string;
   placeholder: string;
   /** 字段下方的格式说明：原生校验提示很简略，格式必须在这里讲清楚 */
   hint: string;
-  /** HTML pattern（整串匹配） */
-  pattern: string;
+  /** HTML pattern（整串匹配）。自由文本字段不设 pattern：粘贴带空格是常见输入，交给 trim 处理 */
+  pattern?: string;
+  /** HTML minLength。自由文本字段（姓名等）用它表达「trim 后至少几个字符」，与常量同源 */
+  minLength?: number;
   maxLength: number;
   type: "text" | "tel";
   inputMode: "numeric" | "text" | "tel";
@@ -71,9 +80,11 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "realName",
     label: "姓名",
     placeholder: "请填写真实姓名",
-    hint: "请填写真实姓名，用于成员建档。",
-    pattern: "\\S{2,20}",
-    maxLength: 20,
+    // 姓名（issue #147 返修）：只去首尾空白，trim 后 2–64 字符，内部字符与空格保留；
+    // 不设整串 pattern（此前是 \S{2,20}，会连内部空格一起拒掉、且卡在 20 字符）。
+    hint: `请填写真实姓名（${PERSON_NAME_MIN_LENGTH}–${PERSON_NAME_MAX_LENGTH} 个字符），用于成员建档。`,
+    minLength: PERSON_NAME_MIN_LENGTH,
+    maxLength: PERSON_NAME_MAX_LENGTH,
     type: "text",
     inputMode: "text",
     autoComplete: "name",
@@ -89,11 +100,31 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     inputMode: "tel",
     autoComplete: "tel",
   },
+  {
+    name: "studentId",
+    label: "学号",
+    placeholder: "例如 202310120101",
+    hint: `用于成员建档；请照学籍上的学号填写（保留前导零），最多 ${STUDENT_ID_MAX_LENGTH} 个字符。`,
+    maxLength: STUDENT_ID_MAX_LENGTH,
+    type: "text",
+    inputMode: "text",
+    autoComplete: "off",
+  },
+  {
+    name: "className",
+    label: "班级",
+    placeholder: "例如 计算机 233",
+    hint: `用于成员建档；请填写所在班级名称，最多 ${CLASS_NAME_MAX_LENGTH} 个字符。`,
+    maxLength: CLASS_NAME_MAX_LENGTH,
+    type: "text",
+    inputMode: "text",
+    autoComplete: "off",
+  },
 ];
 
 export const joinSignup = {
   /** 区块说明，放在标题旁 */
-  note: "三项均为必填。填好提交，即可扫码加入招新群。",
+  note: "五项均为必填。登记信息用于招新联系与成员建档；填好提交，即可扫码加入招新群。",
   submitLabel: "提交登记",
   /** 与 submitLabel 同为 4 字，避免提交瞬间按钮变窄把旁边的说明顶动 */
   submittingLabel: "提交中…",
@@ -167,7 +198,7 @@ export const joinExpectations: readonly JoinItem[] = [
 export const joinFlow: readonly JoinItem[] = [
   {
     title: "填写登记信息",
-    description: "在页面顶部的登记表填写 QQ 号、姓名与联系电话，三项均为必填。",
+    description: "在页面顶部的登记表填写 QQ 号、姓名、联系电话、学号与班级，五项均为必填。",
   },
   {
     title: "扫码加入招新群",

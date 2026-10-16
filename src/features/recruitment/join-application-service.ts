@@ -9,7 +9,17 @@ import { maskPhone, maskQq } from "@/lib/audit/redaction";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { normalizePhone, normalizeQq } from "@/lib/security/normalization";
+import {
+  CLASS_NAME_LENGTH_MESSAGE,
+  CLASS_NAME_MAX_LENGTH,
+  normalizePhone,
+  normalizeQq,
+  PERSON_NAME_LENGTH_MESSAGE,
+  STUDENT_ID_LENGTH_MESSAGE,
+  STUDENT_ID_MAX_LENGTH,
+  trimPersonName,
+  trimRequiredTextField,
+} from "@/lib/security/normalization";
 import type {
   AuthorizedActor,
   JoinApplicationDetail,
@@ -84,6 +94,8 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       ticketNo: record.ticketNo,
       recruitmentCycle: record.recruitmentCycle,
       realName: record.realName,
+      studentId: record.studentId,
+      className: record.className,
       qq: record.qqNormalized,
       phone: record.phoneNormalized,
       selfIntroduction: record.selfIntroduction,
@@ -103,7 +115,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     input: SubmitJoinApplicationInput,
     context: PublicRequestContext,
   ): Promise<JoinReceipt> {
-    validateSubmission(input);
+    const { realName, studentId, className } = validateSubmission(input);
     const qqNormalized = normalizeQq(input.qq);
     const phoneNormalized = normalizePhone(input.phone);
     const duplicate = await findDuplicate(input.recruitmentCycle, qqNormalized, phoneNormalized);
@@ -117,7 +129,9 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
             id: randomUUID(),
             ticketNo: `JA-${randomBytes(12).toString("hex").toUpperCase()}`,
             recruitmentCycle: input.recruitmentCycle,
-            realName: input.realName.trim(),
+            realName,
+            studentId,
+            className,
             qqNormalized,
             phoneNormalized,
             selfIntroduction: cleanOptional(input.selfIntroduction),
@@ -318,21 +332,36 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
   }
 }
 
-function validateSubmission(input: SubmitJoinApplicationInput): void {
+function validateSubmission(input: SubmitJoinApplicationInput): {
+  realName: string;
+  studentId: string;
+  className: string;
+} {
   const fieldErrors: Record<string, string[]> = {};
   if (!input.privacyConsent) fieldErrors.privacyConsent = ["必须确认隐私告知"];
   if (!input.recruitmentCycle.trim() || input.recruitmentCycle.length > 32) {
     fieldErrors.recruitmentCycle = ["招募批次无效"];
   }
-  if (input.realName.trim().length < 2 || input.realName.trim().length > 64) {
-    fieldErrors.realName = ["姓名长度应为 2–64 个字符"];
-  }
+  // 姓名（issue #147 返修）：与邀请码注册同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
+  // 保留内部字符与空格。
+  const realName = trimPersonName(input.realName);
+  if (realName === null) fieldErrors.realName = [PERSON_NAME_LENGTH_MESSAGE];
+  // 学号 / 班级必填（issue #147）：与邀请码注册同一份约束；不把结果强转成字符串。
+  const studentId = trimRequiredTextField(input.studentId, STUDENT_ID_MAX_LENGTH);
+  if (studentId === null) fieldErrors.studentId = [STUDENT_ID_LENGTH_MESSAGE];
+  const className = trimRequiredTextField(input.className, CLASS_NAME_MAX_LENGTH);
+  if (className === null) fieldErrors.className = [CLASS_NAME_LENGTH_MESSAGE];
   if ((input.selfIntroduction?.length ?? 0) > 10_000) fieldErrors.selfIntroduction = ["内容过长"];
   if ((input.preferredDirection?.length ?? 0) > 120) fieldErrors.preferredDirection = ["内容过长"];
   if ((input.applicantRemark?.length ?? 0) > 500) fieldErrors.applicantRemark = ["内容过长"];
   if (Object.keys(fieldErrors).length > 0) {
     throw new AppError("VALIDATION_FAILED", "报名信息未通过校验", { fieldErrors });
   }
+  return {
+    realName: realName as string,
+    studentId: studentId as string,
+    className: className as string,
+  };
 }
 
 /**

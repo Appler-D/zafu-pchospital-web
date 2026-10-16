@@ -19,7 +19,7 @@ import { pad2, revealIndex } from "@/lib/utils";
  * 没有为表单新造颜色、字号或圆角（样式见 globals.css 的 .signup / .field）。
  *
  * 几个刻意的取舍：
- * 1. 必填与格式约束交给**浏览器原生约束校验**（required / pattern / maxLength）。
+ * 1. 必填与格式约束交给**浏览器原生约束校验**（required / minLength / maxLength / pattern）。
  *    约束不通过时浏览器根本不会触发 submit，页面因此不需要第二套 JS 校验，
  *    也不会自造一套错误提示样式。
  * 2. 提交逻辑只有 submitMemberSignup 一个入口（src/lib/member-signup.ts）。
@@ -55,12 +55,15 @@ export function MemberSignup() {
   const [ready, setReady] = useState(false);
   const submitting = status === "submitting";
   const done = status === "done";
-  // 就绪说明必须写进 SSR 输出：等脚本接上才换提示，慢网络下那段等待仍然是「点了没反应」
-  const statusNote = submitting
-    ? joinSignup.submittingNote
-    : ready
-      ? joinSignup.privacy
-      : joinSignup.loadingNote;
+  // 就绪说明必须写进 SSR 输出：等脚本接上才换提示，慢网络下那段等待仍然是「点了没反应」。
+  // 失败原因也走这一行（就地替换）：不插入新元素，下方内容不会被顶动。
+  const statusNote = problem
+    ? problem
+    : submitting
+      ? joinSignup.submittingNote
+      : ready
+        ? joinSignup.privacy
+        : joinSignup.loadingNote;
 
   useEffect(() => setReady(true), []);
 
@@ -142,6 +145,7 @@ export function MemberSignup() {
                     inputMode={field.inputMode}
                     autoComplete={field.autoComplete}
                     pattern={field.pattern}
+                    minLength={field.minLength}
                     maxLength={field.maxLength}
                     placeholder={field.placeholder}
                     aria-describedby={`signup-${field.name}-hint`}
@@ -158,18 +162,17 @@ export function MemberSignup() {
                 <Button type="submit" variant="solid" disabled={!ready || submitting}>
                   {submitting ? joinSignup.submittingLabel : joinSignup.submitLabel}
                 </Button>
-                {/* 状态行常驻：只换文案，不新增元素（几句长度相当，不会因此换行或撑高），
-                    避免把下方的错误提示顶来顶去。 */}
-                <p className="signup__status" role="status" aria-live="polite">
+                {/* 状态行常驻：加载 / 提交中 / 隐私说明 / 失败原因都在同一行里原地替换
+                    （只换文字与颜色，不插入元素、不改变 flex 行结构），
+                    页面高度不因反馈变化，下方内容不会被顶动。 */}
+                <p
+                  className={problem ? "signup__status text-accent-deep" : "signup__status"}
+                  role={problem ? "alert" : "status"}
+                  aria-live={problem ? "assertive" : "polite"}
+                >
                   {statusNote}
                 </p>
               </div>
-
-              {problem ? (
-                <p className="signup__status signup__status--alert" role="alert">
-                  {problem}
-                </p>
-              ) : null}
             </form>
           )}
         </Reveal>

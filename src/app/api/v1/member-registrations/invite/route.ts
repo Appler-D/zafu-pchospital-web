@@ -5,6 +5,7 @@ import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { assertSameOrigin, requestContext, sessionCookie } from "@/lib/auth/request";
+import { normalizeClassName, normalizeStudentId } from "@/lib/security/normalization";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
@@ -23,8 +24,9 @@ export async function POST(request: Request) {
       realName: String(body.realName ?? ""),
       qq: String(body.qq ?? ""),
       phone: String(body.phone ?? ""),
-      studentId: optional(body.studentId),
-      className: optional(body.className),
+      // 学号 / 班级必填（issue #147）：非字符串值在这里直接按字段错误拒绝，不做 String() 强转。
+      studentId: normalizeStudentId(body.studentId),
+      className: normalizeClassName(body.className),
       password: String(body.password ?? ""),
     };
     const registration = await inviteCodeService.redeem(input, context);
@@ -35,7 +37,4 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiFailure(error, requestId);
   }
-}
-function optional(value: unknown) {
-  return typeof value === "string" ? value : undefined;
 }

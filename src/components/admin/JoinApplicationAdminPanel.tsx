@@ -524,6 +524,15 @@ function ApplicationDetailPanel({
             <p className="admin-note">{copy.detail.contactsNote}</p>
           </div>
 
+          {/* 学号与班级（issue #147）：历史报名未填写，逐项显示 `—`，不隐藏整段。 */}
+          <div className="admin-section">
+            <h3 className="admin-panel__title">{copy.detail.student}</h3>
+            <p className="admin-status">
+              {copy.detail.studentId} {detail.studentId || adminShared.none} ·{" "}
+              {copy.detail.className} {detail.className || adminShared.none}
+            </p>
+          </div>
+
           <div className="admin-section">
             <h3 className="admin-panel__title">{copy.detail.selfIntroduction}</h3>
             <p className="admin-status">{detail.selfIntroduction || adminShared.none}</p>
