@@ -96,6 +96,8 @@ verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`�
 
 - `join_applications` 可独立存在，不要求先创建用户。
 - 同一招募批次的规范化 QQ、手机号分别有数据库唯一约束。
+- 报名通知邮箱 `JoinApplication.email`（issue #158）为可空 `VARCHAR(191)`，新提交应用层必填并使用现有 `normalizeEmail` 规范化。迁移 `20261019090000_join_application_email` 只加可空列，不回填；历史无邮箱保持 NULL，仍可查看与审核建档。不增加唯一索引，不按邮箱去重，不从 QQ 推导，也不由重复提交覆盖。
+- 通知地址只存在报名记录，不写 `user_identities` / verifiedAt / MemberProfile，不授予邮箱门禁或找回资格。仅授权且有访问审计的完整报名详情可见；列表、回执及原导出列不新增邮箱披露。审计摘要继续按既有邮箱字段脱敏，第一轮不发信或排入通知队列。
 - 面试状态与账号发放状态使用两个独立字段。
 - `account_provisions` 同时约束幂等键以及 `(source_type, source_id)` 唯一。
 - Review、Redemption、Provision、AuditLog 不提供业务删除入口。

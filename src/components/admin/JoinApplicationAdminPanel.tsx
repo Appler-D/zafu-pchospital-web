@@ -521,6 +521,9 @@ function ApplicationDetailPanel({
             <p className="admin-status">
               QQ {detail.qq} · {detail.phone}
             </p>
+            <p className="admin-status">
+              {copy.detail.notificationEmail} {detail.email ?? adminShared.none}
+            </p>
             <p className="admin-note">{copy.detail.contactsNote}</p>
           </div>
 

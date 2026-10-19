@@ -808,6 +808,7 @@ dbTest("报名导出：CSV 内容与审计，筛选与列表同源", async () =>
       realName: "M6-B 报名者",
       qq: "812345690",
       phone: "13900000690",
+      email: "applicant@example.com",
       studentId: "20230103",
       className: "计算机 233",
       selfIntroduction: "M6B 集成测试自我介绍",

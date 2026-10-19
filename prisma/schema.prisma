@@ -187,6 +187,8 @@ model JoinApplication {
   className          String?                 @map("class_name") @db.VarChar(80)
   qqNormalized       String                  @map("qq_normalized") @db.VarChar(32)
   phoneNormalized    String                  @map("phone_normalized") @db.VarChar(32)
+  // 报名通知地址（未验证），历史记录保持 NULL，不参与去重或身份匹配。
+  email              String?                 @db.VarChar(191)
   selfIntroduction   String?                 @map("self_introduction") @db.Text
   preferredDirection String?                 @map("preferred_direction") @db.VarChar(120)
   applicantRemark    String?                 @map("applicant_remark") @db.VarChar(500)

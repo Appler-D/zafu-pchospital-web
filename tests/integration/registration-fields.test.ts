@@ -10,6 +10,7 @@ import { joinApplicationExportService } from "../../src/features/admin/join-appl
 import { inviteCodeService } from "../../src/features/invitations/invite-code-service";
 import { joinApplicationService } from "../../src/features/recruitment/join-application-service";
 import { AppError } from "../../src/lib/api/errors";
+import { redactAuditSummary } from "../../src/lib/audit/redaction";
 import { resetRateLimitsForTests } from "../../src/lib/api/rate-limit";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
@@ -158,6 +159,7 @@ function joinBody(overrides: Record<string, unknown> = {}): Record<string, unkno
     realName: `${NAME_PREFIX}报名者`,
     qq: `8${value}`.slice(0, 11),
     phone: `139${value}`.slice(0, 11),
+    email: "applicant@example.com",
     studentId: "001234",
     className: "计算机 233",
     privacyConsent: true,
@@ -433,6 +435,7 @@ dbTest(
         realName: `${NAME_PREFIX}前导零`,
         qq: `8${value}`.slice(0, 11),
         phone: `139${value}`.slice(0, 11),
+        email: "applicant@example.com",
         studentId: "  001234  ",
         className: " 计算机 233 ",
         privacyConsent: true,
@@ -467,6 +470,7 @@ dbTest(
         realName: `${NAME_PREFIX}边界最小`,
         qq: `8${minValue}`.slice(0, 11),
         phone: `139${minValue}`.slice(0, 11),
+        email: "applicant@example.com",
         studentId: " 1 ",
         className: "A",
         privacyConsent: true,
@@ -485,6 +489,7 @@ dbTest(
         realName: `${NAME_PREFIX}边界最大`,
         qq: `8${maxValue}`.slice(0, 11),
         phone: `139${maxValue}`.slice(0, 11),
+        email: "applicant@example.com",
         studentId: "1".repeat(32),
         className: "班".repeat(80),
         privacyConsent: true,
@@ -543,6 +548,7 @@ dbTest("F03 相同学号可属不同账号；QQ / 手机号去重与归一化保
       realName: `${NAME_PREFIX}归一化`,
       qq: `80 ${s3.slice(0, 3)} ${s3.slice(3)}`,
       phone: `139 ${s3.slice(0, 4)} ${s3.slice(4)}`,
+      email: "applicant@example.com",
       studentId: "001234",
       className: "计算机 235",
       privacyConsent: true,
@@ -559,6 +565,7 @@ dbTest("F03 相同学号可属不同账号；QQ / 手机号去重与归一化保
       realName: `${NAME_PREFIX}归一化`,
       qq: `80${s3}`,
       phone: `139${s3}`,
+      email: "applicant@example.com",
       studentId: "001234",
       className: "计算机 235",
       privacyConsent: true,
@@ -633,6 +640,7 @@ dbTest("F05 新报名 → 详情 → CSV / XLSX 导出 → 审核通过 → 成�
       realName: `${NAME_PREFIX}全链路`,
       qq: `8${value}`.slice(0, 11),
       phone: `139${value}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "001234",
       className: "计算机 233",
       privacyConsent: true,
@@ -772,6 +780,7 @@ dbTest("F07 重复报名 / 邀请码重放 / 发放重试不重复计数、不�
       realName: `${NAME_PREFIX}重复`,
       qq: `8${s1}`.slice(0, 11),
       phone: `139${s1}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "001234",
       className: "计算机 233",
       privacyConsent: true,
@@ -784,6 +793,7 @@ dbTest("F07 重复报名 / 邀请码重放 / 发放重试不重复计数、不�
       realName: `${NAME_PREFIX}重复`,
       qq: `8${s1}`.slice(0, 11),
       phone: `139${s1}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "888888",
       className: "另一个班",
       privacyConsent: true,
@@ -831,6 +841,7 @@ dbTest("F07 重复报名 / 邀请码重放 / 发放重试不重复计数、不�
       realName: `${NAME_PREFIX}重试`,
       qq: `8${s3}`.slice(0, 11),
       phone: `139${s3}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "001234",
       className: "计算机 233",
       privacyConsent: true,
@@ -884,6 +895,7 @@ dbTest("F08 导出：学号文本单元格、历史空单元格、公式前缀�
       realName: `${NAME_PREFIX}导出甲`,
       qq: `8${s1}`.slice(0, 11),
       phone: `139${s1}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "001234",
       className: "=1+1",
       privacyConsent: true,
@@ -897,6 +909,7 @@ dbTest("F08 导出：学号文本单元格、历史空单元格、公式前缀�
       realName: `${NAME_PREFIX}导出乙`,
       qq: `8${s2}`.slice(0, 11),
       phone: `139${s2}`.slice(0, 11),
+      email: "applicant@example.com",
       studentId: "777777",
       className: "计算机 999",
       privacyConsent: true,
@@ -1102,4 +1115,167 @@ dbTest("返修：姓名 trim 后 1 / 2 / 21 / 64 / 65 字符与内部空格，�
   );
   const spacedProfile = await profileOfUser((spacedInvite.body.data as { userId: string }).userId);
   assert.equal(spacedProfile.realName, spacedStored, "注册：只去首尾空白，内部空格保留");
+});
+
+/* ------------------------------------- issue #158：通知邮箱，不是验证身份 */
+dbTest("I158 新报名邮箱必填 / 严格类型与格式，规范化持久化；公开回执不披露地址", async () => {
+  const beforeCount = await countMyApplications();
+  for (const email of [undefined, { address: "person@example.com" }, "bad..local@example.com"]) {
+    const rejected = await postJson(
+      joinApplicationRoute,
+      JOIN_PATH,
+      joinBody({ email }),
+      "10.158.1.1",
+    );
+    assert.equal(rejected.status, 400);
+    assert.equal(errorOf(rejected.body).code, "VALIDATION_FAILED");
+    assert.ok(errorOf(rejected.body).fieldErrors?.email?.length);
+  }
+  assert.equal(await countMyApplications(), beforeCount);
+  const created = await postJson(
+    joinApplicationRoute,
+    JOIN_PATH,
+    joinBody({ email: "  Applicant+notice@Example.COM  " }),
+    "10.158.1.2",
+  );
+  assert.equal(created.status, 201);
+  const receipt = created.body.data as { id: string };
+  assert.deepEqual(Object.keys(created.body.data as object).sort(), [
+    "duplicate",
+    "id",
+    "status",
+    "submittedAt",
+    "ticketNo",
+  ]);
+  const row = await getDb().joinApplication.findUniqueOrThrow({ where: { id: receipt.id } });
+  assert.equal(row.email, "applicant+notice@example.com");
+  assert.equal(JSON.stringify(created.body).includes("@"), false);
+});
+
+dbTest("I158 重复提交不改邮箱，共用邮箱不判重；只在授权审计详情可见，导出保留原列", async () => {
+  const body = joinBody({ email: "private-notice@example.com" });
+  const first = await postJson(joinApplicationRoute, JOIN_PATH, body, "10.158.2.1");
+  const receipt = first.body.data as { id: string; ticketNo: string };
+  const duplicate = await postJson(
+    joinApplicationRoute,
+    JOIN_PATH,
+    { ...body, email: "replacement@example.com" },
+    "10.158.2.2",
+  );
+  assert.equal(duplicate.status, 200);
+  assert.equal((duplicate.body.data as { id: string }).id, receipt.id);
+  assert.equal((duplicate.body.data as { duplicate: boolean }).duplicate, true);
+  assert.equal(
+    (await getDb().joinApplication.findUniqueOrThrow({ where: { id: receipt.id } })).email,
+    body.email,
+  );
+  const shared = await postJson(
+    joinApplicationRoute,
+    JOIN_PATH,
+    joinBody({ email: body.email }),
+    "10.158.2.3",
+  );
+  assert.equal(shared.status, 201);
+  assert.notEqual((shared.body.data as { id: string }).id, receipt.id);
+
+  await assert.rejects(
+    () => joinApplicationService.get(receipt.id, MEMBER_ACTOR),
+    (error: unknown) => error instanceof AppError && error.code === "FORBIDDEN",
+  );
+  const detail = await joinApplicationService.get(receipt.id, ADMIN_ACTOR);
+  assert.equal(detail.email, body.email);
+  assert.equal(
+    await getDb().auditLog.count({
+      where: {
+        action: "join.application.detail.viewed",
+        targetId: receipt.id,
+        actorUserId: ADMIN_USER_ID,
+      },
+    }),
+    1,
+  );
+  const listed = await joinApplicationService.list(
+    { page: 1, pageSize: 20, query: receipt.ticketNo },
+    ADMIN_ACTOR,
+  );
+  assert.equal(listed.items.length, 1);
+  assert.equal("email" in listed.items[0], false);
+  const csv = await joinApplicationExportService.export(
+    { query: receipt.ticketNo },
+    "CSV",
+    ADMIN_ACTOR,
+  );
+  const xlsx = await joinApplicationExportService.export(
+    { query: receipt.ticketNo },
+    "XLSX",
+    ADMIN_ACTOR,
+  );
+  const headers = [
+    "报名编号",
+    "招募批次",
+    "姓名",
+    "学号",
+    "班级",
+    "QQ 号",
+    "手机号",
+    "报名状态",
+    "账号发放",
+    "意向方向",
+    "提交时间",
+    "最近面试时间",
+    "报名记录 ID",
+  ];
+  assert.deepEqual(
+    csvLines(csv.body)[0]
+      .replace(/^\uFEFF/, "")
+      .split(","),
+    headers,
+  );
+  assert.equal(Buffer.from(csv.body).toString("utf8").includes(String(body.email)), false);
+  const workbook = await loadWorkbook(xlsx.body);
+  assert.deepEqual(
+    (workbook.getWorksheet("报名记录")!.getRow(1).values as unknown[]).slice(1),
+    headers,
+  );
+  const audits = await getDb().auditLog.findMany({ where: { targetId: receipt.id } });
+  assert.equal(JSON.stringify(audits).includes(String(body.email)), false);
+  assert.deepEqual(redactAuditSummary({ email: body.email }), { email: "p***@example.com" });
+});
+
+dbTest("I158 历史无邮箱详情 / 重复回执与审核建档保持可用，不生成 EMAIL 身份", async () => {
+  const old = await createHistoricalApplication({
+    realName: `${NAME_PREFIX}历史通知邮箱`,
+    qq: "801580001",
+    phone: "13901580001",
+  });
+  assert.equal(old.email, null);
+  assert.equal((await joinApplicationService.get(old.id, ADMIN_ACTOR)).email, null);
+  // 招募批次仍取服务端配置，不通过公开 body 覆盖；Service 输入仍须有效。
+  const duplicate = await joinApplicationService.submit(
+    {
+      recruitmentCycle: old.recruitmentCycle,
+      realName: old.realName,
+      qq: old.qqNormalized,
+      phone: old.phoneNormalized,
+      studentId: "001234",
+      className: "计算机 233",
+      email: "not-backfilled@example.com",
+      privacyConsent: true,
+    },
+    { requestId: "req_i158_historical" },
+  );
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.ticketNo, old.ticketNo);
+  assert.equal(
+    (await getDb().joinApplication.findUniqueOrThrow({ where: { id: old.id } })).email,
+    null,
+  );
+  assert.equal((await reviewPassed(old.id, "i158-history")).provisionStatus, "SUCCEEDED");
+  const provision = await getDb().accountProvision.findUniqueOrThrow({
+    where: { sourceType_sourceId: { sourceType: "JOIN_APPLICATION", sourceId: old.id } },
+  });
+  assert.equal(
+    await getDb().userIdentity.count({ where: { userId: provision.userId!, type: "EMAIL" } }),
+    0,
+  );
 });

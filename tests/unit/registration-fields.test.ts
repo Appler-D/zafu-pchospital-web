@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createRequire } from "node:module";
 import { createElement } from "react";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -106,9 +107,11 @@ test("normalizeMemberSignup：学号只 trim 保留前导零，姓名 / 班级�
   data.set("qq", " 800 147 0001 ");
   data.set("realName", " 张 三 ");
   data.set("phone", "139 0147 0001");
+  data.set("email", "  Applicant+join@Example.COM ");
   data.set("studentId", "  001234 ");
   data.set("className", " 计算机 233 ");
   const result = normalizeMemberSignup(data);
+  assert.equal(result.email, "applicant+join@example.com");
   assert.equal(result.studentId, "001234");
   assert.equal(result.className, "计算机 233");
   assert.equal(result.qq, "8001470001");
@@ -158,4 +161,88 @@ test("两表单的姓名原生约束一致：required + minLength=2 + maxLength=
   assert.ok(/\brequired\b/.test(registerInput), "注册表单姓名缺少 required");
   assert.ok(minPattern.test(registerInput), "注册表单姓名 minLength");
   assert.ok(maxPattern.test(registerInput), "注册表单姓名 maxLength 应为 64（不再落到默认 80）");
+});
+
+test("I158 报名邮箱字段、规范化提交与服务端字段错误就地呈现", async (t) => {
+  const { MemberSignup } = await import("../../src/components/join/MemberSignup");
+  const { EMAIL_MAX_LENGTH } = await import("../../src/lib/security/normalization");
+  const initialHtml = renderToStaticMarkup(createElement(MemberSignup));
+  const tag = inputTagOf(initialHtml, "signup-email");
+  assert.match(tag, /type="email"/);
+  assert.match(tag, /required/);
+  assert.match(tag, new RegExp(`maxlength="${EMAIL_MAX_LENGTH}"`, "i"));
+
+  // 沿用项目已有 Node 原生 mock hooks / JSX 事件方式，无浏览器 / 新测试框架。
+  const hooks = createRequire(import.meta.url)("react") as typeof React;
+  const slots: unknown[] = [];
+  let cursor = 0;
+  t.mock.method(hooks, "useState", <S>(initial: S) => {
+    const i = cursor++;
+    if (!(i in slots)) slots[i] = initial;
+    return [
+      slots[i],
+      (value: S) => {
+        slots[i] = value;
+      },
+    ];
+  });
+  t.mock.method(hooks, "useRef", () => ({ current: null }));
+  t.mock.method(hooks, "useEffect", () => {});
+  type Props = {
+    children?: React.ReactNode;
+    id?: string;
+    name?: string;
+    "aria-invalid"?: boolean;
+    "aria-describedby"?: string;
+    onSubmit?: (e: { preventDefault(): void; currentTarget: HTMLFormElement }) => Promise<void>;
+  };
+  function nodes(node: React.ReactNode): React.ReactElement<Props>[] {
+    if (Array.isArray(node)) return node.flatMap(nodes);
+    if (!React.isValidElement<Props>(node)) return [];
+    return [node, ...nodes(node.props.children)];
+  }
+  const view = () => {
+    cursor = 0;
+    return nodes(MemberSignup());
+  };
+  const data = new FormData();
+  for (const [name, value] of Object.entries({
+    qq: "123456789",
+    realName: "报名测试",
+    phone: "13800000000",
+    email: "  Applicant+tag@Example.COM  ",
+    studentId: "001234",
+    className: "计算机 233",
+  }))
+    data.set(name, value);
+  t.mock.method(globalThis, "FormData", function () {
+    return data;
+  });
+  const requests: Record<string, unknown>[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json(
+      {
+        success: false,
+        error: {
+          code: "VALIDATION_FAILED",
+          message: "报名信息未通过校验",
+          fieldErrors: { email: ["请填写有效邮箱"] },
+        },
+      },
+      { status: 400 },
+    );
+  });
+  const form = view().find((e) => e.type === "form")!;
+  await form.props.onSubmit!({ preventDefault() {}, currentTarget: {} as HTMLFormElement });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].email, "applicant+tag@example.com");
+  assert.equal(requests[0].privacyConsent, true);
+  const email = view().find((e) => e.props.id === "signup-email")!;
+  assert.equal(email.props["aria-invalid"], true);
+  assert.match(email.props["aria-describedby"]!, /signup-email-error/);
+  assert.deepEqual(
+    view().find((e) => e.props.id === "signup-email-error")!.props.children,
+    "请填写有效邮箱",
+  );
 });

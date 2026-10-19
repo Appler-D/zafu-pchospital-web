@@ -170,6 +170,7 @@ dbTest("重复报名返回原回执且不重复写入", async () => {
     studentId: "20230001",
     className: "计算机 231",
     privacyConsent: true,
+    email: "applicant@example.com",
   };
   const first = await joinApplicationService.submit(input, { requestId: "req_join_1" });
   const replay = await joinApplicationService.submit(input, { requestId: "req_join_2" });
@@ -198,6 +199,7 @@ dbTest("面试通过重复执行不创建重复账号、档案或角色", async 
     studentId: "20230002",
     className: "计算机 232",
     privacyConsent: true,
+    email: "applicant@example.com",
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_review_submit" });
   const review = {
@@ -228,6 +230,7 @@ dbTest("已通过的报名再提交「通过」：状态不回流，携带的备
     studentId: "20230003",
     className: "计算机 233",
     privacyConsent: true,
+    email: "applicant@example.com",
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_note_submit" });
   await joinApplicationService.review(
@@ -316,6 +319,7 @@ dbTest("报名通过发放的 QQ 身份可登录，首次改密会轮换并撤�
     studentId: "20230004",
     className: "计算机 235",
     privacyConsent: true,
+    email: "applicant@example.com",
   };
   const receipt = await joinApplicationService.submit(input, { requestId: "req_auth_submit" });
   const reviewed = await joinApplicationService.review(

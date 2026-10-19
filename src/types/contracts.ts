@@ -255,6 +255,8 @@ export type SubmitJoinApplicationInput = {
   realName: string;
   qq: string;
   phone: string;
+  /** 报名通知地址，必填；不代表已验证的账号邮箱。 */
+  email: string;
   /**
    * 学号 / 班级（issue #147）：**必填**。约束与邀请码注册同一来源
    * （`src/lib/security/normalization.ts`）：学号 trim 后 1–32 字符、保留前导零、不唯一；
@@ -318,6 +320,8 @@ export type JoinApplicationDetail = JoinApplicationView & {
   className: string | null;
   qq: string;
   phone: string;
+  /** 仅授权详情披露；历史报名可为 null。 */
+  email: string | null;
   selfIntroduction: string | null;
   preferredDirection: string | null;
   applicantRemark: string | null;
