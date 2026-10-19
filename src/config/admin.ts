@@ -915,6 +915,7 @@ export const adminCopy = {
       title: "报名详情",
       contacts: "联系方式",
       contactsNote: "查看报名明文联系方式会写入审计记录。",
+      notificationEmail: "通知邮箱",
       /** 学号 / 班级（issue #147）：历史报名未填写时显示 adminShared.none。 */
       student: "学号与班级",
       studentId: "学号",

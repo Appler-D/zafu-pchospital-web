@@ -1,7 +1,7 @@
 /**
  * /join 页面内容
  *
- * 加入我们。页面主体是「新社员信息登记」：QQ 号 / 姓名 / 联系电话 / 学号 / 班级五项必填，
+ * 加入我们。页面主体是「新社员信息登记」：QQ 号 / 姓名 / 联系电话 / 邮箱 / 学号 / 班级六项必填，
  * 提交完成后显示招新群二维码。
  *
  * 登记表通过统一 API 写入招募申请；重复提交返回原报名回执。
@@ -9,6 +9,7 @@
 
 import {
   CLASS_NAME_MAX_LENGTH,
+  EMAIL_MAX_LENGTH,
   PERSON_NAME_MAX_LENGTH,
   PERSON_NAME_MIN_LENGTH,
   STUDENT_ID_MAX_LENGTH,
@@ -45,11 +46,11 @@ export const joinSections = {
  *   3. 提交给后端的字段名 —— 与 src/lib/member-signup.ts 的 MemberSignupInput 一致。
  *
  * pattern 使用 HTML pattern 的整串匹配语义（不需要 ^ $）。
- * 校验规则只有这一处，页面不再另写一套 JS 校验；服务端仍独立校验（不信浏览器）。
+ * 邮箱规范化 / 格式与长度复用 normalization.ts；其余原生约束由此配置，服务端仍权威校验。
  */
 export type JoinSignupField = {
   /** 提交字段名，与 MemberSignupInput 的键一一对应 */
-  name: "qq" | "realName" | "phone" | "studentId" | "className";
+  name: "qq" | "realName" | "phone" | "email" | "studentId" | "className";
   label: string;
   placeholder: string;
   /** 字段下方的格式说明：原生校验提示很简略，格式必须在这里讲清楚 */
@@ -59,8 +60,8 @@ export type JoinSignupField = {
   /** HTML minLength。自由文本字段（姓名等）用它表达「trim 后至少几个字符」，与常量同源 */
   minLength?: number;
   maxLength: number;
-  type: "text" | "tel";
-  inputMode: "numeric" | "text" | "tel";
+  type: "text" | "tel" | "email";
+  inputMode: "numeric" | "text" | "tel" | "email";
   autoComplete: string;
 };
 
@@ -101,6 +102,16 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     autoComplete: "tel",
   },
   {
+    name: "email",
+    label: "邮箱",
+    placeholder: "例如 name@example.com",
+    hint: "用于报名与账号通知，请填写常用邮箱。",
+    maxLength: EMAIL_MAX_LENGTH,
+    type: "email",
+    inputMode: "email",
+    autoComplete: "email",
+  },
+  {
     name: "studentId",
     label: "学号",
     placeholder: "例如 202310120101",
@@ -124,13 +135,13 @@ export const joinSignupFields: readonly JoinSignupField[] = [
 
 export const joinSignup = {
   /** 区块说明，放在标题旁 */
-  note: "五项均为必填。登记信息用于招新联系与成员建档；填好提交，即可扫码加入招新群。",
+  note: "六项均为必填。登记信息用于招新联系与成员建档；填好提交，即可扫码加入招新群。",
   submitLabel: "提交登记",
   /** 与 submitLabel 同为 4 字，避免提交瞬间按钮变窄把旁边的说明顶动 */
   submittingLabel: "提交中…",
   requiredMark: "必填",
   /** 提交按钮旁的说明（常驻一行，下面两句都在这一行里原地替换） */
-  privacy: "提交即表示同意社团在招新期间通过以上方式联系你。",
+  privacy: "提交即同意社团使用登记信息进行招新联系与成员建档，邮箱用于报名与账号通知。",
   /** 按钮还没就绪（脚本未接上）时的说明，只在等得久时出现 */
   loadingNote: "正在加载表单，稍候即可提交。",
   /** 提交期间的说明：与 privacy 长度相当，换文案不会让页面长高 */
@@ -139,7 +150,7 @@ export const joinSignup = {
   /** 提交前，右侧说明栏 */
   asideTitle: "登记说明",
   asideRows: [
-    { key: "用途", value: "仅用于招新联系与成员建档，不用于其他用途，也不对外公开。" },
+    { key: "用途", value: "用于招新联系与成员建档；邮箱用于报名与账号通知，不对外公开。" },
     { key: "提交之后", value: "扫码加入招新群。招新通知与面试安排都在群内发布。" },
     { key: "数据去向", value: "登记信息会写入招募系统，并仅向获授权的管理员开放。" },
   ],
@@ -198,7 +209,7 @@ export const joinExpectations: readonly JoinItem[] = [
 export const joinFlow: readonly JoinItem[] = [
   {
     title: "填写登记信息",
-    description: "在页面顶部的登记表填写 QQ 号、姓名、联系电话、学号与班级，五项均为必填。",
+    description: "在页面顶部的登记表填写 QQ 号、姓名、联系电话、邮箱、学号与班级，六项均为必填。",
   },
   {
     title: "扫码加入招新群",

@@ -8,8 +8,9 @@ import { Section } from "@/components/ui/Section";
 import { SectionHead } from "@/components/ui/SectionHead";
 import { SectionTitle } from "@/components/ui/SectionTitle";
 import { joinSections, joinSignup, joinSignupFields, joinSignupQr } from "@/config/join";
+import { AppError, type FieldErrors } from "@/lib/api/errors";
 import { normalizeMemberSignup, submitMemberSignup } from "@/lib/member-signup";
-import type { MemberSignupReceipt } from "@/lib/member-signup";
+import type { MemberSignupInput, MemberSignupReceipt } from "@/lib/member-signup";
 import { pad2, revealIndex } from "@/lib/utils";
 
 /**
@@ -19,9 +20,8 @@ import { pad2, revealIndex } from "@/lib/utils";
  * 没有为表单新造颜色、字号或圆角（样式见 globals.css 的 .signup / .field）。
  *
  * 几个刻意的取舍：
- * 1. 必填与格式约束交给**浏览器原生约束校验**（required / minLength / maxLength / pattern）。
- *    约束不通过时浏览器根本不会触发 submit，页面因此不需要第二套 JS 校验，
- *    也不会自造一套错误提示样式。
+ * 1. 原生约束辅助必填 / 长度 / 格式；邮箱复用 normalizeEmail，服务端仍做权威校验。
+ *    统一 fieldErrors 在字段旁呈现，格式规则不在组件中另写一份。
  * 2. 提交逻辑只有 submitMemberSignup 一个入口（src/lib/member-signup.ts）。
  *    它调用同源 API，并统一处理服务端回执与错误信封。
  * 3. 按钮在 hydration 完成前是禁用态（见下面 ready 的注释）。
@@ -46,6 +46,7 @@ type SignupStatus = "idle" | "submitting" | "done";
 export function MemberSignup() {
   const [status, setStatus] = useState<SignupStatus>("idle");
   const [problem, setProblem] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [receipt, setReceipt] = useState<MemberSignupReceipt | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   /**
@@ -73,9 +74,22 @@ export function MemberSignup() {
     // submit 事件只有在原生约束校验通过后才会触发，这里直接进入提交。
     const form = event.currentTarget;
     setProblem("");
+    setFieldErrors({});
     setStatus("submitting");
 
-    const result = await submitMemberSignup(normalizeMemberSignup(new FormData(form)));
+    let input: MemberSignupInput;
+    try {
+      input = normalizeMemberSignup(new FormData(form));
+    } catch (error) {
+      if (error instanceof AppError) {
+        setFieldErrors(error.fieldErrors ?? {});
+        setProblem(error.message);
+        setStatus("idle");
+        return;
+      }
+      throw error;
+    }
+    const result = await submitMemberSignup(input);
 
     if (result.ok) {
       setReceipt(result);
@@ -84,12 +98,14 @@ export function MemberSignup() {
     }
 
     setProblem(result.message);
+    setFieldErrors(result.fieldErrors ?? {});
     setStatus("idle");
   };
 
   const handleReset = () => {
     formRef.current?.reset();
     setProblem("");
+    setFieldErrors({});
     setReceipt(null);
     setStatus("idle");
   };
@@ -148,13 +164,24 @@ export function MemberSignup() {
                     minLength={field.minLength}
                     maxLength={field.maxLength}
                     placeholder={field.placeholder}
-                    aria-describedby={`signup-${field.name}-hint`}
+                    aria-invalid={!!fieldErrors[field.name]?.length}
+                    aria-describedby={`signup-${field.name}-hint${fieldErrors[field.name]?.length ? ` signup-${field.name}-error` : ""}`}
+                    disabled={submitting}
                     required
                   />
 
                   <p className="field__hint" id={`signup-${field.name}-hint`}>
                     {field.hint}
                   </p>
+                  {fieldErrors[field.name]?.length ? (
+                    <p
+                      className="field__hint text-accent-deep"
+                      id={`signup-${field.name}-error`}
+                      role="alert"
+                    >
+                      {fieldErrors[field.name].join("；")}
+                    </p>
+                  ) : null}
                 </div>
               ))}
 

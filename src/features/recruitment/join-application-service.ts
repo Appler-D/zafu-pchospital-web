@@ -13,6 +13,7 @@ import {
   CLASS_NAME_LENGTH_MESSAGE,
   CLASS_NAME_MAX_LENGTH,
   normalizePhone,
+  normalizeEmail,
   normalizeQq,
   PERSON_NAME_LENGTH_MESSAGE,
   STUDENT_ID_LENGTH_MESSAGE,
@@ -74,7 +75,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       include: { reviews: { orderBy: { createdAt: "desc" } } },
     });
     if (!record || record.deletedAt) throw new AppError("RESOURCE_NOT_FOUND", "报名记录不存在");
-    // 需求 §45 明确「查看完整报名敏感信息」必须留痕：`get` 是**唯一**返回报名 QQ / 手机号
+    // 需求 §45 明确「查看完整报名敏感信息」必须留痕：`get` 是**唯一**返回报名 QQ / 手机号 / 通知邮箱
     // 明文的入口（列表只给脱敏值），与成员详情的 `member.detail.viewed` 同一处理。
     // 缺这条记录时，谁在什么时候看过报名者的联系方式就无法追溯。
     await inSerializableTransaction((tx) =>
@@ -98,6 +99,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       className: record.className,
       qq: record.qqNormalized,
       phone: record.phoneNormalized,
+      email: record.email,
       selfIntroduction: record.selfIntroduction,
       preferredDirection: record.preferredDirection,
       applicantRemark: record.applicantRemark,
@@ -116,6 +118,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     context: PublicRequestContext,
   ): Promise<JoinReceipt> {
     const { realName, studentId, className } = validateSubmission(input);
+    const email = normalizeEmail(input.email);
     const qqNormalized = normalizeQq(input.qq);
     const phoneNormalized = normalizePhone(input.phone);
     const duplicate = await findDuplicate(input.recruitmentCycle, qqNormalized, phoneNormalized);
@@ -134,6 +137,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
             className,
             qqNormalized,
             phoneNormalized,
+            email,
             selfIntroduction: cleanOptional(input.selfIntroduction),
             preferredDirection: cleanOptional(input.preferredDirection),
             applicantRemark: cleanOptional(input.applicantRemark),

@@ -241,6 +241,7 @@ test("/join 重复报名信封映射为成功回执", async () => {
         qq: "123456789",
         realName: "测试成员",
         phone: "13800000000",
+        email: "applicant@example.com",
         studentId: "001234",
         className: "计算机 231",
       }),

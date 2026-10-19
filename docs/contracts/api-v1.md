@@ -57,13 +57,13 @@
 
 ### `POST /api/v1/join-applications`
 
-请求字段：`realName`、`qq`、`phone`、`studentId`、`className`、可选 `selfIntroduction`、
+请求字段：`realName`、`qq`、`phone`、必填 `email`、`studentId`、`className`、可选 `selfIntroduction`、
 可选 `preferredDirection`、`privacyConsent: true`。招募批次由服务端
 `RECRUITMENT_CYCLE` 配置，不接受客户端指定。学号与班级为必填（issue #147，见下方
 「学号与班级」一节）。
 
 首次创建返回 201；同一批次相同规范化 QQ 或手机号的重复有效提交返回原回执和 200，
-`data.duplicate=true`。该公开入口保留独立的公开报名限流，并且与其他写接口一样执行
+`data.duplicate=true`；重复提交不更新原记录的通知邮箱，仍不按邮箱去重。该公开入口保留独立的公开报名限流，并且与其他写接口一样执行
 `assertSameOrigin()`（无 `Origin` 或非白名单来源返回 403）。
 
 ### 认证与当前用户
@@ -429,7 +429,7 @@ DELETE /api/v1/member/notifications/:id
 同一变更内修正的既有路径：
 
 - `GET /api/v1/admin/join-applications/:id` 现在写审计 `join.application.detail.viewed`
-  —— 它是唯一返回报名 QQ / 手机号明文的入口，需求 §45 要求「查看完整报名敏感信息」留痕。
+  —— 它是唯一返回报名 QQ / 手机号 / 通知邮箱明文的入口，需求 §45 要求「查看完整报名敏感信息」留痕。
 - 报名列表的 `submittedFrom` / `submittedTo` 改为按上海自然日解释且**结束日包含全天**：
   原先的 `lte: new Date("2026-09-22")` 会把当天 08:00 之后的报名全部排除，
   界面上表现为「筛同一天得到 0 条」。
@@ -885,3 +885,12 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 门禁拒绝不额外逐请求写审计（既有登录 / 改密 / 邮箱管理审计不变），敏感值照旧不落日志。
 无 Migration、无新依赖。启用顺序、冒烟判据与回退动作见
 [门禁启用与回退](../email-gate-rollout.md)。
+
+
+## 报名通知邮箱（Refs #158 · 第一轮）
+
+- 新公开报名 `POST /api/v1/join-applications` 必填 `email`（严格字符串，不从 QQ 推导）。复用 `normalizeEmail`：去首尾空白、普通 ASCII 邮箱、全地址小写、最长 191 字符，保留点与 `+tag`；非法 / 缺失返回 `VALIDATION_FAILED` 与 `fieldErrors.email`，不创建报名。前端 type=email / required / maxLength 为辅助校验。
+- Route 显式投影允许字段，招募批次继续由服务端决定。重复有效提交仍按同一批次 QQ / 手机号返回原回执（200 / duplicate=true），不会用新提交覆盖原邮箱；不同报名可共用邮箱。历史回执读取不要求补填。
+- `SubmitJoinApplicationInput.email` 必填，`JoinApplicationDetail.email` 为 string | null。只在具有 `join:read` 权限并写 `join.application.detail.viewed` 访问审计的完整详情返回；历史无邮箱显示 `—`。列表、公开成功响应 / 回执不返回新增邮箱字段，不增加邮箱搜索。
+- CSV / XLSX 导出沿用原显式 select / 行模型 / 列白名单与 `data:export` 权限，不增加通知邮箱列。业务审计不追加明文地址，邮箱类摘要继续复用既有脱敏规则。
+- 隐私告知说明邮箱用于报名与账号通知。此地址仅为未验证的通知地址，不产生 EMAIL 身份 / verifiedAt，不影响当前邮箱门禁与恢复资格。第一轮不发信、不接队列；账号发放、邀请码与初始密码规则保持原样。

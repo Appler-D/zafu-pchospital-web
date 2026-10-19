@@ -1,4 +1,6 @@
 /** /join 表单与同源报名 API 之间的唯一客户端接口层。 */
+import type { FieldErrors } from "@/lib/api/errors";
+import { normalizeEmail } from "@/lib/security/normalization";
 
 /** 提交给后端的登记数据。字段名即接口字段名，不要在页面里另起别名。 */
 export type MemberSignupInput = {
@@ -6,6 +8,7 @@ export type MemberSignupInput = {
   /** 姓名：只去首尾空白（trim 后 2–64 字符），保留内部字符与空格。 */
   realName: string;
   phone: string;
+  email: string;
   /** 学号：保留前导零的字符串，只做 trim（不剔字符、不转数字）。 */
   studentId: string;
   /** 班级：自由文本，只做 trim。 */
@@ -27,6 +30,7 @@ export type MemberSignupFailure = {
   reason: "offline" | "rate-limited" | "invalid" | "unknown";
   /** 可直接展示给填写者的中文说明 */
   message: string;
+  fieldErrors?: FieldErrors;
 };
 
 export type MemberSignupResult = MemberSignupReceipt | MemberSignupFailure;
@@ -38,6 +42,7 @@ export type MemberSignupResult = MemberSignupReceipt | MemberSignupFailure;
  * 这里是「用户已经填对」之后的清理：去掉首尾空白、去掉 QQ 与手机号里的
  * 分隔符（138 0000 0000 这类写法很常见）；姓名只去首尾空白，内部字符与
  * 空格原样保留（issue #147 返修：此前会删掉姓名里的全部空白）。
+ * 邮箱复用服务端同源的 normalizeEmail；失败抛出含 fieldErrors.email 的 AppError，调用方就地呈现。
  */
 export function normalizeMemberSignup(data: FormData): MemberSignupInput {
   const text = (key: string) => String(data.get(key) ?? "").trim();
@@ -46,6 +51,7 @@ export function normalizeMemberSignup(data: FormData): MemberSignupInput {
     qq: text("qq").replace(/\D/g, ""),
     realName: text("realName"),
     phone: text("phone").replace(/\D/g, ""),
+    email: normalizeEmail(data.get("email")),
     // 学号只去首尾空白：保留前导零与其中的任何字符（学号不要求纯数字）。
     studentId: text("studentId"),
     className: text("className"),
@@ -63,7 +69,7 @@ export async function submitMemberSignup(input: MemberSignupInput): Promise<Memb
     const payload = (await response.json()) as {
       success?: boolean;
       data?: { ticketNo?: string; submittedAt?: string; duplicate?: boolean };
-      error?: { message?: string };
+      error?: { message?: string; fieldErrors?: FieldErrors };
     };
     if (!response.ok || !payload.success || !payload.data?.ticketNo) {
       const reason =
@@ -71,6 +77,7 @@ export async function submitMemberSignup(input: MemberSignupInput): Promise<Memb
       return {
         ok: false,
         reason,
+        fieldErrors: payload.error?.fieldErrors,
         message:
           payload.error?.message ??
           (reason === "rate-limited" ? "提交过于频繁，请稍后重试。" : "提交失败，请稍后重试。"),

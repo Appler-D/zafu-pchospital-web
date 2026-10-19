@@ -3,7 +3,11 @@ import { getRequestId } from "@/lib/api/request-id";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
 import { clientIp } from "@/lib/api/client-ip";
 import { assertSameOrigin } from "@/lib/auth/request";
-import { normalizeClassName, normalizeStudentId } from "@/lib/security/normalization";
+import {
+  normalizeClassName,
+  normalizeStudentId,
+  normalizeEmail,
+} from "@/lib/security/normalization";
 import { joinApplicationService } from "@/features/recruitment/join-application-service";
 
 export const runtime = "nodejs";
@@ -21,6 +25,7 @@ export async function POST(request: Request) {
         realName: String(body.realName ?? ""),
         qq: String(body.qq ?? ""),
         phone: String(body.phone ?? ""),
+        email: normalizeEmail(body.email),
         // 学号 / 班级必填（issue #147）：非字符串值在这里直接按字段错误拒绝，不做 String() 强转。
         studentId: normalizeStudentId(body.studentId),
         className: normalizeClassName(body.className),
