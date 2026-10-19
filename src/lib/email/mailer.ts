@@ -13,7 +13,9 @@ import { getMailConfig, type MailConfig } from "@/lib/env";
  */
 
 export type EmailDeliveryOutcome =
-  { status: "ACCEPTED" } | { status: "FAILED" } | { status: "UNCERTAIN" };
+  | { status: "ACCEPTED"; messageId?: string }
+  | { status: "FAILED"; retryable?: boolean }
+  | { status: "UNCERTAIN" };
 
 export type EmailMessage = {
   to: string;
@@ -69,18 +71,34 @@ export function createSmtpEmailSender(
         logger: false,
       });
       try {
-        await transport.sendMail({
+        const info = await transport.sendMail({
           from: config.mailFrom,
           to: message.to,
           subject: message.subject,
           text: message.text,
         });
-        return { status: "ACCEPTED" };
+        const messageId = (info as { messageId?: unknown } | null)?.messageId;
+        return {
+          status: "ACCEPTED",
+          ...(typeof messageId === "string" && /^[\x21-\x7e]{1,191}$/.test(messageId)
+            ? { messageId }
+            : {}),
+        };
       } catch (error) {
-        const classification = classifySmtpFailure(error);
+        const record = error as { code?: unknown; responseCode?: unknown } | null;
+        // 仅已知 SMTP 拒绝阶段的 4xx 才可证明未接受；超时 / socket 等保持未知。
+        const retryable =
+          !!record &&
+          ["EAUTH", "EENVELOPE", "EMESSAGE"].includes(String(record.code)) &&
+          typeof record.responseCode === "number" &&
+          record.responseCode >= 400 &&
+          record.responseCode < 500;
+        const classification = retryable ? "FAILED" : classifySmtpFailure(error);
         // 只记录受控分类，不序列化原始 Error / 收件地址 / 服务商报文。
-        console.error("[email] 验证码邮件发送未成功", { classification });
-        return classification === "FAILED" ? { status: "FAILED" } : { status: "UNCERTAIN" };
+        console.error("[email] 邮件发送未成功", { classification });
+        return classification === "FAILED"
+          ? { status: "FAILED", ...(retryable ? { retryable: true } : {}) }
+          : { status: "UNCERTAIN" };
       } finally {
         transport.close?.();
       }

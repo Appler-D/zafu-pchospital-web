@@ -893,4 +893,13 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - Route 显式投影允许字段，招募批次继续由服务端决定。重复有效提交仍按同一批次 QQ / 手机号返回原回执（200 / duplicate=true），不会用新提交覆盖原邮箱；不同报名可共用邮箱。历史回执读取不要求补填。
 - `SubmitJoinApplicationInput.email` 必填，`JoinApplicationDetail.email` 为 string | null。只在具有 `join:read` 权限并写 `join.application.detail.viewed` 访问审计的完整详情返回；历史无邮箱显示 `—`。列表、公开成功响应 / 回执不返回新增邮箱字段，不增加邮箱搜索。
 - CSV / XLSX 导出沿用原显式 select / 行模型 / 列白名单与 `data:export` 权限，不增加通知邮箱列。业务审计不追加明文地址，邮箱类摘要继续复用既有脱敏规则。
-- 隐私告知说明邮箱用于报名与账号通知。此地址仅为未验证的通知地址，不产生 EMAIL 身份 / verifiedAt，不影响当前邮箱门禁与恢复资格。第一轮不发信、不接队列；账号发放、邀请码与初始密码规则保持原样。
+- 隐私告知说明邮箱用于报名与账号通知。此地址仅为未验证的通知地址，不产生 EMAIL 身份 / verifiedAt，不影响当前邮箱门禁与恢复资格。第一轮仅保存地址；第二轮的报名建档通知见下节，邀请码与初始密码生成规则保持原样。
+
+## 报名账号通知（Refs #158 · 第二轮）
+
+- 审核通过后，建档成功事务同时创建 `APPLICATION_ACCOUNT` 通知任务；缺邮箱历史报名不建通知，既往成功建档不追溯补发。邀请码 / 手工建档不接入。建档与通知结果独立。
+- `JoinApplicationDetail.notification: AccountNotificationView | null` 只在原有 `join:read`、完整详情访问审计路径返回。字段为 `status`、累计 `attemptCount`、本轮 `roundAttemptCount`、待发时的 `nextAttemptAt`、受控 `lastErrorCode`、`acceptedAt`、可用 `messageId` 和 `canRetry`。不返回任务收件地址、QQ 快照、领取标识、凭据代次或密码；列表、公开回执和导出不扩字段。
+- `POST /api/v1/admin/join-applications/:id/notification/retry` 无请求体字段；同源、Session 认证、`join:review`，Service 再核权限；统一信封 / requestId，成功失败均 `private, no-store`。返回上述状态视图。仅 FAILED 复用原任务开启新一轮，轮内次数归零、累计及失败审计保留；PENDING / SENDING 重复请求幂等返回，ACCEPTED / UNCERTAIN 返回 `STATE_TRANSITION_INVALID`。不存在返回 `RESOURCE_NOT_FOUND`。只调度通知，不重新审核、建档或改密。
+- `AccountNotificationServiceContract` 的 `get(applicationId, actor)` / `retry(applicationId, actor)` 承担管理端权限；`runBatch({limit?})` 只由受保护 CLI 调用（缺省 10，范围 1–50），返回无敏感值的批次统计，不提供公开发信入口。
+- PENDING → SENDING → ACCEPTED / FAILED / UNCERTAIN；明确暂时拒绝可退回 PENDING。每轮最多 4 次实际 Sender 调用，间隔 1 / 5 / 30 分钟。邮件关闭、领取和预算等待不计尝试。结果未知或领取超时停止自动重发；“ACCEPTED”仅表示已提交发信服务。
+- 运行、状态边界与发布 / 停用步骤见 [账号通知运行说明](../account-notifications.md)。

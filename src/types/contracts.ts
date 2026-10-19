@@ -322,6 +322,7 @@ export type JoinApplicationDetail = JoinApplicationView & {
   phone: string;
   /** 仅授权详情披露；历史报名可为 null。 */
   email: string | null;
+  notification: AccountNotificationView | null;
   selfIntroduction: string | null;
   preferredDirection: string | null;
   applicantRemark: string | null;
@@ -1800,4 +1801,30 @@ export interface PasswordRecoveryServiceContract {
     input: PasswordRecoveryConfirmInput,
     context: PublicRequestContext,
   ): Promise<PasswordRecoveryConfirmResult>;
+}
+
+/** 报名详情中的通知状态，不返回地址、领取标识或凭据。 */
+export type AccountNotificationStatus = "PENDING" | "SENDING" | "ACCEPTED" | "FAILED" | "UNCERTAIN";
+export type AccountNotificationView = {
+  status: AccountNotificationStatus;
+  attemptCount: number;
+  roundAttemptCount: number;
+  nextAttemptAt: string | null;
+  lastErrorCode: string | null;
+  acceptedAt: string | null;
+  messageId: string | null;
+  canRetry: boolean;
+};
+export type AccountNotificationBatchResult = {
+  claimed: number;
+  accepted: number;
+  failed: number;
+  uncertain: number;
+  pending: number;
+  disabled: boolean;
+};
+export interface AccountNotificationServiceContract {
+  get(applicationId: string, actor: AuthorizedActor): Promise<AccountNotificationView | null>;
+  retry(applicationId: string, actor: AuthorizedActor): Promise<AccountNotificationView>;
+  runBatch(input?: { limit?: number }): Promise<AccountNotificationBatchResult>;
 }

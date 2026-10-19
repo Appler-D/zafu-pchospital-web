@@ -42,6 +42,8 @@ model User {
   emailChallenges    EmailChallenge[]
   passwordResetAuthorizations PasswordResetAuthorization[]
 
+  accountNotifications AccountNotification[]
+
   @@index([status, deletedAt], map: "users_status_deleted_idx")
   @@map("users")
 }
@@ -202,6 +204,8 @@ model JoinApplication {
   deletedAt          DateTime?               @map("deleted_at") @db.DateTime(3)
   reviews            JoinApplicationReview[]
 
+  accountNotifications AccountNotification[]
+
   @@unique([recruitmentCycle, qqNormalized], map: "join_applications_cycle_qq_uq")
   @@unique([recruitmentCycle, phoneNormalized], map: "join_applications_cycle_phone_uq")
   @@index([status, submittedAt], map: "join_applications_status_submitted_idx")
@@ -278,6 +282,8 @@ model AccountProvision {
   completedAt     DateTime?      @map("completed_at") @db.DateTime(3)
   user            User?          @relation(fields: [userId], references: [id], onDelete: Restrict)
   memberProfile   MemberProfile? @relation(fields: [memberProfileId], references: [id], onDelete: Restrict)
+
+  accountNotifications AccountNotification[]
 
   @@unique([sourceType, sourceId], map: "account_provisions_source_uq")
   @@index([status, updatedAt], map: "account_provisions_status_updated_idx")
@@ -776,4 +782,40 @@ model EmailExemption {
   revoker User? @relation("EmailExemptionRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
   @@index([userId, revokedAt, expiresAt], map: "email_exemptions_user_state_idx")
   @@map("email_exemptions")
+}
+
+
+// 报名建档通知：不存正文或密码；状态与建档独立。
+model AccountNotification {
+  id                String @id @db.Char(36)
+  kind              String @db.VarChar(32)
+  provisionId       String @map("provision_id") @db.Char(36)
+  applicationId     String @map("application_id") @db.Char(36)
+  userId            String @map("user_id") @db.Char(36)
+  recipientEmail    String @map("recipient_email") @db.VarChar(191)
+  qqNormalized      String @map("qq_normalized") @db.VarChar(32)
+  credentialCreated Boolean @map("credential_created")
+  credentialVersion Int @map("credential_version")
+  status            String @db.VarChar(16)
+  attemptCount      Int @default(0) @map("attempt_count")
+  roundAttemptCount Int @default(0) @map("round_attempt_count")
+  nextAttemptAt     DateTime @map("next_attempt_at") @db.DateTime(3)
+  claimId           String? @map("claim_id") @db.Char(36)
+  leaseExpiresAt    DateTime? @map("lease_expires_at") @db.DateTime(3)
+  lastAttemptAt     DateTime? @map("last_attempt_at") @db.DateTime(3)
+  lastErrorCode     String? @map("last_error_code") @db.VarChar(64)
+  acceptedAt        DateTime? @map("accepted_at") @db.DateTime(3)
+  messageId         String? @map("message_id") @db.VarChar(191)
+  createdAt         DateTime @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  provision         AccountProvision @relation(fields: [provisionId], references: [id], onDelete: Restrict)
+  application       JoinApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  user              User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provisionId, kind], map: "account_notifications_provision_kind_uq")
+  @@index([status, nextAttemptAt], map: "account_notifications_due_idx")
+  @@index([status, leaseExpiresAt], map: "account_notifications_lease_idx")
+  @@index([applicationId], map: "account_notifications_application_idx")
+  @@index([userId], map: "account_notifications_user_idx")
+  @@map("account_notifications")
 }

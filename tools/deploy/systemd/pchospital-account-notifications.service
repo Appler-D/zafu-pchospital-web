@@ -1,0 +1,15 @@
+# Example only: replace APPLICATION_USER and node path with the existing app runtime.
+[Unit]
+Description=PC Hospital application account notification batch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=APPLICATION_USER
+WorkingDirectory=/opt/zafu-pchospital-web
+EnvironmentFile=/opt/zafu-pchospital-web/.env
+ExecStart=/usr/bin/node --import tsx tools/account-notifications.ts --batch=10
+TimeoutStartSec=8min
+TimeoutStopSec=15s
+Restart=no
