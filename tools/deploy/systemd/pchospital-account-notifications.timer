@@ -1,0 +1,11 @@
+[Unit]
+Description=Process PC Hospital account notifications every minute
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+Persistent=true
+Unit=pchospital-account-notifications.service
+
+[Install]
+WantedBy=timers.target

@@ -12,6 +12,7 @@ import {
   resolveOrCreateUser,
   setInitialPassword,
 } from "@/features/accounts/account-repository";
+import { enqueueAccountNotification } from "@/features/email/account-notification-service";
 import { claimHistoryForNewMember } from "@/features/repairs/repair-history-import-service";
 
 export class AccountProvisionService implements AccountProvisionServiceContract {
@@ -28,6 +29,7 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
     let initializationSecret = "";
     try {
       const result = await inSerializableTransaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM join_applications WHERE id = ${applicationId} FOR UPDATE`;
         const application = await tx.joinApplication.findUnique({ where: { id: applicationId } });
         if (!application || application.deletedAt) {
           throw new AppError("RESOURCE_NOT_FOUND", "报名记录不存在");
@@ -35,6 +37,19 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
         if (application.status !== "INTERVIEW_PASSED") {
           throw new AppError("STATE_TRANSITION_INVALID", "报名尚未通过面试");
         }
+        // 锁后复核：并发幂等重入不能重做成功建档，也不能重复创建通知。
+        const fresh = await tx.accountProvision.findUnique({
+          where: {
+            sourceType_sourceId: { sourceType: "JOIN_APPLICATION", sourceId: applicationId },
+          },
+        });
+        if (fresh?.status === "SUCCEEDED")
+          return {
+            completed: fresh,
+            passwordCreated: false,
+            memberProfileId: fresh.memberProfileId!,
+            realName: application.realName,
+          };
         initializationSecret = initialPasswordFromQq(application.qqNormalized);
         const provision = await tx.accountProvision.upsert({
           where: {
@@ -86,6 +101,16 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
           where: { id: applicationId },
           data: { provisionStatus: "SUCCEEDED" },
         });
+        const credential = await tx.passwordCredential.findUniqueOrThrow({ where: { userId } });
+        await enqueueAccountNotification(tx, {
+          provisionId: provision.id,
+          applicationId,
+          userId,
+          recipientEmail: application.email,
+          qqNormalized: application.qqNormalized,
+          credentialCreated: passwordCreated,
+          credentialVersion: credential.credentialVersion,
+        });
         await appendAuditLog(tx, {
           actor: { requestId: `provision:${provision.id}` },
           actorType: "SYSTEM",
@@ -117,11 +142,19 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
     } catch (error) {
       const code = error instanceof AppError ? error.code : "ACCOUNT_PROVISION_FAILED";
       await getDb().accountProvision.updateMany({
-        where: { sourceType: "JOIN_APPLICATION", sourceId: applicationId },
+        where: {
+          sourceType: "JOIN_APPLICATION",
+          sourceId: applicationId,
+          status: { not: "SUCCEEDED" },
+        },
         data: { status: "FAILED", lastErrorCode: code, attemptCount: { increment: 1 } },
       });
       await getDb().joinApplication.updateMany({
-        where: { id: applicationId, status: "INTERVIEW_PASSED" },
+        where: {
+          id: applicationId,
+          status: "INTERVIEW_PASSED",
+          provisionStatus: { not: "SUCCEEDED" },
+        },
         data: { provisionStatus: "FAILED" },
       });
       await inSerializableTransaction((tx) =>

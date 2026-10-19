@@ -190,18 +190,7 @@ export async function preoccupyEmailSendQuota(
       errorCode: "EMAIL_RATE_LIMITED",
       message: "当前网络今日邮件发送次数已达上限，请明天再试",
     },
-    {
-      key: emailBucketKeys.budgetDay(),
-      window: shanghaiDayWindow,
-      max: input.dailyBudget,
-      errorCode: "EMAIL_BUDGET_EXHAUSTED",
-    },
-    {
-      key: emailBucketKeys.budgetMinute(),
-      window: (now) => rollingWindow(now, EMAIL_BUDGET_MINUTE_WINDOW_MS),
-      max: EMAIL_BUDGET_MINUTE_MAX,
-      errorCode: "EMAIL_BUDGET_EXHAUSTED",
-    },
+    ...globalEmailBudgetSpecs(input.dailyBudget),
   ];
   // 固定取锁顺序：不同请求的桶集合有交集时，排序后按同一顺序进入不会形成等待环。
   specs.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -349,4 +338,48 @@ export async function preoccupyPasswordRecoveryRequestQuota(
   const at = input.now();
   for (const spec of specs) await applyEmailCounter(tx, spec, at);
   return at;
+}
+
+function globalEmailBudgetSpecs(dailyBudget: number): EmailCounterSpec[] {
+  return [
+    {
+      key: emailBucketKeys.budgetDay(),
+      window: shanghaiDayWindow,
+      max: dailyBudget,
+      errorCode: "EMAIL_BUDGET_EXHAUSTED",
+    },
+    {
+      key: emailBucketKeys.budgetMinute(),
+      window: (at) => rollingWindow(at, EMAIL_BUDGET_MINUTE_WINDOW_MS),
+      max: EMAIL_BUDGET_MINUTE_MAX,
+      errorCode: "EMAIL_BUDGET_EXHAUSTED",
+    },
+  ];
+}
+
+/** 通知只预占原全站桶，不伪造请求 IP，也不占用户验证码冷却。锁齐后取时。 */
+export async function preoccupyGlobalEmailBudget(
+  tx: Prisma.TransactionClient,
+  input: { dailyBudget: number; now: () => Date },
+): Promise<{ at: Date; nextAt: Date | null }> {
+  const specs = globalEmailBudgetSpecs(input.dailyBudget).sort((a, b) =>
+    a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+  );
+  for (const spec of specs) await lockEmailCounterBucket(tx, spec.key);
+  const at = input.now();
+  let nextAt: Date | null = null;
+  for (const spec of specs) {
+    const row = await tx.emailSecurityCounter.findUnique({
+      where: { bucketKeyDigest: digestEmailBucketKey(spec.key) },
+    });
+    if (
+      row &&
+      row.windowExpiresAt > at &&
+      row.counter >= spec.max &&
+      (!nextAt || row.windowExpiresAt > nextAt)
+    )
+      nextAt = row.windowExpiresAt;
+  }
+  if (!nextAt) for (const spec of specs) await applyEmailCounter(tx, spec, at);
+  return { at, nextAt };
 }

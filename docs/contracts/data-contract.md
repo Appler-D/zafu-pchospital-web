@@ -97,7 +97,7 @@ verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`�
 - `join_applications` 可独立存在，不要求先创建用户。
 - 同一招募批次的规范化 QQ、手机号分别有数据库唯一约束。
 - 报名通知邮箱 `JoinApplication.email`（issue #158）为可空 `VARCHAR(191)`，新提交应用层必填并使用现有 `normalizeEmail` 规范化。迁移 `20261019090000_join_application_email` 只加可空列，不回填；历史无邮箱保持 NULL，仍可查看与审核建档。不增加唯一索引，不按邮箱去重，不从 QQ 推导，也不由重复提交覆盖。
-- 通知地址只存在报名记录，不写 `user_identities` / verifiedAt / MemberProfile，不授予邮箱门禁或找回资格。仅授权且有访问审计的完整报名详情可见；列表、回执及原导出列不新增邮箱披露。审计摘要继续按既有邮箱字段脱敏，第一轮不发信或排入通知队列。
+- 通知地址保存于报名记录及下述通知任务快照，不写 `user_identities` / verifiedAt / MemberProfile，不授予邮箱门禁或找回资格。仅授权且有访问审计的完整报名详情可见；列表、回执及原导出列不新增邮箱披露。审计摘要继续按既有邮箱字段脱敏，第一轮仅保存地址，第二轮仅为本次成功报名建档创建通知任务。
 - 面试状态与账号发放状态使用两个独立字段。
 - `account_provisions` 同时约束幂等键以及 `(source_type, source_id)` 唯一。
 - Review、Redemption、Provision、AuditLog 不提供业务删除入口。
@@ -353,3 +353,15 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 最终事务以授权摘要预读定位目标，再锁 `password_credentials`，调用既有授权锁定消费原语，读取账号资格 / 当前邮箱 / 凭据代次并以锁后时间复核有效期，条件消费授权与更新凭据。原语先写的消费状态仍在同一事务；后续失败整体回滚。新哈希、mustChangePassword=false、临时状态清空、credentialVersion + 1、目标全部 Session 撤销、其他 ACTIVE/PENDING 邮箱挑战及 ISSUED 重置授权作废与审计同事务完成，不建立 Session。
 
 与 #113 管理员重置 / 已登录改密、邮箱切换交叉时沿用 Serializable 有界重试；凭据先锁、授权后锁，其他事务的读 / 写冲突由数据库检测并重试，回调重新取时，不在可重试事务内发送 SMTP。不修改角色、MemberProfile、账号状态、邮箱或临时豁免。HTTP 使用独立 Strict / HttpOnly Cookie 交付授权，公共 JSON 不暴露授权与内部主体。统一邮箱门禁未启用。
+
+## 报名建档通知任务（Refs #158）
+
+前向迁移 `20261019120000_account_notifications` 新增 `account_notifications`，不回填历史成功建档。`(provision_id, kind)` 唯一，关联 AccountProvision / JoinApplication / User 的外键均 RESTRICT 删除；任务不会因清掉业务关联而静默丢失。
+
+保存规范化收件地址及 QQ 快照、本次是否真正新建凭据与代次、状态、累计 / 轮内尝试次数、下次执行时间、领取 UUID / 租约、最后尝试 / 受控原因、服务商接受时间和可用 Message-ID。`status + next_attempt_at` / `status + lease_expires_at` 用于有界待办和超时扫描，application / user 索引支持详情与关联。不存初始密码、哈希副本、全文邮件或原始 SMTP 报文；报名地址快照不构成已验证 EMAIL 身份。
+
+入队与建档成功同一事务；SMTP 完全在事务外。领取用任务行锁，回写匹配 SENDING + claimId；两分钟租约到期一律 UNCERTAIN，迟到结果不得覆盖。不承诺 SMTP exactly once 或最终送达。仅明确未接受的暂时失败每轮最多四次；FAILED 人工重试归零 `round_attempt_count`，保留 `attempt_count` 及原失败审计。只在实际调用 Sender 后计数，邮件关闭 / 预算等待 / 单纯领取不计数。
+
+验证码与通知共用 `email_security_counters` 原 `budget:global:day` / `budget:global:minute` HMAC 桶（每日配置，默认 150；分钟 10）。通知不创建验证码用户、目标或伪 IP 桶；预算不足提交下个允许窗口，不退款。任务 → 凭据 → 当前资格 / QQ / 报名 / 建档 → 原预算桶为本轮发送准备锁序，预算内部仍按原键排序；取锁及有界 Serializable 重试后重新取当前时间。发送前每次复核当前凭据；不在 SMTP 期间锁住改密。
+
+业务审计使用既有入口：`account.notification.queued / attempted / retry_scheduled / accepted / failed / uncertain` 为 SYSTEM；`retry_requested` 记录授权管理员及操作时间。摘要只含关联 ID、状态、计数和受控原因，不加完整邮箱、QQ、密码、正文或服务商报文；详情沿用 `join.application.detail.viewed` 访问审计。

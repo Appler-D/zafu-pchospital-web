@@ -17,6 +17,19 @@ import { disconnectDb, getDb } from "../../src/lib/db/client";
 import type { AuthorizedActor } from "../../src/types/contracts";
 import { integrationTestsEnabled } from "./db-guard";
 import { sameOriginHeaders } from "./http-harness";
+import { sessionCookie } from "./http-harness";
+import { accountProvisionService } from "../../src/features/accounts/account-provision-service";
+import { AccountNotificationService } from "../../src/features/email/account-notification-service";
+import {
+  preoccupyEmailSendQuota,
+  emailBucketKeys,
+} from "../../src/features/email/email-rate-limit";
+import { inSerializableTransaction } from "../../src/lib/db/transaction";
+import { digestEmailBucketKey } from "../../src/lib/security/email-security";
+import { hashPassword } from "../../src/lib/security/secrets";
+import type { MailConfig } from "../../src/lib/env";
+import type { EmailMessage, EmailDeliveryOutcome } from "../../src/lib/email/mailer";
+import { POST as retryNotificationRoute } from "../../src/app/api/v1/admin/join-applications/[id]/notification/retry/route";
 
 /**
  * 学号 / 班级贯通（issue #147）：邀请码注册与公开招募两个入口的前后端、存储、
@@ -85,6 +98,10 @@ async function prepareFixtures(): Promise<void> {
     where: { OR: [{ userId: { in: userIds } }, { memberProfileId: { in: profileIds } }] },
     select: { id: true },
   });
+  const notifications = await db.accountNotification.findMany({
+    where: { applicationId: { in: applicationIds } },
+    select: { id: true },
+  });
 
   // 审计对 User 是 Restrict 外键，必须先于用户删除；再按 target 清掉 SYSTEM 动作留下的行。
   await db.auditLog.deleteMany({
@@ -93,12 +110,18 @@ async function prepareFixtures(): Promise<void> {
         { actorUserId: { in: [...userIds, ADMIN_USER_ID] } },
         {
           targetId: {
-            in: [...applicationIds, ...profileIds, ...provisions.map((row) => row.id)],
+            in: [
+              ...applicationIds,
+              ...profileIds,
+              ...provisions.map((row) => row.id),
+              ...notifications.map((row) => row.id),
+            ],
           },
         },
       ],
     },
   });
+  await db.accountNotification.deleteMany({ where: { applicationId: { in: applicationIds } } });
   await db.accountProvision.deleteMany({
     where: { OR: [{ userId: { in: userIds } }, { memberProfileId: { in: profileIds } }] },
   });
@@ -108,9 +131,11 @@ async function prepareFixtures(): Promise<void> {
   });
   await db.joinApplication.deleteMany({ where: nameScope() });
   await db.inviteCode.deleteMany({ where: { createdByUserId: ADMIN_USER_ID } });
-  await db.authSession.deleteMany({ where: { userId: { in: userIds } } });
-  await db.passwordCredential.deleteMany({ where: { userId: { in: userIds } } });
-  await db.userRole.deleteMany({ where: { userId: { in: userIds } } });
+  await db.authSession.deleteMany({ where: { userId: { in: [...userIds, ADMIN_USER_ID] } } });
+  await db.passwordCredential.deleteMany({
+    where: { userId: { in: [...userIds, ADMIN_USER_ID] } },
+  });
+  await db.userRole.deleteMany({ where: { userId: { in: [...userIds, ADMIN_USER_ID] } } });
   await db.userIdentity.deleteMany({ where: { userId: { in: userIds } } });
   await db.memberProfile.deleteMany({ where: { id: { in: profileIds } } });
   await db.user.deleteMany({ where: { id: { in: [...userIds, ADMIN_USER_ID] } } });
@@ -1277,5 +1302,405 @@ dbTest("I158 历史无邮箱详情 / 重复回执与审核建档保持可用，�
   assert.equal(
     await getDb().userIdentity.count({ where: { userId: provision.userId!, type: "EMAIL" } }),
     0,
+  );
+});
+
+/* ------------------- N158：复用上述报名 / 建档夹具，Fake Sender + 可控时钟 */
+const notificationMail: Extract<MailConfig, { enabled: true }> = {
+  enabled: true,
+  smtpHost: "unused.test",
+  smtpPort: 465,
+  smtpUser: "fake",
+  smtpPassword: "fake",
+  mailFrom: "fake@example.com",
+  dailyBudget: 150,
+  codePepper: "fake-pepper",
+};
+async function notificationFixture(
+  overrides: { qq?: string; phone?: string; email?: string } = {},
+) {
+  const body = joinBody(overrides) as unknown as Parameters<
+    typeof joinApplicationService.submit
+  >[0];
+  const receipt = await joinApplicationService.submit(
+    { ...body, recruitmentCycle: `${CYCLE_PREFIX}${randomUUID().slice(0, 8)}` },
+    { requestId: "req_n158" },
+  );
+  await reviewPassed(receipt.id, "n158");
+  return getDb().accountNotification.findFirstOrThrow({ where: { applicationId: receipt.id } });
+}
+async function clearNotificationBudget() {
+  await getDb().emailSecurityCounter.deleteMany({
+    where: {
+      bucketKeyDigest: {
+        in: [emailBucketKeys.budgetDay(), emailBucketKeys.budgetMinute()].map(digestEmailBucketKey),
+      },
+    },
+  });
+}
+function notificationWorker(
+  outcome: EmailDeliveryOutcome = { status: "ACCEPTED", messageId: "<fake@test>" },
+) {
+  let at = new Date("2027-01-10T02:00:00Z");
+  const messages: EmailMessage[] = [];
+  const service = new AccountNotificationService({
+    now: () => at,
+    mailConfig: () => notificationMail,
+    sender: {
+      async send(message) {
+        messages.push(message);
+        return outcome;
+      },
+    },
+  });
+  return {
+    service,
+    messages,
+    setTime(value: Date) {
+      at = value;
+    },
+  };
+}
+
+dbTest("N158 入队与建档幂等；失败不入队；历史无邮箱 / 已成功任务不补发", async () => {
+  const row = await notificationFixture();
+  const provision = await getDb().accountProvision.findUniqueOrThrow({
+    where: { id: row.provisionId },
+  });
+  await Promise.all([
+    reviewPassed(row.applicationId, "n158"),
+    accountProvisionService.provisionFromApplication(row.applicationId, provision.idempotencyKey),
+  ]);
+  assert.equal(
+    await getDb().accountNotification.count({ where: { provisionId: row.provisionId } }),
+    1,
+  );
+  assert.equal(provision.status, "SUCCEEDED");
+  assert.equal(row.credentialCreated, true);
+  // 模拟旧版本已经成功建档但没有通知；幂等重入不得补历史队列。
+  await getDb().auditLog.deleteMany({ where: { targetId: row.id } });
+  await getDb().accountNotification.delete({ where: { id: row.id } });
+  await accountProvisionService.provisionFromApplication(
+    row.applicationId,
+    provision.idempotencyKey,
+  );
+  assert.equal(
+    await getDb().accountNotification.count({ where: { provisionId: row.provisionId } }),
+    0,
+  );
+  const historical = await createHistoricalApplication({
+    realName: `${NAME_PREFIX}无邮箱通知`,
+    qq: "81580001",
+    phone: "13915800001",
+  });
+  await reviewPassed(historical.id, "n158-old");
+  assert.equal((await joinApplicationService.get(historical.id, ADMIN_ACTOR)).notification, null);
+  const rejected = await createHistoricalApplication({
+    realName: `${NAME_PREFIX}未通过`,
+    qq: "81580002",
+    phone: "13915800002",
+  });
+  await assert.rejects(
+    accountProvisionService.provisionFromApplication(rejected.id, "n158-rejected"),
+  );
+  assert.equal(
+    await getDb().accountNotification.count({ where: { applicationId: rejected.id } }),
+    0,
+  );
+  const concurrent = await createHistoricalApplication({
+    realName: `${NAME_PREFIX}并发入队`,
+    qq: "81580003",
+    phone: "13915800003",
+  });
+  await getDb().joinApplication.update({
+    where: { id: concurrent.id },
+    data: {
+      status: "INTERVIEW_PASSED",
+      provisionStatus: "PENDING",
+      email: "concurrent@example.com",
+    },
+  });
+  await Promise.all(
+    [1, 2].map(() =>
+      accountProvisionService.provisionFromApplication(concurrent.id, "n158-concurrent"),
+    ),
+  );
+  assert.equal(
+    await getDb().accountNotification.count({ where: { applicationId: concurrent.id } }),
+    1,
+  );
+  // 唯一键插入失败必须回滚同事务中的档案更新，而非留下半成功建档。
+  const job = await getDb().accountNotification.findFirstOrThrow({
+    where: { applicationId: concurrent.id },
+  });
+  const profile = await getDb().memberProfile.findUniqueOrThrow({ where: { userId: job.userId } });
+  await getDb().accountProvision.update({
+    where: { id: job.provisionId },
+    data: { status: "PENDING" },
+  });
+  await getDb().joinApplication.update({
+    where: { id: concurrent.id },
+    data: { realName: `${NAME_PREFIX}必须回滚`, provisionStatus: "PENDING" },
+  });
+  await assert.rejects(
+    accountProvisionService.provisionFromApplication(concurrent.id, "n158-concurrent"),
+  );
+  assert.equal(
+    (await getDb().memberProfile.findUniqueOrThrow({ where: { id: profile.id } })).realName,
+    profile.realName,
+  );
+  assert.equal(
+    await getDb().accountNotification.count({ where: { applicationId: concurrent.id } }),
+    1,
+  );
+});
+
+dbTest(
+  "N158 暂时拒绝一轮 4 次与 1/5/30 分钟；人工新轮保留累计及审计；SMTP 不污染建档",
+  async () => {
+    await clearNotificationBudget();
+    const row = await notificationFixture();
+    const worker = notificationWorker({ status: "FAILED", retryable: true });
+    for (let i = 1; i <= 4; i++) {
+      await worker.service.runBatch({ limit: 1 });
+      const current = await getDb().accountNotification.findUniqueOrThrow({
+        where: { id: row.id },
+      });
+      assert.equal(current.attemptCount, i);
+      assert.equal(current.roundAttemptCount, i);
+      assert.equal(current.status, i < 4 ? "PENDING" : "FAILED");
+      if (i < 4) {
+        assert.equal(
+          current.nextAttemptAt.getTime() - current.lastAttemptAt!.getTime(),
+          [60000, 300000, 1800000][i - 1],
+        );
+        worker.setTime(current.nextAttemptAt);
+      }
+    }
+    const retry = await worker.service.retry(row.applicationId, ADMIN_ACTOR);
+    assert.equal(retry.attemptCount, 4);
+    assert.equal(retry.roundAttemptCount, 0);
+    await worker.service.retry(row.applicationId, ADMIN_ACTOR);
+    assert.equal(
+      await getDb().auditLog.count({
+        where: {
+          targetId: row.id,
+          action: "account.notification.retry_requested",
+          actorUserId: ADMIN_USER_ID,
+        },
+      }),
+      1,
+    );
+    await worker.service.runBatch({ limit: 1 });
+    assert.equal(worker.messages.length, 5);
+    assert.equal(
+      (await getDb().accountProvision.findUniqueOrThrow({ where: { id: row.provisionId } })).status,
+      "SUCCEEDED",
+    );
+    assert.equal(
+      (await getDb().joinApplication.findUniqueOrThrow({ where: { id: row.applicationId } }))
+        .provisionStatus,
+      "SUCCEEDED",
+    );
+  },
+);
+
+dbTest("N158 凭据发送前复核：5 位 QQ 初始口令；已改密和已有凭据用无密码模板", async () => {
+  await clearNotificationBudget();
+  await notificationFixture({ qq: "81583" });
+  const worker = notificationWorker();
+  await worker.service.runBatch({ limit: 1 });
+  assert.match(worker.messages[0].text, /初始密码：81583/);
+  assert.match(worker.messages[0].text, /https:\/\/pczafu.cn\/login/);
+  const changed = await notificationFixture();
+  const currentHash = await hashPassword("changed-password");
+  await getDb().passwordCredential.update({
+    where: { userId: changed.userId },
+    data: {
+      passwordHash: currentHash,
+      mustChangePassword: false,
+      credentialVersion: { increment: 1 },
+    },
+  });
+  await worker.service.runBatch({ limit: 1 });
+  assert.doesNotMatch(worker.messages[1].text, /初始密码：/);
+  // 同一个已有 QQ / 电话的新批次报名，建档不能覆盖已有密码。
+  const app = await getDb().joinApplication.findUniqueOrThrow({
+    where: { id: changed.applicationId },
+  });
+  const existing = await notificationFixture({
+    qq: app.qqNormalized,
+    ...{ phone: app.phoneNormalized },
+  });
+  assert.equal(existing.credentialCreated, false);
+  await worker.service.runBatch({ limit: 1 });
+  assert.doesNotMatch(worker.messages[2].text, /初始密码：/);
+  assert.equal(
+    (await getDb().passwordCredential.findUniqueOrThrow({ where: { userId: changed.userId } }))
+      .passwordHash,
+    currentHash,
+  );
+});
+
+dbTest("N158 双 worker 仅调用一次；重建领取持久任务；过期领取和迟到结果保持未知", async () => {
+  await clearNotificationBudget();
+  const row = await notificationFixture();
+  let start!: () => void, release!: (outcome: EmailDeliveryOutcome) => void;
+  const started = new Promise<void>((resolve) => {
+    start = resolve;
+  });
+  let calls = 0;
+  const at = new Date("2027-01-11T02:00:00Z");
+  const service = new AccountNotificationService({
+    now: () => at,
+    mailConfig: () => notificationMail,
+    sender: {
+      send() {
+        calls++;
+        start();
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      },
+    },
+  });
+  const running = service.runBatch({ limit: 1 });
+  await started;
+  const second = notificationWorker();
+  second.setTime(at);
+  assert.equal((await second.service.runBatch({ limit: 1 })).claimed, 0);
+  // 用持久化领取到期模拟发送后进程中断；不需要杀进程矩阵。
+  const later = new Date(at.getTime() + 120001);
+  second.setTime(later);
+  assert.equal((await second.service.runBatch({ limit: 1 })).uncertain, 1);
+  release({ status: "ACCEPTED" });
+  await running;
+  assert.equal(calls, 1);
+  assert.equal(
+    (await getDb().accountNotification.findUniqueOrThrow({ where: { id: row.id } })).status,
+    "UNCERTAIN",
+  );
+  await assert.rejects(
+    second.service.retry(row.applicationId, ADMIN_ACTOR),
+    (error: unknown) => error instanceof AppError && error.code === "STATE_TRANSITION_INVALID",
+  );
+  assert.equal((await second.service.runBatch({ limit: 1 })).claimed, 0);
+});
+
+dbTest("N158 邮件关闭零尝试；通知与验证码竞争同一预算，耗尽延后不占用户桶", async () => {
+  await clearNotificationBudget();
+  const row = await notificationFixture();
+  const disabled = new AccountNotificationService({ mailConfig: () => ({ enabled: false }) });
+  assert.equal((await disabled.runBatch()).disabled, true);
+  assert.equal(
+    (await getDb().accountNotification.findUniqueOrThrow({ where: { id: row.id } })).attemptCount,
+    0,
+  );
+  const worker = notificationWorker();
+  const at = new Date("2027-01-10T02:00:00Z");
+  const shared = new AccountNotificationService({
+    now: () => at,
+    mailConfig: () => ({ ...notificationMail, dailyBudget: 1 }),
+    sender: {
+      async send(message) {
+        worker.messages.push(message);
+        return { status: "ACCEPTED" };
+      },
+    },
+  });
+  const quotaInput = {
+    userId: row.userId,
+    emailNormalized: row.recipientEmail,
+    ipAddress: "10.158.0.1",
+    now: () => at,
+    dailyBudget: 1,
+  };
+  const outcomes = await Promise.allSettled([
+    shared.runBatch({ limit: 1 }),
+    inSerializableTransaction((tx) => preoccupyEmailSendQuota(tx, quotaInput)),
+  ]);
+  assert.equal(outcomes[0].status, "fulfilled");
+  const day = await getDb().emailSecurityCounter.findUniqueOrThrow({
+    where: { bucketKeyDigest: digestEmailBucketKey(emailBucketKeys.budgetDay()) },
+  });
+  assert.equal(day.counter, 1);
+  const current = await getDb().accountNotification.findUniqueOrThrow({ where: { id: row.id } });
+  assert.equal(worker.messages.length + (outcomes[1].status === "fulfilled" ? 1 : 0), 1);
+  if (!worker.messages.length) {
+    assert.equal(current.status, "PENDING");
+    assert.equal(current.attemptCount, 0);
+    assert.equal(current.nextAttemptAt.getTime(), day.windowExpiresAt.getTime());
+    assert.equal(current.lastErrorCode, "BUDGET_DEFERRED");
+  } else {
+    assert.equal(
+      await getDb().emailSecurityCounter.count({
+        where: {
+          bucketKeyDigest: digestEmailBucketKey(emailBucketKeys.sendCooldownUser(row.userId)),
+        },
+      }),
+      0,
+    );
+  }
+  const deferred = current.status === "PENDING" ? current : await notificationFixture();
+  await shared.runBatch({ limit: 1 });
+  const waiting = await getDb().accountNotification.findUniqueOrThrow({
+    where: { id: deferred.id },
+  });
+  assert.equal(waiting.status, "PENDING");
+  assert.equal(waiting.attemptCount, 0);
+  assert.equal(waiting.lastErrorCode, "BUDGET_DEFERRED");
+  assert.equal(waiting.nextAttemptAt.getTime(), day.windowExpiresAt.getTime());
+  const keys = [
+    emailBucketKeys.sendCooldownUser(row.userId),
+    emailBucketKeys.sendCooldownEmail(row.recipientEmail),
+    emailBucketKeys.sendDailyUser(row.userId),
+    emailBucketKeys.sendDailyEmail(row.recipientEmail),
+    emailBucketKeys.sendDailyIp("10.158.0.1"),
+  ];
+  await getDb().emailSecurityCounter.deleteMany({
+    where: { bucketKeyDigest: { in: keys.map(digestEmailBucketKey) } },
+  });
+});
+
+dbTest("N158 详情 / 重试权限与 HTTP 披露边界；永久拒绝停止，未知无强制补发", async () => {
+  await clearNotificationBudget();
+  const row = await notificationFixture();
+  const worker = notificationWorker({ status: "FAILED" });
+  await worker.service.runBatch({ limit: 1 });
+  assert.equal((await worker.service.runBatch({ limit: 1 })).claimed, 0);
+  const detail = await joinApplicationService.get(row.applicationId, ADMIN_ACTOR);
+  assert.equal(detail.notification?.status, "FAILED");
+  assert.equal(detail.notification?.canRetry, true);
+  await assert.rejects(worker.service.get(row.applicationId, MEMBER_ACTOR));
+  await assert.rejects(worker.service.retry(row.applicationId, MEMBER_ACTOR));
+  const cookie = await sessionCookie(ADMIN_USER_ID);
+  const route = (origin: string) =>
+    retryNotificationRoute(
+      new Request(
+        `http://localhost/api/v1/admin/join-applications/${row.applicationId}/notification/retry`,
+        { method: "POST", headers: { origin, cookie } },
+      ),
+      { params: Promise.resolve({ id: row.applicationId }) },
+    );
+  const denied = await route("https://untrusted.test");
+  assert.equal(denied.status, 403);
+  assert.match(denied.headers.get("cache-control")!, /private.*no-store/);
+  const response = await route(sameOriginHeaders().origin);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control")!, /private.*no-store/);
+  const json = JSON.stringify(await response.json());
+  assert.doesNotMatch(
+    json,
+    /recipientEmail|qqNormalized|credential|password|claimId|applicant@example.com/,
+  );
+  const audits = await getDb().auditLog.findMany({ where: { targetId: row.id } });
+  assert.doesNotMatch(JSON.stringify(audits), /applicant@example.com|初始密码|passwordHash/);
+  const uncertain = notificationWorker({ status: "UNCERTAIN" });
+  await uncertain.service.runBatch({ limit: 1 });
+  assert.equal((await uncertain.service.runBatch({ limit: 1 })).claimed, 0);
+  await assert.rejects(uncertain.service.retry(row.applicationId, ADMIN_ACTOR));
+  assert.equal(
+    (await getDb().accountProvision.findUniqueOrThrow({ where: { id: row.provisionId } })).status,
+    "SUCCEEDED",
   );
 });

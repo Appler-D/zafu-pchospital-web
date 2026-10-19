@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import { accountNotificationService } from "@/features/email/account-notification-service";
 import { accountProvisionService } from "@/features/accounts/account-provision-service";
 import type { JoinApplication, Prisma } from "@/generated/prisma/client";
 import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
@@ -100,6 +101,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       qq: record.qqNormalized,
       phone: record.phoneNormalized,
       email: record.email,
+      notification: await accountNotificationService.get(applicationId, actor),
       selfIntroduction: record.selfIntroduction,
       preferredDirection: record.preferredDirection,
       applicantRemark: record.applicantRemark,

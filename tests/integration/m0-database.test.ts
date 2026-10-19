@@ -64,6 +64,7 @@ before(async () => {
   await db.authSession.deleteMany();
   await db.loginThrottle.deleteMany();
   await db.auditLog.deleteMany();
+  await db.accountNotification.deleteMany();
   await db.accountProvision.deleteMany();
   await db.inviteCodeRedemption.deleteMany();
   await db.inviteCode.deleteMany();

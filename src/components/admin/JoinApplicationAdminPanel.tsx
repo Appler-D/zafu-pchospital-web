@@ -8,9 +8,11 @@ import { AdminTable } from "@/components/admin/AdminTable";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage } from "@/components/admin/AdminToast";
 import { AdminListEnd, useAdminList } from "@/components/admin/useAdminList";
+import { AccountNotificationStatusPanel } from "@/components/admin/AccountNotificationStatusPanel";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { accountNotificationCopy as notificationCopy } from "@/config/account-notification";
 import {
   adminCopy,
   adminShared,
@@ -526,6 +528,19 @@ function ApplicationDetailPanel({
             </p>
             <p className="admin-note">{copy.detail.contactsNote}</p>
           </div>
+
+          <AccountNotificationStatusPanel
+            applicationId={applicationId}
+            notification={detail.notification}
+            hasEmail={!!detail.email}
+            provisionStatus={detail.provisionStatus}
+            busy={busy}
+            onChanged={(notification) =>
+              setDetail((current) => (current ? { ...current, notification } : current))
+            }
+            onProblem={(text) => setToast({ text, tone: "neutral" })}
+            onScheduled={() => setToast({ text: notificationCopy.scheduled, tone: "success" })}
+          />
 
           {/* 学号与班级（issue #147）：历史报名未填写，逐项显示 `—`，不隐藏整段。 */}
           <div className="admin-section">
