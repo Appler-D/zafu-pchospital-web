@@ -3,6 +3,13 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
+
+type ChangePasswordPayload = {
+  success?: boolean;
+  data?: { destination?: string };
+  error?: { message?: string };
+};
+
 export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
   const router = useRouter();
   const [problem, setProblem] = useState("");
@@ -12,30 +19,50 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
     setBusy(true);
     setProblem("");
     const data = new FormData(event.currentTarget);
-    const response = await fetch("/api/v1/auth/password/change", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        currentPassword: data.get("currentPassword"),
-        newPassword: data.get("newPassword"),
-        newPasswordConfirmation: data.get("newPasswordConfirmation"),
-        ...(returnTo ? { returnTo } : {}),
-      }),
-    });
-    const payload = (await response.json()) as {
-      success: boolean;
-      data?: { destination?: string };
-      error?: { message?: string };
-    };
-    if (!response.ok || !payload.success || !payload.data?.destination) {
-      setProblem(payload.error?.message ?? "修改失败");
+
+    // 无论成功、业务失败还是网络异常，finally 都会解除按钮禁用，
+    // 不会永远停在「保存中」。
+    try {
+      const response = await fetch("/api/v1/auth/password/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: data.get("currentPassword"),
+          newPassword: data.get("newPassword"),
+          newPasswordConfirmation: data.get("newPasswordConfirmation"),
+          ...(returnTo ? { returnTo } : {}),
+        }),
+      });
+
+      // 非 JSON 响应（例如网关错误页）单独兜底，与 adminFetch 的
+      // INVALID_RESPONSE 分支保持一致；带上状态码，便于区分 502 与 200 空体。
+      let payload: ChangePasswordPayload | null = null;
+      try {
+        payload = (await response.json()) as ChangePasswordPayload;
+      } catch {
+        payload = null;
+      }
+
+      if (payload === null) {
+        setProblem(`服务返回了无法解析的响应（HTTP ${response.status}）`);
+        return;
+      }
+
+      if (!response.ok || !payload.success || !payload.data?.destination) {
+        setProblem(payload.error?.message ?? "修改失败，请稍后重试");
+        return;
+      }
+
+      // 落点由服务端统一编排（任务 6）：还要验邮箱就先去邮箱步骤页并带上原目标，
+      // 否则回原目标 / 角色默认页。这里不再按角色自行判断。
+      router.replace(payload.data.destination);
+      router.refresh();
+    } catch {
+      // 断网、请求被中止或跨域失败。文案与 adminFetch 的 NETWORK_ERROR 对齐。
+      setProblem("网络异常，请检查连接后重试");
+    } finally {
       setBusy(false);
-      return;
     }
-    // 落点由服务端统一编排（任务 6）：还要验邮箱就先去邮箱步骤页并带上原目标，
-    // 否则回原目标 / 角色默认页。这里不再按角色自行判断。
-    router.replace(payload.data.destination);
-    router.refresh();
   }
   return (
     <form method="post" className="signup__form" onSubmit={submit}>
