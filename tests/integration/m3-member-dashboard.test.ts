@@ -17,7 +17,6 @@ import { AppError } from "../../src/lib/api/errors";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { digestSessionToken } from "../../src/lib/security/secrets";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
-import { resetAcademicTermConfigForTests } from "../../src/lib/academic-term";
 import type { AuthorizedActor } from "../../src/types/contracts";
 import { MEMBER_SKILL_LIMIT } from "../../src/types/contracts";
 import { integrationTestsEnabled } from "./db-guard";
@@ -471,7 +470,6 @@ dbTest("M3 并发旧版本保存只有一次成功", async () => {
 // ---------------------------------------------------------------------------
 
 dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回", async () => {
-  resetAcademicTermConfigForTests();
   const ownerCreated = await createMember("工作台甲");
   const otherCreated = await createMember("工作台乙");
   const owner = memberActor(ownerCreated.member.userId, "req_m3_dash_owner");
@@ -523,9 +521,9 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   assert.equal(dashboard.repairSummary.totalApprovedCount.status, "AVAILABLE");
   assert.equal(dashboard.repairSummary.totalApprovedDurationMinutes.value, 120);
   assert.equal(dashboard.repairSummary.monthApprovedCount.value, 2);
-  // 学期未配置 → UNCONFIGURED 且 value 为 null（绝不为 0）
-  assert.equal(dashboard.repairSummary.termApprovedCount.status, "UNCONFIGURED");
-  assert.equal(dashboard.repairSummary.termApprovedCount.value, null);
+  // 学年口径固定可算（issue #178）：两条已通过都发生在今天 → 学年计数与本月一致。
+  assert.equal(dashboard.repairSummary.yearApprovedCount.status, "AVAILABLE");
+  assert.equal(dashboard.repairSummary.yearApprovedCount.value, 2);
   // M5 起正式统计统一由 Analytics 入口产出，来源标注随之改为 M5_ANALYTICS。
   assert.equal(dashboard.repairSummary.source, "M5_ANALYTICS");
   // 工作队列只数本人非删除记录
@@ -540,44 +538,26 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   assert.equal(dashboard.notifications.latest.length, 2);
   assert.equal(dashboard.favorites.available, true);
   assert.equal(dashboard.favorites.count, 0);
-  // M5 起排行占位被替换为真实的本学期维修数量榜预览；学期未配置时状态为 UNCONFIGURED。
+  // M5 起排行占位被替换为真实的本学年维修数量榜预览（口径固定，不存在「未配置」）。
   assert.equal(dashboard.ranking.available, true);
-  assert.equal(dashboard.ranking.scope, "TERM");
+  assert.equal(dashboard.ranking.scope, "ACADEMIC_YEAR");
   assert.equal(dashboard.ranking.metric, "REPAIR_COUNT");
-  assert.equal(dashboard.ranking.status, "UNCONFIGURED");
-  assert.deepEqual(dashboard.ranking.leaders, []);
+  assert.equal(dashboard.degraded.includes("ranking"), false);
   // 工作台摘要不含 QQ
   assert.doesNotMatch(JSON.stringify(dashboard.profile), /"qq"/);
 });
 
-dbTest("M3 学期配置后按 UTC 边界统计且月份边界正确", async () => {
-  const created = await createMember("学期");
-  const actor = memberActor(created.member.userId, "req_m3_term");
+dbTest("M3 学年口径覆盖今天：摘要与月份计数一致", async () => {
+  const created = await createMember("学年");
+  const actor = memberActor(created.member.userId, "req_m3_year");
   const today = new Date().toISOString().slice(0, 10);
 
-  // 学期覆盖今天
-  const year = Number(today.slice(0, 4));
-  process.env.ACADEMIC_TERM_START = `${year}-01-01`;
-  process.env.ACADEMIC_TERM_END = `${year}-12-31`;
-  resetAcademicTermConfigForTests();
-
-  try {
-    await createApprovedRepair(actor, { repairDate: today, durationMinutes: 45 });
-    const dashboard = await memberDashboardService.getDashboard(actor);
-    assert.equal(dashboard.repairSummary.termApprovedCount.status, "AVAILABLE");
-    assert.equal(dashboard.repairSummary.termApprovedCount.value, 1);
-    assert.equal(dashboard.repairSummary.monthApprovedCount.value, 1);
-  } finally {
-    delete process.env.ACADEMIC_TERM_START;
-    delete process.env.ACADEMIC_TERM_END;
-    resetAcademicTermConfigForTests();
-  }
+  await createApprovedRepair(actor, { repairDate: today, durationMinutes: 45 });
+  const dashboard = await memberDashboardService.getDashboard(actor);
+  assert.equal(dashboard.repairSummary.yearApprovedCount.status, "AVAILABLE");
+  assert.equal(dashboard.repairSummary.yearApprovedCount.value, 1);
+  assert.equal(dashboard.repairSummary.monthApprovedCount.value, 1);
 });
-
-// ---------------------------------------------------------------------------
-// 可见性与隐私
-// ---------------------------------------------------------------------------
-
 dbTest("M3 他人内部主页不返回未通过记录且裁剪受控字段", async () => {
   const target = await createMember("被查看");
   const viewer = await createMember("查看者");
@@ -814,7 +794,7 @@ dbTest("M3 成员接口响应信封固定为 success/data/meta 且带私有缓�
     currentMember: unknown;
   };
   assert.equal(ranking.available, true);
-  assert.equal(ranking.scope, "TERM");
+  assert.equal(ranking.scope, "ACADEMIC_YEAR");
   assert.equal(ranking.metric, "REPAIR_COUNT");
   assert.equal(Array.isArray(ranking.leaders), true);
   assert.deepEqual(Object.keys(ranking).sort(), [
@@ -824,7 +804,6 @@ dbTest("M3 成员接口响应信封固定为 success/data/meta 且带私有缓�
     "leaders",
     "metric",
     "scope",
-    "status",
   ]);
 });
 
@@ -855,49 +834,34 @@ dbTest("M3 越权字段被拒而不是被静默忽略", async () => {
 // 这些用例是对抗性的：如果拿掉修复，它们必须失败。
 // ---------------------------------------------------------------------------
 
-dbTest("回归：个人主页摘要与工作台使用同一日期口径（本月/本学期不再恒为空）", async () => {
+dbTest("回归：个人主页摘要与工作台使用同一日期口径（本月/本学年不再恒为空）", async () => {
   const created = await createMember("主页口径");
   const actor = memberActor(created.member.userId, "req_m3_profile_range");
   const today = new Date().toISOString().slice(0, 10);
 
-  // 配置一个覆盖今天的学期，让 termApprovedCount 有可比对的口径。
-  const year = Number(today.slice(0, 4));
-  process.env.ACADEMIC_TERM_START = `${year}-01-01`;
-  process.env.ACADEMIC_TERM_END = `${year}-12-31`;
-  resetAcademicTermConfigForTests();
+  await createApprovedRepair(actor, { repairDate: today, durationMinutes: 50 });
 
-  try {
-    await createApprovedRepair(actor, { repairDate: today, durationMinutes: 50 });
+  const self = await memberProfileService.getSelf(actor);
+  const dashboard = await memberDashboardService.getDashboard(actor);
 
-    const self = await memberProfileService.getSelf(actor);
-    const dashboard = await memberDashboardService.getDashboard(actor);
+  // 修复前：listMemberRepairSummary 未传区间 → month 恒为 0、学年计数恒为 UNAVAILABLE。
+  assert.equal(self.repairSummary.monthApprovedCount.value, 1, "个人主页本月计数必须真实");
+  assert.equal(self.repairSummary.yearApprovedCount.status, "AVAILABLE");
+  assert.equal(self.repairSummary.yearApprovedCount.value, 1, "个人主页学年计数必须真实");
 
-    // 修复前：listMemberRepairSummary 未传区间 → month 恒为 0、term 恒为 UNCONFIGURED。
-    assert.equal(self.repairSummary.monthApprovedCount.value, 1, "个人主页本月计数必须真实");
-    assert.equal(self.repairSummary.termApprovedCount.status, "AVAILABLE");
-    assert.equal(self.repairSummary.termApprovedCount.value, 1, "个人主页学期计数必须真实");
+  // 两个入口的日期口径必须完全一致（同一次调用窗口内）。
+  assert.deepEqual(
+    self.repairSummary.monthApprovedCount,
+    dashboard.repairSummary.monthApprovedCount,
+  );
+  assert.deepEqual(self.repairSummary.yearApprovedCount, dashboard.repairSummary.yearApprovedCount);
 
-    // 两个入口的日期口径必须完全一致（同一次调用窗口内）。
-    assert.deepEqual(
-      self.repairSummary.monthApprovedCount,
-      dashboard.repairSummary.monthApprovedCount,
-    );
-    assert.deepEqual(
-      self.repairSummary.termApprovedCount,
-      dashboard.repairSummary.termApprovedCount,
-    );
-
-    // 他人内部主页走同一条修复路径，同样不得退回 0 / UNCONFIGURED。
-    const viewer = await createMember("主页口径查看者");
-    const viewerActor = memberActor(viewer.member.userId, "req_m3_profile_range_viewer");
-    const internal = await memberProfileService.getInternal(created.member.id, viewerActor);
-    assert.equal(internal.repairSummary.monthApprovedCount.value, 1);
-    assert.equal(internal.repairSummary.termApprovedCount.value, 1);
-  } finally {
-    delete process.env.ACADEMIC_TERM_START;
-    delete process.env.ACADEMIC_TERM_END;
-    resetAcademicTermConfigForTests();
-  }
+  // 他人内部主页走同一条修复路径，同样不得退回 0 / UNAVAILABLE。
+  const viewer = await createMember("主页口径查看者");
+  const viewerActor = memberActor(viewer.member.userId, "req_m3_profile_range_viewer");
+  const internal = await memberProfileService.getInternal(created.member.id, viewerActor);
+  assert.equal(internal.repairSummary.monthApprovedCount.value, 1);
+  assert.equal(internal.repairSummary.yearApprovedCount.value, 1);
 });
 
 dbTest("回归：技能审计 before 记录的是移除前的真实集合，而不是空数组", async () => {
@@ -1024,7 +988,7 @@ dbTest("回归：单路查询失败只降级该区块，其余区块照常返回
 
   const summary = {
     totalApprovedCount: { value: 1, status: "AVAILABLE" as const },
-    termApprovedCount: { value: null, status: "UNCONFIGURED" as const },
+    yearApprovedCount: { value: 1, status: "AVAILABLE" as const },
     monthApprovedCount: { value: 1, status: "AVAILABLE" as const },
     totalApprovedDurationMinutes: { value: 20, status: "AVAILABLE" as const },
     source: "M2_APPROVED_REPAIRS" as const,
@@ -1079,6 +1043,7 @@ dbTest("回归：单路查询失败只降级该区块，其余区块照常返回
   // 日期口径解析在工作台与个人主页之间必须一致。
   const ranges = resolveMemberRanges(new Date());
   assert.ok(ranges.monthRange.endExclusive > ranges.monthRange.startInclusive);
+  assert.ok(ranges.yearRange.endExclusive > ranges.yearRange.startInclusive);
 
   const dashboard = await memberDashboardService.getDashboard(actor);
   assert.deepEqual(dashboard.degraded, []);

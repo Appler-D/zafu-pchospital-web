@@ -8,7 +8,7 @@
  * - 完整榜单与工作台预览**共用同一个 `buildRanking()`**，不写第二套排名逻辑；
  * - `currentMember` 由独立查询得到，**不受当前分页影响**；
  * - 零记录成员不入榜，此时 `currentMember` 为 `null`（页面显示「当前范围暂无上榜记录」）；
- * - 学期未配置时整份结果 `status: "UNCONFIGURED"`，**不伪装成空榜或 0**。
+ * - 学年区间固定可算（9/1 → 次年 9/1），因此不存在「未配置」态（issue #178）。
  */
 
 import { paginationMeta } from "@/lib/api/pagination";
@@ -39,7 +39,7 @@ import {
 import { resolveScopeRange, toAnalyticsRange } from "./analytics-view";
 
 export const rankingService: RankingServiceContract = {
-  async getRankings(input: RankingQueryInput, actor) {
+  async getRankings(input: RankingQueryInput, actor, now: Date = new Date()) {
     requirePermission(actor, "analytics:read_internal");
     const self = await memberProfileRepository.activeForUser(actor.userId);
     return buildRanking({
@@ -48,26 +48,25 @@ export const rankingService: RankingServiceContract = {
       page: input.page,
       pageSize: input.pageSize,
       currentMemberProfileId: self.id,
-      now: new Date(),
+      now,
     });
   },
 
-  async getTermPreview(memberProfileId, actor) {
+  async getYearPreview(memberProfileId, actor, now: Date = new Date()) {
     // 与 getRankings 同一道权限闸门：本方法接受显式 memberProfileId，
     // 不校验就会变成读任意成员名次的旁路。
     requirePermission(actor, "analytics:read_internal");
     const ranking = await buildRanking({
-      scope: "TERM",
+      scope: "ACADEMIC_YEAR",
       metric: "REPAIR_COUNT",
       page: 1,
       pageSize: RANKING_PREVIEW_LIMIT,
       currentMemberProfileId: memberProfileId,
-      now: new Date(),
+      now,
     });
     return {
       available: true,
-      status: ranking.status,
-      scope: "TERM",
+      scope: "ACADEMIC_YEAR",
       metric: "REPAIR_COUNT",
       leaders: ranking.items,
       currentMember: ranking.currentMember,
@@ -94,25 +93,14 @@ type BuildRankingOptions = {
  * 2. 用 `resolveDisplayName()` 统一回退展示名，**不返回任何身份字段**。
  */
 async function buildRanking(options: BuildRankingOptions): Promise<RankingResult> {
-  const { status, range } = resolveScopeRange(options.scope, options.now);
+  const { range } = resolveScopeRange(options.scope, options.now);
   const base = {
     scope: options.scope,
     metric: options.metric,
-    status,
     range: toAnalyticsRange(range),
     source: "M5_ANALYTICS" as const,
     generatedAt: new Date().toISOString(),
   };
-
-  // 学期未配置：不查库、不给空榜，明确返回 UNCONFIGURED 让页面显示「待配置」。
-  if (status === "UNCONFIGURED") {
-    return {
-      ...base,
-      items: [],
-      currentMember: null,
-      pagination: paginationMeta({ page: options.page, pageSize: options.pageSize }, 0),
-    };
-  }
 
   const skip = (options.page - 1) * options.pageSize;
   const [rows, total, currentRow] = await Promise.all([

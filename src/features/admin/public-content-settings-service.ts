@@ -25,7 +25,7 @@ export const PUBLIC_CONTENT_SETTINGS_ID = "public-content";
  * 未配置时的契约默认值：**三个开关全关，展示名取昵称**。
  *
  * 保守默认是刻意的 —— 表里没有行时（全新部署、M7 尚未接入）官网不应该展示任何真实统计，
- * 而不是因为「读不到配置」就退化成公开。这与 M3 的 `UNCONFIGURED` 口径一致：
+ * 而不是因为「读不到配置」就退化成公开。这与 M3 的 `UNAVAILABLE` 口径一致：
  * 未知不等于开放。展示名默认 `NICKNAME`：即使管理员打开了排行榜，
  * 默认也不会把成员真实姓名推到公网。
  */
@@ -57,7 +57,7 @@ export const publicContentSettingsService: PublicContentSettingsServiceContract 
   ): Promise<PublicContentSettings> {
     requirePermission(actor, "settings:manage");
     validate(input);
-    // 不变量：辅助数据（本学期数 / 累计时长）不能脱离主数据（累计服务台数）单独存在。
+    // 不变量：辅助数据（本学年数 / 累计时长）不能脱离主数据（累计服务台数）单独存在。
     // 主开关关掉时**归零而不是报错** —— 否则管理员想关掉首页统计，
     // 会因为「辅助数据那格还留着 true」被 400 拦住，得先去点两次才能达成一个动作。
     const normalized: UpdatePublicContentSettingsInput = {

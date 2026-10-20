@@ -8,7 +8,7 @@ import {
   publicHomeService,
   publicRankingName,
 } from "../../src/features/analytics/public-home-service";
-import { resetAcademicTermConfigForTests } from "../../src/lib/academic-term";
+import { shanghaiAcademicYearRange } from "../../src/lib/academic-term";
 import type { PrismaClient } from "../../src/generated/prisma/client";
 import type { PublicHomeAnalytics } from "../../src/types/contracts";
 
@@ -18,11 +18,6 @@ import type { PublicHomeAnalytics } from "../../src/types/contracts";
 function fixture(t: TestContext) {
   const globals = globalThis as typeof globalThis & { __pcHospitalDb?: PrismaClient };
   const previousDb = globals.__pcHospitalDb;
-  const previousStart = process.env.ACADEMIC_TERM_START;
-  const previousEnd = process.env.ACADEMIC_TERM_END;
-  delete process.env.ACADEMIC_TERM_START;
-  delete process.env.ACADEMIC_TERM_END;
-  resetAcademicTermConfigForTests();
   const policy = {
     publicRepairStatsEnabled: true,
     publicRepairStatsDetailEnabled: true,
@@ -66,22 +61,33 @@ function fixture(t: TestContext) {
   globals.__pcHospitalDb = db as unknown as PrismaClient;
   t.after(() => {
     globals.__pcHospitalDb = previousDb;
-    if (previousStart === undefined) delete process.env.ACADEMIC_TERM_START;
-    else process.env.ACADEMIC_TERM_START = previousStart;
-    if (previousEnd === undefined) delete process.env.ACADEMIC_TERM_END;
-    else process.env.ACADEMIC_TERM_END = previousEnd;
-    resetAcademicTermConfigForTests();
   });
   return {
     policy,
     db,
     counts,
     queries: () => ({ aggregates, rankingQueries, memberQueries }),
-    configureTerm() {
-      process.env.ACADEMIC_TERM_START = "2026-09-01";
-      process.env.ACADEMIC_TERM_END = "2027-01-31";
-      resetAcademicTermConfigForTests();
-    },
+  };
+}
+
+/** 服务端在**同一次**统计里下发的学年 DTO；用同一段区间对账，避免各算各的。 */
+function yearDto(): PublicHomeAnalytics["academicYear"] {
+  const year = shanghaiAcademicYearRange(new Date());
+  return {
+    label: year.label,
+    startInclusive: year.startInclusive.toISOString(),
+    endExclusive: year.endExclusive.toISOString(),
+  };
+}
+
+/** 学年区间的 DATE 边界（`repair_date` 是 DATE 列，见 toDateOnlyBounds）。 */
+function yearDateBounds(): { gte: Date; lt: Date } {
+  const year = shanghaiAcademicYearRange(new Date());
+  const start = new Date(year.startInclusive.getTime() + 8 * 60 * 60 * 1000);
+  const end = new Date(year.endExclusive.getTime() + 8 * 60 * 60 * 1000);
+  return {
+    gte: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())),
+    lt: new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())),
   };
 }
 
@@ -89,13 +95,14 @@ test("公开策略缺行、读取失败或全关：没有任何数据查询或�
   const f = fixture(t);
   f.policy.publicRepairStatsEnabled = false;
   f.policy.publicRankingsEnabled = false;
-  assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+  const hidden = { academicYear: yearDto(), repairStats: null, rankings: null };
+  assert.deepEqual(await publicHomeService.get(), hidden);
   f.db.publicContentSetting.findUnique = async () => null;
-  assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+  assert.deepEqual(await publicHomeService.get(), hidden);
   f.db.publicContentSetting.findUnique = async () => {
     throw new Error("database unavailable");
   };
-  assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+  assert.deepEqual(await publicHomeService.get(), hidden);
   assert.equal(f.counts.length, 0);
   assert.deepEqual(f.queries(), { aggregates: 0, rankingQueries: 0, memberQueries: 0 });
 });
@@ -105,45 +112,43 @@ test("辅助开关关闭：只查询并输出总量；后续请求重新读取�
   f.policy.publicRepairStatsDetailEnabled = false;
   f.policy.publicRankingsEnabled = false;
   assert.deepEqual(await publicHomeService.get(), {
+    academicYear: yearDto(),
     repairStats: { totalApprovedCount: 7 },
     rankings: null,
   });
   assert.deepEqual(f.counts, [{ where: { status: "APPROVED", deletedAt: null } }]);
   assert.equal(f.queries().aggregates, 0);
   f.policy.publicRepairStatsEnabled = false;
-  assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+  assert.deepEqual(await publicHomeService.get(), {
+    academicYear: yearDto(),
+    repairStats: null,
+    rankings: null,
+  });
   assert.equal(f.counts.length, 1);
 });
 
-test("未配置学期：总量与时长有效，学期指标待配置，不执行无范围排行查询", async (t) => {
+test("学年固定可算：总量 / 学年数 / 时长都有效，排行按学年查询（不再有「待配置」）", async (t) => {
   const f = fixture(t);
   const result = await publicHomeService.get();
   assert.deepEqual(result, {
+    academicYear: yearDto(),
     repairStats: {
       totalApprovedCount: 7,
-      details: {
-        termApprovedCount: { value: null, status: "UNCONFIGURED" },
-        totalApprovedDurationMinutes: 90,
-      },
+      details: { yearApprovedCount: 2, totalApprovedDurationMinutes: 90 },
     },
-    rankings: { status: "UNCONFIGURED", items: [] },
+    rankings: { items: [{ rank: 1, displayName: "成员", approvedCount: 2 }] },
   });
-  assert.equal(f.queries().rankingQueries, 0);
+  assert.equal(f.queries().rankingQueries, 1);
+  assert.equal(JSON.stringify(result).includes("UNCONFIGURED"), false);
 });
 
-test("学期首末边界走 DATE 口径；昵称缺失不公开实名、账号或后台 ID", async (t) => {
+test("学年首末边界走 DATE 口径；昵称缺失不公开实名、账号或后台 ID", async (t) => {
   const f = fixture(t);
-  f.configureTerm();
   const result = await publicHomeService.get();
   assert.deepEqual(f.counts[1], {
-    where: {
-      status: "APPROVED",
-      deletedAt: null,
-      repairDate: { gte: new Date("2026-09-01T00:00:00Z"), lt: new Date("2027-02-01T00:00:00Z") },
-    },
+    where: { status: "APPROVED", deletedAt: null, repairDate: yearDateBounds() },
   });
   assert.deepEqual(result.rankings, {
-    status: "AVAILABLE",
     items: [{ rank: 1, displayName: "成员", approvedCount: 2 }],
   });
   const json = JSON.stringify(result);
@@ -161,7 +166,6 @@ test("学期首末边界走 DATE 口径；昵称缺失不公开实名、账号�
 
 test("隐藏姓名时不读取成员资料；实名与昵称模式各自独立", async (t) => {
   const f = fixture(t);
-  f.configureTerm();
   f.policy.rankingDisplayName = "HIDDEN";
   assert.equal((await publicHomeService.get()).rankings?.items[0].displayName, "成员");
   assert.equal(f.queries().memberQueries, 0);
@@ -175,7 +179,6 @@ test("隐藏姓名时不读取成员资料；实名与昵称模式各自独立",
 
 test("统计失败不隐藏正常排行，排行失败不隐藏正常统计", async (t) => {
   const f = fixture(t);
-  f.configureTerm();
   const count = f.db.repairRecord.count;
   f.db.repairRecord.count = async () => {
     throw new Error("stats unavailable");
@@ -192,36 +195,33 @@ test("统计失败不隐藏正常排行，排行失败不隐藏正常统计", as
   assert.equal(statsOnly.rankings, null);
 });
 
-test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内容分别展示", () => {
+test("首页 DOM：全关隐藏；学年标识、零值、空榜和启用内容分别展示", () => {
+  const year = { label: "2026–2027 学年", startInclusive: "", endExclusive: "" };
   const render = (data: PublicHomeAnalytics) =>
     renderToStaticMarkup(React.createElement(HomePublicAnalytics, { data }));
-  assert.equal(render({ repairStats: null, rankings: null }), "");
+  assert.equal(render({ academicYear: year, repairStats: null, rankings: null }), "");
   const stats = {
     totalApprovedCount: 0,
-    details: {
-      termApprovedCount: { value: null, status: "UNCONFIGURED" as const },
-      totalApprovedDurationMinutes: 90,
-    },
+    details: { yearApprovedCount: 0, totalApprovedDurationMinutes: 90 },
   };
-  const pending = render({ repairStats: stats, rankings: { status: "UNCONFIGURED", items: [] } });
+  const pending = render({ academicYear: year, repairStats: stats, rankings: { items: [] } });
   const text = pending.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
   assert.match(text, /0 台/);
   assert.match(text, /1.5 小时/);
-  assert.match(pending, /本学期排行待配置/);
+  // 学年标识来自服务端下发的同一段区间，不是前端自己拼的「本学年」
+  assert.match(text, /2026–2027 学年维修/);
+  assert.match(text, /2026–2027 学年维修排行/);
+  assert.doesNotMatch(text, /待配置/);
   assert.equal((pending.match(/<dt>/g) ?? []).length, 3);
   assert.equal((pending.match(/<caption>/g) ?? []).length, 1);
   assert.match(pending, /<th scope="col">排名<\/th>/);
   assert.match(pending, /<th scope="col">成员<\/th>/);
   assert.match(pending, /<th scope="col">维修次数<\/th>/);
-  assert.doesNotMatch(pending, /暂无上榜记录/);
-  assert.match(
-    render({ repairStats: null, rankings: { status: "AVAILABLE", items: [] } }),
-    /暂无上榜记录/,
-  );
+  assert.match(pending, /暂无上榜记录/);
   const enabled = render({
+    academicYear: year,
     repairStats: null,
     rankings: {
-      status: "AVAILABLE",
       items: [{ rank: 1, displayName: "公开昵称", approvedCount: 2 }],
     },
   });
@@ -233,7 +233,6 @@ test("首页 DOM：全关隐藏；真实零值、待配置、空榜和启用内�
 
 test("首页公开数据是 Hero 与跑马灯之间的独立第二屏；全关时无空白区块", async (t) => {
   const f = fixture(t);
-  f.configureTerm();
   // Icon 的图形在模块加载时创建，须在测试的 React 全局初始化之后加载 Hero。
   const { Hero } = await import("../../src/components/home/Hero");
   const { default: HomePage } = await import("../../src/app/page");
@@ -265,10 +264,11 @@ test("首页公开数据是 Hero 与跑马灯之间的独立第二屏；全关�
 });
 
 test("第二屏独立开关：详细统计关闭不泄露辅助指标，并列与同名成员不丢行", () => {
+  const year = { label: "2026–2027 学年", startInclusive: "", endExclusive: "" };
   const visible: PublicHomeAnalytics = {
+    academicYear: year,
     repairStats: { totalApprovedCount: 7 },
     rankings: {
-      status: "AVAILABLE",
       items: [
         { rank: 1, displayName: "成员", approvedCount: 2 },
         { rank: 1, displayName: "成员", approvedCount: 2 },
@@ -281,18 +281,19 @@ test("第二屏独立开关：详细统计关闭不泄露辅助指标，并列�
   assert.equal((html.match(/aria-label="第 1 名"/g) ?? []).length, 2);
   assert.equal((html.match(/<th scope="row">成员<\/th>/g) ?? []).length, 2);
   assert.equal((html.match(/<dt>/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /累计维修时长|<dt>本学期维修<\/dt>/);
+  assert.doesNotMatch(html, /累计维修时长|<dt>2026–2027 学年维修<\/dt>/);
   const statsOnly = render({ ...visible, rankings: null });
   assert.match(statsOnly, /累计服务设备/);
-  assert.doesNotMatch(statsOnly, /<table|本学期维修排行/);
+  assert.doesNotMatch(statsOnly, /<table|2026–2027 学年维修排行/);
   const rankingOnly = render({ ...visible, repairStats: null });
-  assert.match(rankingOnly, /本学期维修排行/);
+  assert.match(rankingOnly, /2026–2027 学年维修排行/);
+  assert.match(rankingOnly, /按2026–2027 学年审核通过的维修次数排序/);
   assert.doesNotMatch(rankingOnly, /<dl|累计服务设备/);
   assert.match(
     render({
+      academicYear: year,
       repairStats: null,
       rankings: {
-        status: "AVAILABLE",
         items: [{ rank: 1, displayName: '<script>alert("x")</script>', approvedCount: 0 }],
       },
     }),

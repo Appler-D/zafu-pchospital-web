@@ -1029,7 +1029,7 @@ export const adminCopy = {
       title: "首页维修数据",
       enabled: "展示累计维修设备数",
       enabledHint: "只统计已审核通过、未删除的记录，草稿与异常记录不计入。",
-      detail: "同时展示本学期维修数与累计维修时长",
+      detail: "同时展示本学年维修数与累计维修时长",
       detailHint: "需要先打开上一项；主开关关闭时本项会自动关闭。",
     },
     rankings: {
@@ -1056,17 +1056,17 @@ export const adminCopy = {
        管理员判断的是「官网上会看到什么」，那就把官网长什么样摆出来。 */
     preview: {
       title: "首页预览",
-      note: "这里只预览展示方式，维修数据用「—」占位，排行榜的名次与人数仅为示意。保存后刷新官网首页即可查看实际效果；本学期数据需先配置学期区间。",
+      note: "这里只预览展示方式，数值用「—」占位，排行榜的名次与人数仅为示意。保存后刷新官网首页即可查看实际效果；学年区间由日期自动推导（9/1 → 次年 9/1），无需配置。",
       statsOff: "首页不展示维修统计。",
       statsTotal: "累计服务",
       statsTotalUnit: "台设备",
-      statsTerm: "本学期维修",
+      statsTerm: "{academicYear}维修",
       statsTermUnit: "台",
       statsDuration: "累计维修时长",
       statsDurationUnit: "小时",
       placeholder: "—",
       rankingsOff: "首页不展示排行榜。",
-      rankingsTitle: "本学期维修排行",
+      rankingsTitle: "{academicYear}维修排行",
       rankingsHidden: "已隐藏",
       /** 示意用的名次与数量（需求 §32 的例子），不是真实数据。 */
       rankingCounts: [26, 21, 18],

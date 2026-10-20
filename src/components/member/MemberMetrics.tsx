@@ -2,15 +2,15 @@ import { memberCopy, formatDurationMinutes } from "@/config/member";
 import type { MemberRepairSummary, MetricValue } from "@/types/contracts";
 
 /**
- * MemberMetrics —— 维修指标卡（累计 / 本学期 / 本月 / 累计时长）
+ * MemberMetrics —— 维修指标卡（累计 / 本学年 / 本月 / 累计时长）
  *
  * 数据全部来自 `MemberRepairSummary`，即 M2 的「已通过维修」正式统计口径
  * （`source: "M2_APPROVED_REPAIRS"`）。本组件**不做任何再统计**，
  * 只是把服务端给出的 `MetricValue` 呈现出来。
  *
- * 关键约束：`status === "UNCONFIGURED"`（如学期区间未配置）时显示「待配置」，
+ * 关键约束：`status === "UNAVAILABLE"`（区块聚合失败）时显示「暂不可用」，
  * **绝不**回退为伪造的「0 次」—— `value` 此时必为 `null`，
- * 出现 `AVAILABLE` + `null` 的组合只能说明上游违约，这里按未配置渲染兜底。
+ * 出现 `AVAILABLE` + `null` 的组合只能说明上游违约，这里按不可用渲染兜底。
  *
  * 计数类的渲染是「大号数字 + 小号单位 span」，不要改用 `config/member.ts` 的
  * `formatCount()`：那个helper返回的字符串自带「次」，叠上单位 span 就是「1 次次」。
@@ -19,11 +19,11 @@ import type { MemberRepairSummary, MetricValue } from "@/types/contracts";
 export type MemberMetricsProps = {
   summary: MemberRepairSummary;
   /** 指标标题覆盖：个人资料页与工作台共用同一组件 */
-  labels?: Partial<Record<"total" | "term" | "month" | "duration", string>>;
+  labels?: Partial<Record<"total" | "year" | "month" | "duration", string>>;
 };
 
 type MetricEntry = {
-  key: "total" | "term" | "month" | "duration";
+  key: "total" | "year" | "month" | "duration";
   label: string;
   metric: MetricValue;
   unit?: string;
@@ -41,9 +41,9 @@ export function MemberMetrics({ summary, labels }: MemberMetricsProps) {
       unit: copy.unitCount,
     },
     {
-      key: "term",
-      label: labels?.term ?? copy.metricTerm,
-      metric: summary.termApprovedCount,
+      key: "year",
+      label: labels?.year ?? copy.metricYear,
+      metric: summary.yearApprovedCount,
       unit: copy.unitCount,
     },
     {
@@ -81,7 +81,7 @@ function isUnavailable(entry: MetricEntry): boolean {
 }
 
 function renderValue(entry: MetricEntry) {
-  if (isUnavailable(entry)) return memberCopy.common.unconfigured;
+  if (isUnavailable(entry)) return memberCopy.common.unavailable;
 
   const value = entry.metric.value as number;
   if (entry.duration) return formatDurationMinutes(value);

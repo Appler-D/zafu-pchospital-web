@@ -20,7 +20,7 @@ export default async function MemberRankingsPage() {
 
   return (
     <Section variant="page-head" className="member-workspace" labelledBy="member-rankings-title">
-      <RankingsPageBody scope="TERM" metric="REPAIR_COUNT" />
+      <RankingsPageBody scope="ACADEMIC_YEAR" metric="REPAIR_COUNT" />
     </Section>
   );
 }

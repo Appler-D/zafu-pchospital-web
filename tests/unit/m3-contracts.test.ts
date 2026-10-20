@@ -38,7 +38,6 @@ test("M3 稳定错误码已进入公共契约", () => {
     "SKILL_NOT_FOUND",
     "SKILL_INACTIVE",
     "SKILL_SELECTION_INVALID",
-    "ACADEMIC_TERM_CONFIG_INVALID",
     "VALIDATION_FAILED",
   ] as const) {
     assert.equal(ApiErrorCode.includes(code), true, `错误码 ${code} 未包含在 ApiErrorCode 中`);
@@ -53,8 +52,6 @@ test("M3 冲突类错误码映射为 409，非法输入为 400", () => {
   assert.equal(statusOf("SKILL_INACTIVE"), 409);
   // 不存在、软删除与无权访问统一 404，避免成员枚举。
   assert.equal(statusOf("MEMBER_PROFILE_NOT_FOUND"), 404);
-  // 学期配置错误属于服务端配置问题，不是用户输入问题。
-  assert.equal(statusOf("ACADEMIC_TERM_CONFIG_INVALID"), 500);
 });
 
 test("M3 新增权限已定义且仅授予对应角色", () => {
@@ -83,11 +80,11 @@ test("M3 限额常量与任务书一致", () => {
   assert.equal(MEMBER_RECENT_REPAIR_LIMIT, 5);
 });
 
-test("未配置指标显示为「待配置」而不是 0", () => {
-  const label = memberCopy.common.unconfigured;
+test("聚合失败指标显示为「暂不可用」而不是 0", () => {
+  const label = memberCopy.common.unavailable;
   assert.equal(formatCount(null, label), label);
   assert.notEqual(formatCount(null, label), "0 次");
-  // AVAILABLE 的 0 与 UNCONFIGURED 必须能区分：0 是真实值，应显示「0 次」。
+  // AVAILABLE 的 0 与 UNAVAILABLE 必须能区分：0 是真实值，应显示「0 次」。
   assert.equal(formatCount(0, label), "0 次");
 });
 

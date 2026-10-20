@@ -3,12 +3,11 @@ import { memberCopy } from "@/config/member";
 import type { MemberRankingPreview } from "@/types/contracts";
 
 /**
- * 工作台「维修排行」预览（本学期 + 维修数量，前 3 名）。
+ * 工作台「维修排行」预览（本学年 + 维修数量，前 3 名）。
  *
  * 三种状态可区分：
  * - `available: false`（区块加载失败）→ 由外层按 `degraded` 渲染局部错误，
  *   本组件返回 `null`，**不在这里把失败画成空榜**；
- * - `status: "UNCONFIGURED"`（学期未配置）→ 明确提示「待配置」；
  * - 正常 → 前 3 名 + 「我的排名」。
  *
  * 这里只做预览，不再带「查看完整排行榜」的入口：榜单页收在侧栏足部的「设置」里，
@@ -21,13 +20,11 @@ export function MemberRankingPreviewView({ preview }: { preview: MemberRankingPr
 
   const copy = memberCopy.dashboard;
 
-  if (preview.status === "UNCONFIGURED") {
-    return <p className="member-section__note">{copy.rankingUnconfigured}</p>;
-  }
-
   return (
     <div className="ranking-preview">
-      <p className="ranking-preview__meta">{copy.rankingTopLabel.replace("{count}", String(preview.leaders.length))}</p>
+      <p className="ranking-preview__meta">
+        {copy.rankingTopLabel.replace("{count}", String(preview.leaders.length))}
+      </p>
 
       {preview.leaders.length === 0 ? (
         <p className="member-section__note">{copy.rankingEmpty}</p>

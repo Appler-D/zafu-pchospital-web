@@ -19,9 +19,9 @@ test("M5 枚举已进入公共契约且无重复值", () => {
   for (const values of [AnalyticsScope, RankingMetric, AnalyticsStatus]) {
     assert.equal(new Set(values).size, values.length);
   }
-  assert.deepEqual([...AnalyticsScope], ["MONTH", "TERM", "ALL_TIME"]);
+  assert.deepEqual([...AnalyticsScope], ["MONTH", "ACADEMIC_YEAR", "ALL_TIME"]);
   assert.deepEqual([...RankingMetric], ["REPAIR_COUNT", "DURATION_MINUTES"]);
-  assert.deepEqual([...AnalyticsStatus], ["AVAILABLE", "UNCONFIGURED"]);
+  assert.deepEqual([...AnalyticsStatus], ["AVAILABLE", "UNAVAILABLE"]);
 });
 
 test("M5 稳定错误码已入册并映射为 400", () => {

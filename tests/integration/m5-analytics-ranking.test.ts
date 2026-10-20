@@ -12,11 +12,7 @@ import {
 import { memberDashboardService } from "../../src/features/member-dashboard/member-dashboard-service";
 import { memberProfileService } from "../../src/features/member-profile/member-profile-service";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
-import {
-  recentShanghaiMonths,
-  resetAcademicTermConfigForTests,
-  shanghaiMonthRange,
-} from "../../src/lib/academic-term";
+import { recentShanghaiMonths, shanghaiMonthRange } from "../../src/lib/academic-term";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { digestSessionToken } from "../../src/lib/security/secrets";
 import type { AuthorizedActor, AnalyticsScope, RankingMetric } from "../../src/types/contracts";
@@ -34,7 +30,6 @@ dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设�
     where: { id: PUBLIC_CONTENT_SETTINGS_ID },
   });
   try {
-    useControlledTerm();
     const a = await createMember("公开甲");
     const b = await createMember("公开乙");
     const admin: AuthorizedActor = {
@@ -48,7 +43,7 @@ dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设�
       rankingDisplayName: "NICKNAME" as const,
     };
     await publicContentSettingsService.update(policy, admin);
-    const baseline = await publicHomeService.get();
+    const baseline = await publicHomeService.get(CONTROLLED_NOW);
     const recordId = await seedRepair(a.memberProfileId, {
       date: CONTROLLED_DAY,
       durationMinutes: 60,
@@ -66,7 +61,7 @@ dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设�
       await seedRepair(a.memberProfileId, { date: CONTROLLED_DAY, status });
     }
     await seedRepair(a.memberProfileId, { date: CONTROLLED_DAY, deleted: true });
-    const visible = await publicHomeService.get();
+    const visible = await publicHomeService.get(CONTROLLED_NOW);
     assert.equal(
       visible.repairStats?.totalApprovedCount,
       baseline.repairStats!.totalApprovedCount + 1,
@@ -76,8 +71,8 @@ dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设�
       baseline.repairStats!.details!.totalApprovedDurationMinutes + 60,
     );
     assert.equal(
-      visible.repairStats?.details?.termApprovedCount.value,
-      baseline.repairStats!.details!.termApprovedCount.value! + 1,
+      visible.repairStats?.details?.yearApprovedCount,
+      baseline.repairStats!.details!.yearApprovedCount + 1,
     );
     assert.equal(visible.rankings?.items.length, 2);
     assert.deepEqual(
@@ -91,13 +86,20 @@ dbTest("#115 后台保存后首页读取实时统计：多人参与不放大设�
       assert.deepEqual(Object.keys(entry).sort(), ["approvedCount", "displayName", "rank"]);
     }
     await db.repairRecord.update({ where: { id: recordId }, data: { status: "REJECTED" } });
-    assert.deepEqual((await publicHomeService.get()).repairStats, baseline.repairStats);
-    assert.deepEqual((await publicHomeService.get()).rankings, baseline.rankings);
+    assert.deepEqual(
+      (await publicHomeService.get(CONTROLLED_NOW)).repairStats,
+      baseline.repairStats,
+    );
+    assert.deepEqual((await publicHomeService.get(CONTROLLED_NOW)).rankings, baseline.rankings);
     await publicContentSettingsService.update(
       { ...policy, publicRepairStatsEnabled: false, publicRankingsEnabled: false },
       admin,
     );
-    assert.deepEqual(await publicHomeService.get(), { repairStats: null, rankings: null });
+    assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), {
+      academicYear: baseline.academicYear,
+      repairStats: null,
+      rankings: null,
+    });
   } finally {
     // 全局配置必须连同修改人、时间原样恢复，不能影响其它测试。
     if (previousPolicy) {
@@ -281,17 +283,17 @@ async function seedRepair(
  * 名次 / 总数 / 分页的用例，都改用 TERM 范围并落在这样一个「过去、且只有本文件会用」
  * 的月份里，从而把榜单成员集合收敛成可预期的本文档 fixture。
  */
-const CONTROLLED_TERM_START = "2020-01-01";
-const CONTROLLED_TERM_END = "2020-01-31";
-const CONTROLLED_MONTH = "2020-01";
+/**
+ * 固定时钟（issue #178：学年不再可配置）：把「现在」钉在上海 2020-10-15，
+ * 学年窗口即 2020–2021，继续与本文件之外的「今天/本月」fixture 隔离。
+ * 需要精确断言的用例把 `CONTROLLED_NOW` 传给服务，生产调用一律走默认的当前时刻。
+ */
+const CONTROLLED_NOW = new Date("2020-10-15T12:00:00.000Z");
+const CONTROLLED_YEAR_START = "2020-09-01";
+const CONTROLLED_YEAR_END = "2021-08-31";
+const CONTROLLED_MONTH = "2020-10";
 /** 受控窗口内的一天，用于聚合测试。 */
 const CONTROLLED_DAY = `${CONTROLLED_MONTH}-15`;
-
-function useControlledTerm(): void {
-  process.env.ACADEMIC_TERM_START = CONTROLLED_TERM_START;
-  process.env.ACADEMIC_TERM_END = CONTROLLED_TERM_END;
-  resetAcademicTermConfigForTests();
-}
 
 /** 当前上海自然月的 `YYYY-MM` 与若干可控日期。 */
 function monthKeys() {
@@ -366,10 +368,6 @@ before(async () => {
 beforeEach(async () => {
   if (!enabled) return;
   await prepareFixtures();
-  // 每个用例都从「学期未配置」开始，避免跨用例串味。
-  delete process.env.ACADEMIC_TERM_START;
-  delete process.env.ACADEMIC_TERM_END;
-  resetAcademicTermConfigForTests();
 });
 
 after(async () => {
@@ -456,105 +454,77 @@ dbTest("M5 月边界：上月末不计入本月，本月首末两天都计入（
     { scope: "MONTH", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
     lastDay.actor,
   );
-  assert.equal(monthRanking.status, "AVAILABLE");
   assert.equal(monthRanking.currentMember?.approvedCount, 1, "榜单与摘要必须使用同一有效记录集合");
 });
 
-dbTest("M5 学期边界：学期前一天不计入，学期首末两天都计入（issue #75）", async () => {
-  useControlledTerm();
-  try {
-    const before = await createMember("学期前");
-    const firstDay = await createMember("学期首");
-    const lastDay = await createMember("学期末");
-    await seedRepair(before.memberProfileId, { date: "2019-12-31" });
-    await seedRepair(firstDay.memberProfileId, { date: CONTROLLED_TERM_START });
-    await seedRepair(lastDay.memberProfileId, { date: CONTROLLED_TERM_END });
+dbTest("M5 学年边界：9/1 前不计入，学年首末两天都计入（issue #75）", async () => {
+  const before = await createMember("学年开始前");
+  const firstDay = await createMember("学年首");
+  const lastDay = await createMember("学年末");
+  await seedRepair(before.memberProfileId, { date: "2020-08-31" });
+  await seedRepair(firstDay.memberProfileId, { date: CONTROLLED_YEAR_START });
+  await seedRepair(lastDay.memberProfileId, { date: CONTROLLED_YEAR_END });
 
-    const termCounts = await Promise.all(
-      [before, firstDay, lastDay].map(async (m) => {
-        const analytics = await analyticsService.getMemberAnalytics(m.actor);
-        assert.equal(analytics.summary.termApprovedCount.status, "AVAILABLE");
-        return analytics.summary.termApprovedCount.value;
-      }),
-    );
-    assert.deepEqual(
-      termCounts,
-      [0, 1, 1],
-      `学期窗口 ${CONTROLLED_TERM_START}~${CONTROLLED_TERM_END}：前一天 2019-12-31 不得计入，首末两天必须计入`,
-    );
-
-    const dashboard = await memberDashboardService.getDashboard(lastDay.actor);
-    assert.equal(
-      dashboard.repairSummary.termApprovedCount.value,
-      1,
-      "M3 工作台与 M5 摘要口径必须一致",
-    );
-  } finally {
-    delete process.env.ACADEMIC_TERM_START;
-    delete process.env.ACADEMIC_TERM_END;
-    resetAcademicTermConfigForTests();
-  }
-});
-
-dbTest("M5 学期未配置返回 UNCONFIGURED，配置后按学期区间统计", async () => {
-  const a = await createMember("学期");
-  const { current, now } = monthKeys();
-  await seedRepair(a.memberProfileId, { date: `${current}-10` });
-
-  const unconfigured = await analyticsService.getMemberAnalytics(a.actor);
-  assert.equal(unconfigured.summary.termApprovedCount.status, "UNCONFIGURED");
-  assert.equal(unconfigured.summary.termApprovedCount.value, null);
-
-  const year = now.getUTCFullYear();
-  process.env.ACADEMIC_TERM_START = `${year}-01-01`;
-  process.env.ACADEMIC_TERM_END = `${year}-12-31`;
-  resetAcademicTermConfigForTests();
-  try {
-    const configured = await analyticsService.getMemberAnalytics(a.actor);
-    assert.equal(configured.summary.termApprovedCount.status, "AVAILABLE");
-    assert.equal(configured.summary.termApprovedCount.value, 1);
-
-    const term = await rankingService.getRankings(
-      { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
-      a.actor,
-    );
-    assert.equal(term.status, "AVAILABLE");
-    // 学期未配置时要返回 UNCONFIGURED 空结果，而不是空榜
-    assert.equal(
-      term.items.some((i) => i.memberProfileId === a.memberProfileId),
-      true,
-    );
-  } finally {
-    delete process.env.ACADEMIC_TERM_START;
-    delete process.env.ACADEMIC_TERM_END;
-    resetAcademicTermConfigForTests();
-  }
-});
-
-dbTest("M5 学期未配置时榜单为 UNCONFIGURED 且不伪造空榜", async () => {
-  const a = await createMember("未配置");
-  const { current } = monthKeys();
-  await seedRepair(a.memberProfileId, { date: `${current}-10` });
-
-  const term = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
-    a.actor,
+  const yearCounts = await Promise.all(
+    [before, firstDay, lastDay].map(async (m) => {
+      const analytics = await analyticsService.getMemberAnalytics(m.actor, CONTROLLED_NOW);
+      return analytics.summary.yearApprovedCount.value;
+    }),
   );
-  assert.equal(term.status, "UNCONFIGURED");
-  assert.deepEqual(term.items, []);
-  assert.equal(term.currentMember, null);
-  assert.equal(term.pagination.total, 0);
-  assert.deepEqual(term.range, {
-    startInclusive: null,
-    endExclusive: null,
-    timezone: "Asia/Shanghai",
-  });
+  assert.deepEqual(
+    yearCounts,
+    [0, 1, 1],
+    `学年窗口 ${CONTROLLED_YEAR_START}~${CONTROLLED_YEAR_END}：前一天 2020-08-31 不得计入，首末两天必须计入`,
+  );
+
+  const dashboard = await memberDashboardService.getDashboard(lastDay.actor, CONTROLLED_NOW);
+  assert.equal(
+    dashboard.repairSummary.yearApprovedCount.value,
+    1,
+    "M3 工作台与 M5 摘要口径必须一致",
+  );
+});
+
+dbTest("M5 学年口径固定可算：不再依赖配置，窗口内计数与榜单一致", async () => {
+  const a = await createMember("学年");
+  await seedRepair(a.memberProfileId, { date: CONTROLLED_DAY });
+  await seedRepair(a.memberProfileId, { date: "2020-08-31" });
+
+  const analytics = await analyticsService.getMemberAnalytics(a.actor, CONTROLLED_NOW);
+  assert.equal(analytics.summary.yearApprovedCount.status, "AVAILABLE");
+  assert.equal(analytics.summary.yearApprovedCount.value, 1, "学年外的 2020-08-31 不得计入");
+
+  const year = await rankingService.getRankings(
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
+    a.actor,
+    CONTROLLED_NOW,
+  );
+  assert.equal(
+    year.items.some((i) => i.memberProfileId === a.memberProfileId),
+    true,
+  );
+});
+
+dbTest("M5 学年窗口内没有记录时是空榜，而不是「未配置」", async () => {
+  const a = await createMember("空窗口");
+  // 只写学年外的记录：窗口内确实无人上榜。
+  await seedRepair(a.memberProfileId, { date: "2020-08-31" });
+
+  const year = await rankingService.getRankings(
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
+    a.actor,
+    CONTROLLED_NOW,
+  );
+  assert.deepEqual(year.items, []);
+  assert.equal(year.currentMember, null);
+  assert.equal(year.pagination.total, 0);
+  assert.equal(year.range.startInclusive, "2020-08-31T16:00:00.000Z");
+  assert.equal(year.range.endExclusive, "2021-08-31T16:00:00.000Z");
 });
 
 // ------------------------------------------------------------ 排序与并列
 
 dbTest("M5 数量榜并列名次：3/3/1 → 1/1/3，且次序稳定", async () => {
-  useControlledTerm();
   const a = await createMember("并列甲");
   const b = await createMember("并列乙");
   const c = await createMember("并列丙");
@@ -567,8 +537,9 @@ dbTest("M5 数量榜并列名次：3/3/1 → 1/1/3，且次序稳定", async () 
   await seedRepair(c.memberProfileId, { date: d, durationMinutes: 5 });
 
   const result = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
     a.actor,
+    CONTROLLED_NOW,
   );
   assert.equal(result.pagination.total, 3);
   const three = result.items.filter((i) => i.approvedCount === 3);
@@ -585,7 +556,6 @@ dbTest("M5 数量榜并列名次：3/3/1 → 1/1/3，且次序稳定", async () 
 });
 
 dbTest("M5 时长榜按时长排序，主指标并列时按数量决定展示顺序", async () => {
-  useControlledTerm();
   const a = await createMember("时长甲");
   const b = await createMember("时长乙");
   const d = CONTROLLED_DAY;
@@ -595,8 +565,9 @@ dbTest("M5 时长榜按时长排序，主指标并列时按数量决定展示顺
   await seedRepair(b.memberProfileId, { date: d, durationMinutes: 90 });
 
   const result = await rankingService.getRankings(
-    { scope: "TERM", metric: "DURATION_MINUTES", page: 1, pageSize: 20 },
+    { scope: "ACADEMIC_YEAR", metric: "DURATION_MINUTES", page: 1, pageSize: 20 },
     a.actor,
+    CONTROLLED_NOW,
   );
   assert.equal(result.pagination.total, 2);
   const mine = result.items.find((i) => i.memberProfileId === a.memberProfileId);
@@ -608,7 +579,6 @@ dbTest("M5 时长榜按时长排序，主指标并列时按数量决定展示顺
 });
 
 dbTest("M5 NULL 时长按 0 分钟计入，不让整个榜单失败", async () => {
-  useControlledTerm();
   const a = await createMember("无时长");
   await seedRepair(a.memberProfileId, { date: `${CONTROLLED_MONTH}-12`, durationMinutes: null });
   await seedRepair(a.memberProfileId, { date: `${CONTROLLED_MONTH}-13`, durationMinutes: null });
@@ -618,8 +588,9 @@ dbTest("M5 NULL 时长按 0 分钟计入，不让整个榜单失败", async () =
   assert.equal(analytics.summary.totalApprovedDurationMinutes.value, 0);
 
   const result = await rankingService.getRankings(
-    { scope: "TERM", metric: "DURATION_MINUTES", page: 1, pageSize: 20 },
+    { scope: "ACADEMIC_YEAR", metric: "DURATION_MINUTES", page: 1, pageSize: 20 },
     a.actor,
+    CONTROLLED_NOW,
   );
   const me = result.items.find((i) => i.memberProfileId === a.memberProfileId);
   assert.equal(me?.durationMinutes, 0);
@@ -629,7 +600,6 @@ dbTest("M5 NULL 时长按 0 分钟计入，不让整个榜单失败", async () =
 // ------------------------------------------------------------ 分页与我的排名
 
 dbTest("M5 分页在数据库完成，且我的排名不受当前分页影响", async () => {
-  useControlledTerm();
   const members: MemberFixture[] = [];
   // 5 名成员，数量 5/4/3/2/1，便于验证分页切片与页外排名
   for (let i = 0; i < 5; i += 1) {
@@ -641,10 +611,10 @@ dbTest("M5 分页在数据库完成，且我的排名不受当前分页影响", 
   }
 
   const page1 = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 2 },
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 2 },
     members[4]!.actor, // 数量最少的那位，必然不在第 1 页
+    CONTROLLED_NOW,
   );
-  assert.equal(page1.status, "AVAILABLE");
   assert.equal(page1.items.length, 2);
   assert.equal(page1.pagination.total, 5);
   assert.equal(page1.pagination.totalPages, 3);
@@ -663,8 +633,9 @@ dbTest("M5 分页在数据库完成，且我的排名不受当前分页影响", 
   );
 
   const page3 = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 3, pageSize: 2 },
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 3, pageSize: 2 },
     members[4]!.actor,
+    CONTROLLED_NOW,
   );
   assert.equal(page3.items.length, 1);
   assert.equal(page3.items[0]?.isCurrentMember, true);
@@ -672,8 +643,9 @@ dbTest("M5 分页在数据库完成，且我的排名不受当前分页影响", 
 
   // 相同请求在数据不变时顺序稳定
   const again = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 2 },
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 2 },
     members[0]!.actor,
+    CONTROLLED_NOW,
   );
   assert.deepEqual(
     again.items.map((i) => i.memberProfileId),
@@ -682,14 +654,14 @@ dbTest("M5 分页在数据库完成，且我的排名不受当前分页影响", 
 });
 
 dbTest("M5 零记录成员不进榜，我的排名为 null", async () => {
-  useControlledTerm();
   const a = await createMember("零记录");
   const other = await createMember("有记录");
   await seedRepair(other.memberProfileId, { date: CONTROLLED_DAY });
 
   const result = await rankingService.getRankings(
-    { scope: "TERM", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
+    { scope: "ACADEMIC_YEAR", metric: "REPAIR_COUNT", page: 1, pageSize: 20 },
     a.actor,
+    CONTROLLED_NOW,
   );
   assert.equal(result.currentMember, null);
   assert.equal(
@@ -797,32 +769,15 @@ dbTest("M5 软删除与退回后统计立刻变化", async () => {
 
 // ------------------------------------------------------------ 工作台接线
 
-dbTest("M5 工作台返回真实排行预览，学期未配置时为 UNCONFIGURED", async () => {
+dbTest("M5 工作台返回真实排行预览（学年口径）", async () => {
   const a = await createMember("工作台");
-  const dashboard = await memberDashboardService.getDashboard(a.actor);
+  const dashboard = await memberDashboardService.getDashboard(a.actor, CONTROLLED_NOW);
   assert.equal(dashboard.repairSummary.source, "M5_ANALYTICS");
   assert.equal(dashboard.ranking.available, true);
-  assert.equal(dashboard.ranking.scope, "TERM");
+  assert.equal(dashboard.ranking.scope, "ACADEMIC_YEAR");
   assert.equal(dashboard.ranking.metric, "REPAIR_COUNT");
-  assert.equal(dashboard.ranking.status, "UNCONFIGURED");
-  assert.deepEqual(dashboard.ranking.leaders, []);
   assert.equal(dashboard.degraded.includes("ranking"), false);
-
-  const year = new Date().getUTCFullYear();
-  process.env.ACADEMIC_TERM_START = `${year}-01-01`;
-  process.env.ACADEMIC_TERM_END = `${year}-12-31`;
-  resetAcademicTermConfigForTests();
-  try {
-    const configured = await memberDashboardService.getDashboard(a.actor);
-    assert.equal(configured.ranking.status, "AVAILABLE");
-  } finally {
-    delete process.env.ACADEMIC_TERM_START;
-    delete process.env.ACADEMIC_TERM_END;
-    resetAcademicTermConfigForTests();
-  }
 });
-
-// ------------------------------------------------------------ 权限与隐私
 
 dbTest("M5 未登录访问统计接口返回 401 且不泄漏字段", async () => {
   const { GET } = await import("../../src/app/api/v1/member/analytics/route");
@@ -851,7 +806,7 @@ dbTest("M5 无 analytics 权限的请求被拒绝为 403", async () => {
   // 工作台预览同样必须过权限闸门 —— 它接受显式档案 ID，
   // 若不校验就会成为一条读任意成员名次的旁路。
   await assert.rejects(
-    () => rankingService.getTermPreview(a.memberProfileId, actor),
+    () => rankingService.getYearPreview(a.memberProfileId, actor),
     (error: { code?: string }) => error.code === "FORBIDDEN",
   );
 });
@@ -940,7 +895,6 @@ dbTest("M5 非法 scope / metric / 分页参数返回稳定 400", async () => {
 });
 
 dbTest("M5 非当前页成员的 currentMember 与榜单一致（跨范围与指标）", async () => {
-  useControlledTerm();
   const members: MemberFixture[] = [];
   // 4 名成员，数量 4/3/2/1 —— 受控学期窗口保证榜单成员集合就是这 4 位
   for (let i = 0; i < 4; i += 1) {
@@ -953,7 +907,7 @@ dbTest("M5 非当前页成员的 currentMember 与榜单一致（跨范围与指
       });
     }
   }
-  const scopes: AnalyticsScope[] = ["TERM", "ALL_TIME"];
+  const scopes: AnalyticsScope[] = ["ACADEMIC_YEAR", "ALL_TIME"];
   const metrics: RankingMetric[] = ["REPAIR_COUNT", "DURATION_MINUTES"];
   for (const scope of scopes) {
     for (const metric of metrics) {
@@ -961,12 +915,13 @@ dbTest("M5 非当前页成员的 currentMember 与榜单一致（跨范围与指
       const result = await rankingService.getRankings(
         { scope, metric, page: 1, pageSize: 1 },
         last.actor,
+        CONTROLLED_NOW,
       );
       assert.equal(result.items.length, 1);
       assert.equal(result.items[0]!.rank, 1);
       assert.equal(result.currentMember?.memberProfileId, last.memberProfileId);
       assert.equal(result.currentMember?.isCurrentMember, true);
-      if (scope === "TERM") {
+      if (scope === "ACADEMIC_YEAR") {
         // 受控窗口内只有本文档的 4 位成员
         assert.equal(result.pagination.total, 4, `${scope}/${metric}`);
         assert.equal(result.currentMember?.rank, 4, `${scope}/${metric} 我的排名应为 4`);

@@ -6,6 +6,11 @@ import type { PublicHomeAnalytics } from "@/types/contracts";
 
 type Metric = { label: string; value: string; unit?: string };
 
+/** 学年标签由服务端在**同一次**统计里给出，避免标题与数据各取一次时钟。 */
+function yearLabel(template: string, data: PublicHomeAnalytics): string {
+  return template.replace("{academicYear}", data.academicYear.label);
+}
+
 /** 首屏后的独立区块；只接收已按公开策略裁剪的 DTO。 */
 export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
   if (!data.repairStats && !data.rankings) return null;
@@ -17,18 +22,12 @@ export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
       unit: copy.countUnit,
     });
     if (data.repairStats.details) {
-      const { termApprovedCount, totalApprovedDurationMinutes } = data.repairStats.details;
+      const { yearApprovedCount, totalApprovedDurationMinutes } = data.repairStats.details;
       metrics.push(
         {
-          label: copy.term,
-          value:
-            termApprovedCount.status === "UNCONFIGURED" || termApprovedCount.value === null
-              ? copy.unconfigured
-              : termApprovedCount.value.toLocaleString("zh-CN"),
-          unit:
-            termApprovedCount.status === "UNCONFIGURED" || termApprovedCount.value === null
-              ? undefined
-              : copy.countUnit,
+          label: yearLabel(copy.year, data),
+          value: yearApprovedCount.toLocaleString("zh-CN"),
+          unit: copy.countUnit,
         },
         {
           label: copy.duration,
@@ -40,12 +39,7 @@ export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
       );
     }
   }
-  const rankingMessage =
-    data.rankings?.status === "UNCONFIGURED"
-      ? copy.rankingUnconfigured
-      : data.rankings?.items.length === 0
-        ? copy.rankingEmpty
-        : undefined;
+  const rankingMessage = data.rankings?.items.length === 0 ? copy.rankingEmpty : undefined;
 
   return (
     <Section id="public-statistics" labelledBy="home-statistics-title" className="home-analytics">
@@ -76,7 +70,7 @@ export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
         <table className="home-analytics__table">
           <caption>
             <div className="home-analytics__caption">
-              <h3>{copy.rankingTitle}</h3>
+              <h3>{yearLabel(copy.rankingTitle, data)}</h3>
               <span className="home-analytics__tag">{copy.rankingTag}</span>
             </div>
           </caption>
@@ -112,7 +106,9 @@ export function HomePublicAnalytics({ data }: { data: PublicHomeAnalytics }) {
           </tbody>
         </table>
       ) : null}
-      <p className="home-analytics__note">{data.repairStats ? copy.note : copy.rankingNote}</p>
+      <p className="home-analytics__note">
+        {yearLabel(data.repairStats ? copy.note : copy.rankingNote, data)}
+      </p>
     </Section>
   );
 }

@@ -76,12 +76,12 @@ export type NotificationStatus = ValueOf<typeof NotificationStatus>;
 
 /* ------------------------------------------------------------------ M5 统计 */
 
-/** 统计范围。ALL_TIME 不附加任何日期条件。 */
-export const AnalyticsScope = ["MONTH", "TERM", "ALL_TIME"] as const;
+/** 统计范围。`ACADEMIC_YEAR` 固定为 9/1 → 次年 9/1（issue #178）；ALL_TIME 不附加任何日期条件。 */
+export const AnalyticsScope = ["MONTH", "ACADEMIC_YEAR", "ALL_TIME"] as const;
 /** 排行主指标。时长始终以整数分钟入库与比较，小时只在 UI 层格式化。 */
 export const RankingMetric = ["REPAIR_COUNT", "DURATION_MINUTES"] as const;
-/** 统计可用性。`UNCONFIGURED` 专指学期区间未配置，**不得**解释为 0 或空榜。 */
-export const AnalyticsStatus = ["AVAILABLE", "UNCONFIGURED"] as const;
+/** 聚合可用性。`UNAVAILABLE` 表示**本次聚合失败**（区块降级），**不得**解释为 0 或空榜。 */
+export const AnalyticsStatus = ["AVAILABLE", "UNAVAILABLE"] as const;
 
 export type AnalyticsScope = ValueOf<typeof AnalyticsScope>;
 export type RankingMetric = ValueOf<typeof RankingMetric>;
@@ -935,7 +935,7 @@ export type RankingDisplayNameMode = ValueOf<typeof RankingDisplayNameMode>;
 export type PublicContentSettings = {
   /** 首页展示累计维修设备数（需求 §31）。 */
   publicRepairStatsEnabled: boolean;
-  /** 首页额外展示本学期维修数与累计维修时长（需求 §31 的辅助数据）。 */
+  /** 首页额外展示本学年维修数与累计维修时长（需求 §31 的辅助数据，口径为固定学年）。 */
   publicRepairStatsDetailEnabled: boolean;
   /** 首页展示简化排行榜（需求 §32）。 */
   publicRankingsEnabled: boolean;
@@ -954,16 +954,18 @@ export type UpdatePublicContentSettingsInput = {
 
 /** 首页专用公开 DTO：不携带成员 ID、头像、联系方式或后台配置修改人。 */
 export type PublicHomeAnalytics = {
+  /** 本次统计使用的学年（固定 9/1 → 次年 9/1，Asia/Shanghai）；两块都隐藏时仍给出，
+   *  让标题与注脚写的是**同一段**区间，而不是各自再取一次时钟。 */
+  academicYear: { label: string; startInclusive: string; endExclusive: string };
   repairStats: {
     totalApprovedCount: number;
     /** 辅助开关关闭时整个 details 缺省，不向浏览器下发隐藏数据。 */
     details?: {
-      termApprovedCount: MetricValue;
+      yearApprovedCount: number;
       totalApprovedDurationMinutes: number;
     };
   } | null;
   rankings: {
-    status: AnalyticsStatus;
     items: { rank: number; displayName: string; approvedCount: number }[];
   } | null;
 };
@@ -1000,9 +1002,9 @@ export type JoinApplicationExportResult = RepairExportResult;
 // M3 成员工作台与个人主页
 // ---------------------------------------------------------------------------
 
-/** 指标值。`UNCONFIGURED` 表示口径未配置（如学期区间缺失），此时 `value` 必须为 null，
- *  页面显示「待配置」，绝不回退为伪造的 0。 */
-export type MetricStatus = "AVAILABLE" | "UNCONFIGURED";
+/** 指标值。`UNAVAILABLE` 表示本次聚合失败（区块降级），此时 `value` 必须为 null，
+ *  页面显示「暂不可用」，绝不回退为伪造的 0。学年口径固定可算，不再有「未配置」态。 */
+export type MetricStatus = "AVAILABLE" | "UNAVAILABLE";
 export type MetricValue = {
   value: number | null;
   status: MetricStatus;
@@ -1073,7 +1075,7 @@ export type MemberRecentActivity = {
 
 export type MemberRepairSummary = {
   totalApprovedCount: MetricValue;
-  termApprovedCount: MetricValue;
+  yearApprovedCount: MetricValue;
   monthApprovedCount: MetricValue;
   totalApprovedDurationMinutes: MetricValue;
   /** M5 起正式统计统一来自 Analytics Service；`M2_APPROVED_REPAIRS` 保留为历史兼容值。 */
@@ -1181,7 +1183,7 @@ export type FavoriteListResult = {
  * 此时 `unreadCount` 必须是 `null` —— **不允许降级成 0**：
  * 「0 条未读」是一个真实的业务结论（确实没有），而「查不出来」是未知，
  * 两者在接口层面必须可分，否则调用方会把失败渲染成「没有新消息」。
- * 与 M3 的 `MetricValue`（宁可标 `UNCONFIGURED` 也不给 0）保持同一口径。
+ * 与 M3 的 `MetricValue`（宁可标 `UNAVAILABLE` 也不给 0）保持同一口径。
  *
  * `latest` 在失败时为空数组，仅作为结构占位；前端应据 `available` 渲染错误态，
  * 而不是把空数组渲染成「暂无通知」。
@@ -1199,7 +1201,7 @@ export type MemberFavoriteSummary =
 
 /**
  * 统计范围对应的 UTC 半开区间 `[startInclusive, endExclusive)`。
- * `MONTH` / `TERM` 两端必有值；`ALL_TIME` 无日期条件，两端为 `null`。
+ * `MONTH` / `ACADEMIC_YEAR` 两端必有值；`ALL_TIME` 无日期条件，两端为 `null`。
  */
 export type AnalyticsRange = {
   startInclusive: string | null;
@@ -1254,7 +1256,6 @@ export type RankingEntry = {
 export type RankingResult = {
   scope: AnalyticsScope;
   metric: RankingMetric;
-  status: AnalyticsStatus;
   range: AnalyticsRange;
   items: RankingEntry[];
   /** 「我的排名」不受当前分页影响；零记录时为 `null`。 */
@@ -1265,21 +1266,19 @@ export type RankingResult = {
 };
 
 /**
- * 工作台的本学期数量榜预览。
+ * 工作台的本学年数量榜预览（issue #178：口径由学期改为学年）。
  *
- * 三种状态必须可区分：
- * - `available: true, status: "AVAILABLE"` —— 正常榜单（可能为空数组，表示确实无人上榜）；
- * - `available: true, status: "UNCONFIGURED"` —— **学期未配置**，`leaders` 为空，
- *   页面显示「待配置」，**不得**伪装成空榜或 0；
- * - `available: false, status: null` —— 该区块**加载失败**，字段置空、并同时出现在
+ * 两种状态必须可区分：
+ * - `available: true` —— 正常榜单（可能为空数组，表示确实无人上榜）；
+ * - `available: false` —— 该区块**加载失败**，字段置空、并同时出现在
  *   `MemberDashboard.degraded` 中，页面渲染局部错误与重试。
  *   （失败语义与 M4 的 `MemberNotificationSummary` 保持一致，避免用「空榜单」冒充故障。）
+ * 学年区间固定可算，因此不再有「未配置」态。
  */
 export type MemberRankingPreview =
   | {
       available: true;
-      status: AnalyticsStatus;
-      scope: "TERM";
+      scope: "ACADEMIC_YEAR";
       metric: "REPAIR_COUNT";
       leaders: RankingEntry[];
       currentMember: RankingEntry | null;
@@ -1287,8 +1286,7 @@ export type MemberRankingPreview =
     }
   | {
       available: false;
-      status: null;
-      scope: "TERM";
+      scope: "ACADEMIC_YEAR";
       metric: "REPAIR_COUNT";
       leaders: RankingEntry[];
       currentMember: null;
@@ -1319,7 +1317,7 @@ export type MemberDashboard = {
   degraded: MemberDashboardDegraded[];
   notifications: MemberNotificationSummary;
   favorites: MemberFavoriteSummary;
-  /** M5 起替换 M3 的 `DeferredModule` 占位，返回本学期维修数量榜预览。 */
+  /** M5 起替换 M3 的 `DeferredModule` 占位，返回本学年维修数量榜预览。 */
   ranking: MemberRankingPreview;
 };
 
@@ -1366,8 +1364,13 @@ export const MEMBER_DASHBOARD_NOTIFICATION_LIMIT = 5;
 export const MEMBER_DASHBOARD_FAVORITE_LIMIT = 5;
 
 export interface MemberProfileServiceContract {
-  getSelf(actor: AuthorizedActor): Promise<MemberSelfProfileView>;
-  getInternal(memberProfileId: string, actor: AuthorizedActor): Promise<MemberInternalProfileView>;
+  /** `now` 仅供测试注入固定时钟；生产一律使用默认值（当前时刻）。 */
+  getSelf(actor: AuthorizedActor, now?: Date): Promise<MemberSelfProfileView>;
+  getInternal(
+    memberProfileId: string,
+    actor: AuthorizedActor,
+    now?: Date,
+  ): Promise<MemberInternalProfileView>;
   updateProfile(
     input: UpdateMemberProfileInput,
     actor: AuthorizedActor,
@@ -1383,12 +1386,12 @@ export interface SkillQueryServiceContract {
 }
 
 export interface MemberDashboardServiceContract {
-  getDashboard(actor: AuthorizedActor): Promise<MemberDashboard>;
+  getDashboard(actor: AuthorizedActor, now?: Date): Promise<MemberDashboard>;
 }
 
 export interface MemberAnalyticsServiceContract {
   /** 本人正式统计：累计/本月/学期/时长 + 分类分布 + 12 个月趋势。 */
-  getMemberAnalytics(actor: AuthorizedActor): Promise<MemberAnalytics>;
+  getMemberAnalytics(actor: AuthorizedActor, now?: Date): Promise<MemberAnalytics>;
   /**
    * 管理端指定成员统计（M6「查看成员统计」）。
    *
@@ -1396,7 +1399,11 @@ export interface MemberAnalyticsServiceContract {
    * 允许显式传入 `memberProfileId`，因此必须单独校验 `analytics:read_internal`，
    * 且**不得**把本人版本改成接受 `memberProfileId` —— 那会让任何成员遍历他人统计。
    */
-  getMemberAnalyticsFor(memberProfileId: string, actor: AuthorizedActor): Promise<MemberAnalytics>;
+  getMemberAnalyticsFor(
+    memberProfileId: string,
+    actor: AuthorizedActor,
+    now?: Date,
+  ): Promise<MemberAnalytics>;
 }
 
 /** M6 成员管理（管理端）。与成员自助的 `MemberProfileServiceContract` 分开，避免权限串味。 */
@@ -1473,16 +1480,20 @@ export interface RepairExportServiceContract {
 }
 
 export interface RankingServiceContract {
-  getRankings(input: RankingQueryInput, actor: AuthorizedActor): Promise<RankingResult>;
+  getRankings(input: RankingQueryInput, actor: AuthorizedActor, now?: Date): Promise<RankingResult>;
   /**
-   * 工作台排行预览：固定「本学期 + 维修数量」，取前 {@link RANKING_PREVIEW_LIMIT} 名。
+   * 工作台排行预览：固定「本学年 + 维修数量」，取前 {@link RANKING_PREVIEW_LIMIT} 名。
    * 与完整榜单共用同一排名算法，不另写一套逻辑。
    *
    * 与 `getRankings` 一样**必须传 actor 并校验 `analytics:read_internal`** ——
    * 它接受显式 `memberProfileId`，若不校验权限就会成为一条绕过排行权限、
    * 直接读任意成员名次的旁路。
    */
-  getTermPreview(memberProfileId: string, actor: AuthorizedActor): Promise<MemberRankingPreview>;
+  getYearPreview(
+    memberProfileId: string,
+    actor: AuthorizedActor,
+    now?: Date,
+  ): Promise<MemberRankingPreview>;
 }
 
 export interface JoinApplicationServiceContract {

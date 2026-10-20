@@ -1,18 +1,19 @@
 /**
- * 学期区间配置解析与统一日期边界（M3 任务书 §6.2）。
+ * 校历时间口径：学年区间与上海时区日期边界。
  *
- * 规则：
- * - 两项均未配置 → 合法，学期统计返回 `UNCONFIGURED`；
- * - 只配置一项、格式非法、开始日晚于结束日 → 配置非法（启动校验失败）；
+ * 规则（issue #178 起）：
+ * - **学年固定**为「当年 9 月 1 日 00:00 → 次年 9 月 1 日 00:00」（Asia/Shanghai），
+ *   9 月 1 日当天属于新学年；不再有「学期区间」环境变量，也就不存在「未配置」态；
  * - 日期按 `Asia/Shanghai`（UTC+8，无夏令时）自然日解释，再转换为 UTC 查询边界；
- * - 结束日**包含全天**，统一表达为 `[startInclusive, endExclusive)`；
+ * - 统一表达为 `[startInclusive, endExclusive)`；
  * - 当前月同样按 `Asia/Shanghai` 自然月计算；
  * - 不依赖数据库服务器本地时区或浏览器时区；
  * - 区间是**时刻**，只可直接用于 `DATETIME` 列；`DATE` 列（`repairDate`）
  *   必须先经 {@link toDateOnlyBounds} 转成日期边界（见该函数说明）。
+ *
+ * 文件名沿用 `academic-term`（模块同时承载上海日期工具，重命名会波及 13 个 import），
+ * 但模块内已没有「学期配置」；统计口径统一叫学年（academic year）。
  */
-
-import { AppError } from "@/lib/api/errors";
 
 /** 中国标准时间相对 UTC 的固定偏移（小时）。中国大陆不分夏令时，恒为 UTC+8。 */
 export const CHINA_UTC_OFFSET_HOURS = 8;
@@ -26,13 +27,12 @@ export type UtcRange = {
   endExclusive: Date;
 };
 
-export type AcademicTermConfig =
-  | { configured: false; reason: "MISSING" }
-  | { configured: true; start: string; end: string; range: UtcRange };
-
-export type AcademicTermParseResult =
-  | { ok: true; config: AcademicTermConfig }
-  | { ok: false; message: string };
+export type AcademicYearRange = UtcRange & {
+  /** 学年起始年份：`2026` 表示 2026-09-01 → 2027-09-01。 */
+  startYear: number;
+  /** 供界面直接使用的标识，如 `2026–2027 学年`。 */
+  label: string;
+};
 
 /** 把「Asia/Shanghai 自然日 + 当天 00:00:00.000」转成 UTC 时刻。 */
 function shanghaiDayStartToUtc(year: number, month: number, day: number): Date {
@@ -63,80 +63,25 @@ function parseShanghaiDate(
   return { ok: true, year, month, day };
 }
 
-function readEnvValue(name: string): string {
-  return (process.env[name] ?? "").trim();
-}
-
 /**
- * 解析学期配置。纯函数，不写缓存，便于单元测试覆盖五种情形。
- * 合法的「未配置」与「配置非法」是两种结果：前者 `ok: true`，后者 `ok: false`。
+ * 给定一个 UTC 时刻，返回它所在的**学年**区间（issue #178）。
+ *
+ * 学年固定为 `[当年 9/1 00:00, 次年 9/1 00:00)`（Asia/Shanghai）：9 月 1 日当天
+ * 即属于新学年，8 月 31 日仍属于上一学年。跨年月份（1–8 月）归属上一年开始的学年，
+ * 例如 2027-03 属于「2026–2027 学年」。
+ *
+ * 不读取任何环境变量 —— 这是首页「本学期维修显示待配置」的根因修复：口径不再可缺失。
  */
-export function parseAcademicTermConfig(
-  rawStart: string | undefined,
-  rawEnd: string | undefined,
-): AcademicTermParseResult {
-  const start = (rawStart ?? "").trim();
-  const end = (rawEnd ?? "").trim();
-
-  if (!start && !end) {
-    return { ok: true, config: { configured: false, reason: "MISSING" } };
-  }
-  if (!start || !end) {
-    const missing = !start ? "ACADEMIC_TERM_START" : "ACADEMIC_TERM_END";
-    return { ok: false, message: `学期配置必须同时提供开始与结束日期，缺少 ${missing}` };
-  }
-
-  const parsedStart = parseShanghaiDate(start);
-  if (!parsedStart.ok) {
-    return { ok: false, message: `ACADEMIC_TERM_START 不是合法的 YYYY-MM-DD 日期：${start}` };
-  }
-  const parsedEnd = parseShanghaiDate(end);
-  if (!parsedEnd.ok) {
-    return { ok: false, message: `ACADEMIC_TERM_END 不是合法的 YYYY-MM-DD 日期：${end}` };
-  }
-
-  const startInclusive = shanghaiDayStartToUtc(parsedStart.year, parsedStart.month, parsedStart.day);
-  // 结束日包含全天 → 排他上界 = 结束日次日 00:00（Asia/Shanghai）。
-  const endExclusive = shanghaiDayStartToUtc(parsedEnd.year, parsedEnd.month, parsedEnd.day + 1);
-
-  if (endExclusive.getTime() <= startInclusive.getTime()) {
-    return { ok: false, message: `学期开始日期不得晚于结束日期：${start} → ${end}` };
-  }
-
+export function shanghaiAcademicYearRange(instant: Date): AcademicYearRange {
+  const shanghai = new Date(instant.getTime() + SHANGHAI_OFFSET_MS);
+  const year = shanghai.getUTCFullYear();
+  const month = shanghai.getUTCMonth() + 1;
+  const startYear = month >= 9 ? year : year - 1;
   return {
-    ok: true,
-    config: { configured: true, start, end, range: { startInclusive, endExclusive } },
-  };
-}
-
-let cachedAcademicTerm: AcademicTermConfig | undefined;
-
-/**
- * 读取并缓存学期配置。配置非法时抛 `ACADEMIC_TERM_CONFIG_INVALID`（500），
- * 使服务在启动/首次访问校验期即失败，而不是静默产出错误的统计。
- */
-export function getAcademicTermConfig(): AcademicTermConfig {
-  if (cachedAcademicTerm) return cachedAcademicTerm;
-  const result = parseAcademicTermConfig(
-    process.env.ACADEMIC_TERM_START,
-    process.env.ACADEMIC_TERM_END,
-  );
-  if (!result.ok) {
-    throw new AppError("ACADEMIC_TERM_CONFIG_INVALID", `学期配置无效：${result.message}`);
-  }
-  cachedAcademicTerm = result.config;
-  return cachedAcademicTerm;
-}
-
-export function resetAcademicTermConfigForTests(): void {
-  cachedAcademicTerm = undefined;
-}
-
-/** 读取原始值用于启动校验（不缓存，避免把非法配置缓存住）。 */
-export function readAcademicTermEnv(): { start: string; end: string } {
-  return {
-    start: readEnvValue("ACADEMIC_TERM_START"),
-    end: readEnvValue("ACADEMIC_TERM_END"),
+    startInclusive: shanghaiDayStartToUtc(startYear, 9, 1),
+    endExclusive: shanghaiDayStartToUtc(startYear + 1, 9, 1),
+    startYear,
+    label: `${startYear}–${startYear + 1} 学年`,
   };
 }
 

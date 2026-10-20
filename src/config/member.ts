@@ -141,9 +141,8 @@ export const memberCopy = {
   common: {
     /** 无昵称也无实名时的兜底展示名 */
     fallbackName: "成员",
-    /** 未配置学期区间时的展示文案（**不是** "0 次"） */
-    unconfigured: "待配置",
-    unconfiguredTerm: "学期范围待配置",
+    /** 区块聚合失败时的展示文案（**不是** "0 次"） */
+    unavailable: "暂不可用",
     loading: "正在加载…",
     loadError: "加载失败，请稍后重试。",
     /** 局部区块加载失败：与整页 loadError 区分，避免用户误以为整页不可用 */
@@ -208,7 +207,7 @@ export const memberCopy = {
     metricsTitle: "维修概览",
     metricsTag: "Repair Metrics",
     metricTotal: "累计已通过",
-    metricTerm: "本学期已通过",
+    metricYear: "本学年已通过",
     metricMonth: "本月已通过",
     metricDuration: "累计维修时长",
     unitCount: "次",
@@ -236,7 +235,7 @@ export const memberCopy = {
     quickFavorites: "我的收藏",
     quickFavoritesDesc: "收藏的案例记录",
     quickRankings: "排行榜",
-    quickRankingsDesc: "本学期维修榜",
+    quickRankingsDesc: "本学年维修榜",
     /** 案例库没有进窄屏底部标签栏，工作台快捷入口是它在手机上的主要入口。 */
     quickCases: "案例库",
     quickCasesDesc: "典型案例与疑难案例",
@@ -256,10 +255,8 @@ export const memberCopy = {
 
     rankingTitle: "维修排行",
     rankingTag: "Rankings",
-    rankingTopLabel: "本学期前 {count} 名",
-    rankingEmpty: "本学期暂无上榜记录。",
-    /** 学期未配置：**不得**显示为「暂无记录」或空榜 */
-    rankingUnconfigured: "本学期区间未配置，暂不提供排行。",
+    rankingTopLabel: "本学年前 {count} 名",
+    rankingEmpty: "本学年暂无上榜记录。",
     rankingMyRank: "我的排名",
     /** 我的名次展示模板，`{rank}` 会被替换成名次数值 */
     rankingMyRankValue: "第 {rank} 名",
@@ -382,8 +379,8 @@ export function formatDurationMinutes(minutes: number): string {
  * 指标卡（`MemberMetrics`）要的是「大号数字 + 小号单位 span」，用它会变成「1 次次」——
  * 那正是 M3 起界面上一直显示重复单位的根因，别在这里加单位再叠一个 span。
  */
-export function formatCount(value: number | null, unconfiguredLabel: string): string {
-  if (value === null) return unconfiguredLabel;
+export function formatCount(value: number | null, unavailableLabel: string): string {
+  if (value === null) return unavailableLabel;
   return `${value} 次`;
 }
 

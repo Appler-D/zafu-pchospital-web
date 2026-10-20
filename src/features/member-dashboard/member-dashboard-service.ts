@@ -30,11 +30,11 @@ import { MEMBER_RECENT_REPAIR_LIMIT } from "@/types/contracts";
  * 成员工作台聚合服务（M3 任务书 §6.3、§9、§12.1；M4 接入通知与收藏摘要）。
  *
  * 只接受 actor 推导出的身份，**不接受客户端传入 memberProfileId**。
- * M5 起排行接入位返回真实的本学期维修数量榜预览（`ranking`）。
+ * M5 起排行接入位返回真实的本学年维修数量榜预览（`ranking`）。
  */
 
 export const memberDashboardService: MemberDashboardServiceContract = {
-  async getDashboard(actor: AuthorizedActor): Promise<MemberDashboard> {
+  async getDashboard(actor: AuthorizedActor, now: Date = new Date()): Promise<MemberDashboard> {
     requirePermission(actor, "member.profile.read_self");
     const row = await memberProfileRepository.activeForUser(actor.userId);
 
@@ -42,20 +42,22 @@ export const memberDashboardService: MemberDashboardServiceContract = {
       skillRepository.listMemberSkills(row.id),
       loadMemberOverview({
         memberProfileId: row.id,
-        now: new Date(),
+        now,
         recentLimit: MEMBER_RECENT_REPAIR_LIMIT,
       }),
       settleCommunity(summarizeNotifications(row.id, actor)),
       settleCommunity(summarizeFavorites(row.id)),
-      settleCommunity(rankingService.getTermPreview(row.id, actor)),
+      settleCommunity(rankingService.getYearPreview(row.id, actor, now)),
     ]);
 
     return {
       profile: memberProfilePolicy.toSummary(row, skills.map(toSkillView)),
-      repairSummary: overview.repairSummary.status === "ready" ? overview.repairSummary.data : EMPTY_SUMMARY,
+      repairSummary:
+        overview.repairSummary.status === "ready" ? overview.repairSummary.data : EMPTY_SUMMARY,
       workQueue: overview.workQueue.status === "ready" ? overview.workQueue.data : EMPTY_QUEUE,
       recentRepairs: overview.recentRepairs.status === "ready" ? overview.recentRepairs.data : [],
-      recentActivity: overview.recentActivity.status === "ready" ? overview.recentActivity.data : [],
+      recentActivity:
+        overview.recentActivity.status === "ready" ? overview.recentActivity.data : [],
       degraded: [
         ...degradedSections(overview),
         ...(notifications.status === "failed" ? (["notifications"] as const) : []),
@@ -70,16 +72,16 @@ export const memberDashboardService: MemberDashboardServiceContract = {
 };
 
 /**
- * 空摘要：**只在区块失败时**作为结构占位，且所有 MetricValue 标为 `UNCONFIGURED`，
- * 保证前端渲染出「待配置」而不是伪造的 0。
+ * 空摘要：**只在区块失败时**作为结构占位，且所有 MetricValue 标为 `UNAVAILABLE`，
+ * 保证前端渲染出「暂不可用」而不是伪造的 0。
  *
  * `source` 与正常路径保持一致（M5 起正式统计由 Analytics 提供服务）。
  */
 const EMPTY_SUMMARY: MemberRepairSummary = {
-  totalApprovedCount: { value: null, status: "UNCONFIGURED" },
-  termApprovedCount: { value: null, status: "UNCONFIGURED" },
-  monthApprovedCount: { value: null, status: "UNCONFIGURED" },
-  totalApprovedDurationMinutes: { value: null, status: "UNCONFIGURED" },
+  totalApprovedCount: { value: null, status: "UNAVAILABLE" },
+  yearApprovedCount: { value: null, status: "UNAVAILABLE" },
+  monthApprovedCount: { value: null, status: "UNAVAILABLE" },
+  totalApprovedDurationMinutes: { value: null, status: "UNAVAILABLE" },
   source: "M5_ANALYTICS",
   generatedAt: new Date(0).toISOString(),
 };

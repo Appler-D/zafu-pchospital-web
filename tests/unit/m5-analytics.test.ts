@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { recentShanghaiMonths, resetAcademicTermConfigForTests } from "../../src/lib/academic-term";
+import { recentShanghaiMonths } from "../../src/lib/academic-term";
 import { createLatestOnlyGuard } from "../../src/features/analytics/latest-only";
 import {
   DISPLAY_NAME_FALLBACK,
@@ -17,7 +17,10 @@ import {
   toAnalyticsRange,
   toCategoryDistribution,
 } from "../../src/features/analytics/analytics-view";
-import { rankingMetricFilter, rankingScopeFilter } from "../../src/features/analytics/analytics-http";
+import {
+  rankingMetricFilter,
+  rankingScopeFilter,
+} from "../../src/features/analytics/analytics-http";
 import { approvedRepairSql } from "../../src/features/analytics/analytics-repository";
 import { approvedRepairWhere } from "../../src/features/repairs/repair-query-service";
 import {
@@ -27,54 +30,28 @@ import {
 import { UNCATEGORIZED_LABEL } from "../../src/types/contracts";
 import type { MemberRankingPreview } from "../../src/types/contracts";
 
-/** 每个用例都从「学期未配置」的干净状态开始，避免缓存串味。 */
-function withoutTerm(): void {
-  delete process.env.ACADEMIC_TERM_START;
-  delete process.env.ACADEMIC_TERM_END;
-  resetAcademicTermConfigForTests();
-}
-
-function withTerm(start: string, end: string): void {
-  process.env.ACADEMIC_TERM_START = start;
-  process.env.ACADEMIC_TERM_END = end;
-  resetAcademicTermConfigForTests();
-}
-
 // ---------------------------------------------------------------- 范围解析
 
 test("M5 范围解析：MONTH 取上海自然月，ALL_TIME 不附加日期条件", () => {
-  withoutTerm();
   // 2026-08-31T16:00Z 正是上海 09-01 00:00，所以这里算的是 9 月。
   const now = new Date("2026-09-15T00:00:00.000Z");
 
   const month = resolveScopeRange("MONTH", now);
-  assert.equal(month.status, "AVAILABLE");
   assert.equal(month.range?.startInclusive.toISOString(), "2026-08-31T16:00:00.000Z");
   assert.equal(month.range?.endExclusive.toISOString(), "2026-09-30T16:00:00.000Z");
 
   const all = resolveScopeRange("ALL_TIME", now);
-  assert.equal(all.status, "AVAILABLE");
   assert.equal(all.range, null, "ALL_TIME 必须是无日期约束，而不是零长度区间");
 });
 
-test("M5 范围解析：学期未配置返回 UNCONFIGURED，绝不退化成空区间", () => {
-  withoutTerm();
-  const term = resolveScopeRange("TERM", new Date("2026-09-15T00:00:00.000Z"));
-  assert.equal(term.status, "UNCONFIGURED");
-  assert.equal(term.range, null);
-});
-
-test("M5 范围解析：学期配置后取 [start, end] 的 UTC 半开区间", () => {
-  withTerm("2026-09-01", "2027-01-15");
-  try {
-    const term = resolveScopeRange("TERM", new Date("2026-10-01T00:00:00.000Z"));
-    assert.equal(term.status, "AVAILABLE");
-    assert.equal(term.range?.startInclusive.toISOString(), "2026-08-31T16:00:00.000Z");
-    // 结束日包含全天 → 排他上界是次日 00:00（上海）
-    assert.equal(term.range?.endExclusive.toISOString(), "2027-01-15T16:00:00.000Z");
-  } finally {
-    withoutTerm();
-  }
+test("M5 范围解析：ACADEMIC_YEAR 固定按上海 9/1 → 次年 9/1（issue #178）", () => {
+  const year = resolveScopeRange("ACADEMIC_YEAR", new Date("2026-09-15T00:00:00.000Z"));
+  assert.equal(year.range?.startInclusive.toISOString(), "2026-08-31T16:00:00.000Z");
+  assert.equal(year.range?.endExclusive.toISOString(), "2027-08-31T16:00:00.000Z");
+  // 上海 2026-08-31 23:59:59.999 仍属 2025–2026 学年
+  const before = resolveScopeRange("ACADEMIC_YEAR", new Date("2026-08-31T15:59:59.999Z"));
+  assert.equal(before.range?.startInclusive.toISOString(), "2025-08-31T16:00:00.000Z");
+  assert.equal(before.range?.endExclusive.toISOString(), "2026-08-31T16:00:00.000Z");
 });
 
 test("M5 区间契约：ALL_TIME 两端为 null 且时区固定 Asia/Shanghai", () => {
@@ -108,10 +85,13 @@ test("M5 最近月份窗口：月末 UTC 跨日仍算当月（上海 09-30 23:59
 // ---------------------------------------------------------------- 月度趋势
 
 test("M5 月度趋势：数据库缺失的月份补真实 0", () => {
-  const trend = buildMonthlyTrend(["2026-07", "2026-08", "2026-09"], [
-    { month: "2026-08", approvedCount: 3, durationMinutes: 120 },
-    { month: "2026-09", approvedCount: 1, durationMinutes: 45 },
-  ]);
+  const trend = buildMonthlyTrend(
+    ["2026-07", "2026-08", "2026-09"],
+    [
+      { month: "2026-08", approvedCount: 3, durationMinutes: 120 },
+      { month: "2026-09", approvedCount: 1, durationMinutes: 45 },
+    ],
+  );
   assert.deepEqual(trend, [
     { month: "2026-07", approvedCount: 0, durationMinutes: 0 },
     { month: "2026-08", approvedCount: 3, durationMinutes: 120 },
@@ -120,9 +100,10 @@ test("M5 月度趋势：数据库缺失的月份补真实 0", () => {
 });
 
 test("M5 月度趋势：BigInt / 字符串 / NULL 时长都被正确转换", () => {
-  const trend = buildMonthlyTrend(["2026-09"], [
-    { month: "2026-09", approvedCount: 2n, durationMinutes: null },
-  ]);
+  const trend = buildMonthlyTrend(
+    ["2026-09"],
+    [{ month: "2026-09", approvedCount: 2n, durationMinutes: null }],
+  );
   assert.deepEqual(trend, [{ month: "2026-09", approvedCount: 2, durationMinutes: 0 }]);
   assert.equal(typeof trend[0]!.approvedCount, "number");
 });
@@ -207,14 +188,17 @@ test("M5 数值转换后可以正常 JSON 序列化（BigInt 不再炸）", () =
 // ------------------------------------------------------------ 参数白名单
 
 test("M5 参数解析：scope / metric 缺省值符合任务书", () => {
-  assert.equal(rankingScopeFilter(new URLSearchParams()), "TERM");
+  assert.equal(rankingScopeFilter(new URLSearchParams()), "ACADEMIC_YEAR");
   assert.equal(rankingMetricFilter(new URLSearchParams()), "REPAIR_COUNT");
 });
 
 test("M5 参数解析：白名单内的取值原样通过", () => {
   assert.equal(rankingScopeFilter(new URLSearchParams("scope=MONTH")), "MONTH");
   assert.equal(rankingScopeFilter(new URLSearchParams("scope=ALL_TIME")), "ALL_TIME");
-  assert.equal(rankingMetricFilter(new URLSearchParams("metric=DURATION_MINUTES")), "DURATION_MINUTES");
+  assert.equal(
+    rankingMetricFilter(new URLSearchParams("metric=DURATION_MINUTES")),
+    "DURATION_MINUTES",
+  );
 });
 
 test("M5 参数解析：非法 scope / metric 抛稳定错误码而不是静默回退", () => {
@@ -230,9 +214,8 @@ test("M5 参数解析：非法 scope / metric 抛稳定错误码而不是静默�
 
 // ------------------------------------------------------------ 降级语义
 
-test("M5 排行失败占位：available=false + status=null，不伪装成空榜", () => {
+test("M5 排行失败占位：available=false，不伪装成空榜", () => {
   assert.equal(UNAVAILABLE_RANKING_PREVIEW.available, false);
-  assert.equal(UNAVAILABLE_RANKING_PREVIEW.status, null);
   assert.deepEqual(UNAVAILABLE_RANKING_PREVIEW.leaders, []);
   assert.equal(UNAVAILABLE_RANKING_PREVIEW.currentMember, null);
 
@@ -240,11 +223,10 @@ test("M5 排行失败占位：available=false + status=null，不伪装成空榜
   assert.deepEqual(failed, UNAVAILABLE_RANKING_PREVIEW);
 });
 
-test("M5 排行成功：原样透传，学期未配置也保持 available=true", () => {
+test("M5 排行成功：原样透传，空榜也保持 available=true", () => {
   const preview: MemberRankingPreview = {
     available: true,
-    status: "UNCONFIGURED",
-    scope: "TERM",
+    scope: "ACADEMIC_YEAR",
     metric: "REPAIR_COUNT",
     leaders: [],
     currentMember: null,
@@ -275,10 +257,11 @@ test("M5 正式谓词的条件集合被钉死，新增条件会让 SQL 翻译层
     "正式谓词新增条件后，必须同步更新 approvedRepairSql() 并修改本断言",
   );
   // 附加条件会原样合并进来（不是被丢弃）
-  assert.deepEqual(
-    Object.keys(approvedRepairWhere({ memberProfileId: "m1" })).sort(),
-    ["deletedAt", "memberProfileId", "status"],
-  );
+  assert.deepEqual(Object.keys(approvedRepairWhere({ memberProfileId: "m1" })).sort(), [
+    "deletedAt",
+    "memberProfileId",
+    "status",
+  ]);
 });
 
 // ------------------------------------------------ 只允许最新请求生效

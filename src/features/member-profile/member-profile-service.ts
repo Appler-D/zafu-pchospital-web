@@ -44,18 +44,18 @@ function profileNotFound(): AppError {
 
 export const memberProfileService = {
   /** `GET /api/v1/member/profile` —— 本人完整资料 + 已通过摘要 + 最近已通过记录。 */
-  async getSelf(actor: AuthorizedActor): Promise<MemberSelfProfileView> {
+  async getSelf(actor: AuthorizedActor, now: Date = new Date()): Promise<MemberSelfProfileView> {
     requirePermission(actor, "member.profile.read_self");
     const row = await memberProfileRepository.activeForUser(actor.userId);
-    // 「本月 / 本学期」是日期相对口径，必须显式传入区间；
-    // 缺省调用会让 monthApprovedCount 恒为 0、termApprovedCount 恒为 UNCONFIGURED。
+    // 「本月 / 本学年」是日期相对口径，必须显式传入区间；
+    // 缺省调用会让 monthApprovedCount 恒为 0、yearApprovedCount 恒为 UNAVAILABLE。
     // 这里复用工作台的 `resolveMemberRanges`，保证个人主页与工作台口径完全一致。
-    const { monthRange, termRange } = resolveMemberRanges(new Date());
+    const { monthRange, yearRange } = resolveMemberRanges(now);
     const [skills, repairSummary, recentRepairs] = await Promise.all([
       readSkills(row.id),
       // M5 起正式摘要统一由 Analytics 入口产出（source = M5_ANALYTICS）；
       // 内部仍复用 M2 的正式谓词与同一套聚合，不产生第二个统计口径。
-      getMemberSummary(row.id, { monthRange, termRange }),
+      getMemberSummary(row.id, { monthRange, yearRange }),
       listMemberRecentRepairs(row.id, MEMBER_RECENT_REPAIR_LIMIT),
     ]);
     return {
@@ -69,6 +69,7 @@ export const memberProfileService = {
   async getInternal(
     memberProfileId: string,
     actor: AuthorizedActor,
+    now: Date = new Date(),
   ): Promise<MemberInternalProfileView> {
     requirePermission(actor, "member.profile.read_internal");
     const row = await memberProfileRepository.findById(memberProfileId);
@@ -76,11 +77,11 @@ export const memberProfileService = {
     if (!row || row.status !== "ACTIVE" || row.user.status !== "ACTIVE") {
       throw profileNotFound();
     }
-    const { monthRange, termRange } = resolveMemberRanges(new Date());
+    const { monthRange, yearRange } = resolveMemberRanges(now);
     const [skills, repairSummary, recentRepairs] = await Promise.all([
       readSkills(row.id),
       // 同 getSelf：内部主页也走 M5 Analytics 入口，避免出现两套摘要来源。
-      getMemberSummary(row.id, { monthRange, termRange }),
+      getMemberSummary(row.id, { monthRange, yearRange }),
       listMemberRecentRepairs(row.id, MEMBER_RECENT_REPAIR_LIMIT),
     ]);
     return {

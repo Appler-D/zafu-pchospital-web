@@ -184,7 +184,7 @@ export function MemberDetailPanel({
 
               {stats ? (
                 <div className="admin-stats">
-                  {/* 复用 M3/M5 的指标卡与分布表：UNCONFIGURED（学期未配置）等口径由它们统一处理，
+                  {/* 复用 M3/M5 的指标卡与分布表：UNAVAILABLE（区块聚合失败）等口径由它们统一处理，
                   后台不重新解释 MetricValue，避免出现「伪造 0 次」这类口径漂移。 */}
                   <MemberMetrics summary={stats.summary} />
                   <MemberCategoryDistribution items={stats.categoryDistribution} />

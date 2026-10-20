@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ApiErrorCode, AppError } from "../../src/lib/api/errors";
-import { createCommentInput, createFavoriteInput, notificationStatusFilter } from "../../src/features/community/community-http";
+import {
+  createCommentInput,
+  createFavoriteInput,
+  notificationStatusFilter,
+} from "../../src/features/community/community-http";
 import { excerptText, memberRef } from "../../src/features/community/community-view";
 import { normalizeCommentBody } from "../../src/features/community/comment-service";
 import {
@@ -57,19 +61,33 @@ test("M4 稳定错误码已进入公共契约且状态码正确", () => {
 });
 
 test("M4 权限与限额常量已冻结", () => {
-  for (const permission of ["comment:create", "comment:read", "comment:delete", "favorite:manage", "notification:read"] as const) {
+  for (const permission of [
+    "comment:create",
+    "comment:read",
+    "comment:delete",
+    "favorite:manage",
+    "notification:read",
+  ] as const) {
     assert.equal(Permission.includes(permission), true, `权限 ${permission} 未定义`);
   }
   assert.equal(COMMENT_BODY_MAX_LENGTH, 2000);
   assert.equal(COMMENT_MENTION_LIMIT, 10);
   assert.equal(MEMBER_DASHBOARD_NOTIFICATION_LIMIT, 5);
   assert.equal(MEMBER_DASHBOARD_FAVORITE_LIMIT, 5);
-  assert.deepEqual(NotificationType, ["MENTIONED", "REPAIR_COMMENTED", "REPAIR_APPROVED", "REPAIR_REJECTED"]);
+  assert.deepEqual(NotificationType, [
+    "MENTIONED",
+    "REPAIR_COMMENTED",
+    "REPAIR_APPROVED",
+    "REPAIR_REJECTED",
+  ]);
   assert.deepEqual(NotificationStatus, ["UNREAD", "READ"]);
 });
 
 test("评论正文拒绝空内容、超长与非法控制字符", () => {
-  assert.throws(() => normalizeCommentBody("   "), (error) => error instanceof AppError && error.code === "COMMENT_BODY_INVALID");
+  assert.throws(
+    () => normalizeCommentBody("   "),
+    (error) => error instanceof AppError && error.code === "COMMENT_BODY_INVALID",
+  );
   assert.throws(
     () => normalizeCommentBody("a".repeat(COMMENT_BODY_MAX_LENGTH + 1)),
     (error) => error instanceof AppError && error.code === "COMMENT_BODY_INVALID",
@@ -92,7 +110,11 @@ test("@ 解析按最长姓名匹配，未知 token 静默跳过", () => {
     { id: "b", names: ["小林同学"] },
     { id: "c", names: ["张三"] },
   ];
-  assert.deepEqual(extractAtTokens("@小林同学，看一下 @张三。 @ghost"), ["小林同学", "张三", "ghost"]);
+  assert.deepEqual(extractAtTokens("@小林同学，看一下 @张三。 @ghost"), [
+    "小林同学",
+    "张三",
+    "ghost",
+  ]);
   assert.deepEqual(
     resolveMentionedMemberIds({
       body: "请 @小林同学 和 @张三 看一下，@ghost 不存在",
@@ -210,7 +232,7 @@ test("M5 接入后文案不再声称排行未接入，且不出现内部里程�
   assert.doesNotMatch(text, /红点|角标|模拟数据/);
   // 排行区块的标题与状态文案仍然存在，避免把区块删空
   assert.match(memberCopy.dashboard.rankingTitle, /排行/);
-  assert.equal(memberCopy.dashboard.rankingUnconfigured.length > 0, true);
+  assert.match(memberCopy.dashboard.rankingEmpty, /本学年/);
 });
 
 /**
@@ -242,7 +264,9 @@ test("通知/收藏摘要成功时保留真实计数，0 只可能来自查询�
   const notifications = toNotificationSummary(
     await settleCommunity(Promise.resolve({ unreadCount: 0, latest: [] })),
   );
-  const favorites = toFavoriteSummary(await settleCommunity(Promise.resolve({ count: 3, latest: [] })));
+  const favorites = toFavoriteSummary(
+    await settleCommunity(Promise.resolve({ count: 3, latest: [] })),
+  );
 
   // 「0 条未读」是真实结论 —— 与上面的 null 必须是两个不同的值
   assert.equal(notifications.available, true);
