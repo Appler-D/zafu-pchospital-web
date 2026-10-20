@@ -15,7 +15,7 @@ import type { AnalyticsScope, RankingMetric, RankingResult } from "@/types/contr
  * 数据来自 `GET /api/v1/member/rankings`，筛选条件全部**由服务端白名单解析**，
  * 前端只负责把它们拼进查询串（非法值一律由服务端返回稳定 400，前端不自行降级）。
  *
- * 状态处理：加载中 / 加载失败 / 学期未配置 / 空数据 四种都必须可区分，
+ * 状态处理：加载中 / 加载失败 / 空数据 三种都必须可区分，
  * 且「加载失败」来自请求失败本身，不用空榜冒充。
  */
 export function RankingsPageBody({

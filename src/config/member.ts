@@ -141,7 +141,7 @@ export const memberCopy = {
   common: {
     /** 无昵称也无实名时的兜底展示名 */
     fallbackName: "成员",
-    /** 未配置学期区间时的展示文案（**不是** "0 次"） */
+    /** 区块聚合失败时的展示文案（**不是** "0 次"） */
     unavailable: "暂不可用",
     loading: "正在加载…",
     loadError: "加载失败，请稍后重试。",

@@ -905,7 +905,6 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 无 Migration、无新依赖。启用顺序、冒烟判据与回退动作见
 [门禁启用与回退](../email-gate-rollout.md)。
 
-
 ## 报名通知邮箱（Refs #158 · 第一轮）
 
 - 新公开报名 `POST /api/v1/join-applications` 必填 `email`（严格字符串，不从 QQ 推导）。复用 `normalizeEmail`：去首尾空白、普通 ASCII 邮箱、全地址小写、最长 191 字符，保留点与 `+tag`；非法 / 缺失返回 `VALIDATION_FAILED` 与 `fieldErrors.email`，不创建报名。前端 type=email / required / maxLength 为辅助校验。
