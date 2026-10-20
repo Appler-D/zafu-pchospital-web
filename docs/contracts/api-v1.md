@@ -1,5 +1,8 @@
 # Phase 2 API v1 契约
 
+管理群的独立机器接口见 [管理机器人契约](management-bot.md)。只有该文档列出的
+`/api/v1/bot/` 路由接受独立Bearer凭证；既有浏览器管理接口继续使用Session，不接受机器凭证。
+
 ## 通用信封
 
 成功：`{ success: true, data, meta: { requestId, pagination? } }`。

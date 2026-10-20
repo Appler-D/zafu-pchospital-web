@@ -1,5 +1,9 @@
 # Phase 2 M0–M2 数据契约
 
+管理机器人增量：`repair_activities.version` 为默认1的单调版本，管理更新/软删除递增；
+`bot_operations` 以机器主体与操作UUID去重，成功结果与活动及SYSTEM审计同事务提交。
+不新增ADMIN用户，不把群成员OpenID作为网站User外键。详见 [机器接口契约](management-bot.md)。
+
 ## 数据库基线
 
 - GreatSQL：`8.0.32-27`（MySQL 8.0 协议）

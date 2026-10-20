@@ -1,3 +1,5 @@
+import type { Prisma } from "@/generated/prisma/client";
+import { integrationAudit } from "@/lib/auth/machine";
 import { randomUUID } from "node:crypto";
 
 import { repairActivityConsentVersion } from "@/config/repair-activities";
@@ -219,6 +221,120 @@ async function loadAttendanceCounts(ids: string[]): Promise<Map<string, number>>
   return new Map(groups.map((g) => [g.activityId, g._count._all]));
 }
 
+/** Shared business transaction bodies; authorization belongs to the calling Service. */
+export async function createRepairActivityInTransaction(
+  tx: Prisma.TransactionClient,
+  input: CreateRepairActivityInput,
+  actor: AuthorizedActor,
+): Promise<RepairActivityAdminView> {
+  const title = assertValidTitle(input.title);
+  assertValidCapacity(input.capacity);
+  assertActivityTimeRules({
+    activityAt: input.activityAt,
+    signupOpensAt: input.signupOpensAt,
+    signupClosesAt: input.signupClosesAt,
+  });
+  const now = new Date();
+  const created = await tx.repairActivity.create({
+    data: {
+      id: randomUUID(),
+      title,
+      activityAt: input.activityAt,
+      capacity: input.capacity,
+      signupOpensAt: input.signupOpensAt,
+      signupClosesAt: input.signupClosesAt,
+      createdBy: actor.userId ?? null,
+      createdAt: now,
+    },
+  });
+  await appendAuditLog(tx, {
+    actor,
+    actorType: actor.actorType,
+    actorUserId: actor.userId,
+    action: "repair_activity.created",
+    targetType: "RepairActivity",
+    targetId: created.id,
+    result: "SUCCESS",
+    after: {
+      title,
+      capacity: input.capacity,
+      activityAt: input.activityAt.toISOString(),
+      signupOpensAt: input.signupOpensAt.toISOString(),
+      signupClosesAt: input.signupClosesAt.toISOString(),
+      ...integrationAudit(actor),
+    },
+  });
+  return toAdminView(created, 0, 0, now);
+}
+
+export async function updateRepairActivityInTransaction(
+  tx: Prisma.TransactionClient,
+  activityId: string,
+  input: UpdateRepairActivityInput,
+  actor: AuthorizedActor,
+  expectedVersion?: number,
+): Promise<RepairActivityAdminView> {
+  await tx.$queryRaw`SELECT id FROM repair_activities WHERE id = ${activityId} FOR UPDATE`;
+  const before = await tx.repairActivity.findUnique({ where: { id: activityId } });
+  if (!before || before.deletedAt) {
+    throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+  }
+  if (expectedVersion !== undefined && before.version !== expectedVersion) {
+    throw new AppError("STATE_TRANSITION_INVALID", "活动已变化，请重新查询并确认", { status: 409 });
+  }
+  const title = input.title !== undefined ? assertValidTitle(input.title) : before.title;
+  const capacity = input.capacity !== undefined ? input.capacity : before.capacity;
+  assertValidCapacity(capacity);
+  const activityAt = input.activityAt ?? before.activityAt;
+  const signupOpensAt = input.signupOpensAt ?? before.signupOpensAt;
+  const signupClosesAt = input.signupClosesAt ?? before.signupClosesAt;
+  assertActivityTimeRules({ activityAt, signupOpensAt, signupClosesAt });
+
+  const effectiveCount = await tx.repairActivityRegistration.count({
+    where: { activityId, ...effectiveStatusFilter },
+  });
+  if (capacity < effectiveCount) {
+    throw new AppError(
+      "ACTIVITY_CAPACITY_TOO_LOW",
+      `人数上限不能低于当前有效报名数（${effectiveCount}）`,
+    );
+  }
+  // 出勤人数（issue #107）：编辑响应要带回真实计数，不能沿用旧值。
+  const attendedCount = await tx.repairActivityAttendance.count({
+    where: { activityId },
+  });
+
+  const updated = await tx.repairActivity.update({
+    where: { id: activityId },
+    data: { title, capacity, activityAt, signupOpensAt, signupClosesAt, version: { increment: 1 } },
+  });
+  await appendAuditLog(tx, {
+    actor,
+    actorType: actor.actorType,
+    actorUserId: actor.userId,
+    action: "repair_activity.updated",
+    targetType: "RepairActivity",
+    targetId: activityId,
+    result: "SUCCESS",
+    before: {
+      title: before.title,
+      capacity: before.capacity,
+      activityAt: before.activityAt.toISOString(),
+      signupOpensAt: before.signupOpensAt.toISOString(),
+      signupClosesAt: before.signupClosesAt.toISOString(),
+    },
+    after: {
+      title: updated.title,
+      capacity: updated.capacity,
+      activityAt: updated.activityAt.toISOString(),
+      signupOpensAt: updated.signupOpensAt.toISOString(),
+      signupClosesAt: updated.signupClosesAt.toISOString(),
+      ...integrationAudit(actor),
+    },
+  });
+  return toAdminView(updated, effectiveCount, attendedCount, new Date());
+}
+
 export const repairActivityService = {
   // ---------- Admin ----------
   async listAdmin(actor: AuthorizedActor): Promise<RepairActivityAdminView[]> {
@@ -358,45 +474,7 @@ export const repairActivityService = {
     actor: AuthorizedActor,
   ): Promise<RepairActivityAdminView> {
     requirePermission(actor, "activity:admin");
-    const title = assertValidTitle(input.title);
-    assertValidCapacity(input.capacity);
-    assertActivityTimeRules({
-      activityAt: input.activityAt,
-      signupOpensAt: input.signupOpensAt,
-      signupClosesAt: input.signupClosesAt,
-    });
-    const now = new Date();
-    return inSerializableTransaction(async (tx) => {
-      const created = await tx.repairActivity.create({
-        data: {
-          id: randomUUID(),
-          title,
-          activityAt: input.activityAt,
-          capacity: input.capacity,
-          signupOpensAt: input.signupOpensAt,
-          signupClosesAt: input.signupClosesAt,
-          createdBy: actor.userId,
-          createdAt: now,
-        },
-      });
-      await appendAuditLog(tx, {
-        actor,
-        actorType: "USER",
-        actorUserId: actor.userId,
-        action: "repair_activity.created",
-        targetType: "RepairActivity",
-        targetId: created.id,
-        result: "SUCCESS",
-        after: {
-          title,
-          capacity: input.capacity,
-          activityAt: input.activityAt.toISOString(),
-          signupOpensAt: input.signupOpensAt.toISOString(),
-          signupClosesAt: input.signupClosesAt.toISOString(),
-        },
-      });
-      return toAdminView(created, 0, 0, now);
-    });
+    return inSerializableTransaction((tx) => createRepairActivityInTransaction(tx, input, actor));
   },
 
   async update(
@@ -405,63 +483,9 @@ export const repairActivityService = {
     actor: AuthorizedActor,
   ): Promise<RepairActivityAdminView> {
     requirePermission(actor, "activity:admin");
-    return inSerializableTransaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM repair_activities WHERE id = ${activityId} FOR UPDATE`;
-      const before = await tx.repairActivity.findUnique({ where: { id: activityId } });
-      if (!before || before.deletedAt) {
-        throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
-      }
-      const title = input.title !== undefined ? assertValidTitle(input.title) : before.title;
-      const capacity = input.capacity !== undefined ? input.capacity : before.capacity;
-      assertValidCapacity(capacity);
-      const activityAt = input.activityAt ?? before.activityAt;
-      const signupOpensAt = input.signupOpensAt ?? before.signupOpensAt;
-      const signupClosesAt = input.signupClosesAt ?? before.signupClosesAt;
-      assertActivityTimeRules({ activityAt, signupOpensAt, signupClosesAt });
-
-      const effectiveCount = await tx.repairActivityRegistration.count({
-        where: { activityId, ...effectiveStatusFilter },
-      });
-      if (capacity < effectiveCount) {
-        throw new AppError(
-          "ACTIVITY_CAPACITY_TOO_LOW",
-          `人数上限不能低于当前有效报名数（${effectiveCount}）`,
-        );
-      }
-      // 出勤人数（issue #107）：编辑响应要带回真实计数，不能沿用旧值。
-      const attendedCount = await tx.repairActivityAttendance.count({
-        where: { activityId },
-      });
-
-      const updated = await tx.repairActivity.update({
-        where: { id: activityId },
-        data: { title, capacity, activityAt, signupOpensAt, signupClosesAt },
-      });
-      await appendAuditLog(tx, {
-        actor,
-        actorType: "USER",
-        actorUserId: actor.userId,
-        action: "repair_activity.updated",
-        targetType: "RepairActivity",
-        targetId: activityId,
-        result: "SUCCESS",
-        before: {
-          title: before.title,
-          capacity: before.capacity,
-          activityAt: before.activityAt.toISOString(),
-          signupOpensAt: before.signupOpensAt.toISOString(),
-          signupClosesAt: before.signupClosesAt.toISOString(),
-        },
-        after: {
-          title: updated.title,
-          capacity: updated.capacity,
-          activityAt: updated.activityAt.toISOString(),
-          signupOpensAt: updated.signupOpensAt.toISOString(),
-          signupClosesAt: updated.signupClosesAt.toISOString(),
-        },
-      });
-      return toAdminView(updated, effectiveCount, attendedCount, new Date());
-    });
+    return inSerializableTransaction((tx) =>
+      updateRepairActivityInTransaction(tx, activityId, input, actor),
+    );
   },
 
   async softDelete(activityId: string, actor: AuthorizedActor): Promise<void> {
@@ -475,7 +499,7 @@ export const repairActivityService = {
       const now = new Date();
       await tx.repairActivity.update({
         where: { id: activityId },
-        data: { deletedAt: now },
+        data: { deletedAt: now, version: { increment: 1 } },
       });
       await appendAuditLog(tx, {
         actor,
