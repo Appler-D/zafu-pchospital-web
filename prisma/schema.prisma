@@ -613,6 +613,7 @@ model PublicContentSetting {
 /// 维修活动（公开报名 / 成员接待）。派生状态不落库，按 UTC now 计算。
 model RepairActivity {
   id             String                        @id @db.Char(36)
+  version        Int                           @default(1)
   title          String                        @db.VarChar(120)
   activityAt     DateTime                      @map("activity_at") @db.DateTime(3)
   capacity       Int
@@ -820,4 +821,19 @@ model AccountNotification {
   @@index([applicationId], map: "account_notifications_application_idx")
   @@index([userId], map: "account_notifications_user_idx")
   @@map("account_notifications")
+}
+
+/// Narrow management integration: successful outcomes are committed atomically with activity writes.
+model BotOperation {
+  principalId   String   @map("principal_id") @db.VarChar(64)
+  operationId   String   @map("operation_id") @db.Char(36)
+  requestDigest String   @map("request_digest") @db.Char(64)
+  result        Json
+  requestId     String   @map("request_id") @db.VarChar(80)
+  requestedBy   String   @map("requested_by") @db.VarChar(64)
+  createdAt     DateTime @map("created_at") @db.DateTime(3)
+
+  @@id([principalId, operationId])
+  @@index([createdAt], map: "bot_operations_created_idx")
+  @@map("bot_operations")
 }
