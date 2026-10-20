@@ -3,6 +3,13 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
+
+type ChangePasswordPayload = {
+  success?: boolean;
+  data?: { destination?: string };
+  error?: { message?: string };
+};
+
 export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
   const router = useRouter();
   const [problem, setProblem] = useState("");
@@ -13,8 +20,8 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
     setProblem("");
     const data = new FormData(event.currentTarget);
 
-    // 使用 try/catch/finally 保证无论成功、业务失败还是网络异常，
-    // 按钮都会恢复可点击状态，不会永远停在「保存中」。
+    // 无论成功、业务失败还是网络异常，finally 都会解除按钮禁用，
+    // 不会永远停在「保存中」。
     try {
       const response = await fetch("/api/v1/auth/password/change", {
         method: "POST",
@@ -27,13 +34,8 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
         }),
       });
 
-      // 响应体可能不是合法 JSON（例如网关错误页），单独兜底，
-      // 避免解析失败把真正的状态码掩盖掉。
-      type ChangePasswordPayload = {
-        success?: boolean;
-        data?: { destination?: string };
-        error?: { message?: string };
-      };
+      // 非 JSON 响应（例如网关错误页）单独兜底，与 adminFetch 的
+      // INVALID_RESPONSE 分支保持一致；带上状态码，便于区分 502 与 200 空体。
       let payload: ChangePasswordPayload | null = null;
       try {
         payload = (await response.json()) as ChangePasswordPayload;
@@ -41,8 +43,13 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
         payload = null;
       }
 
-      if (!response.ok || !payload?.success || !payload.data?.destination) {
-        setProblem(payload?.error?.message ?? "修改失败，请稍后重试");
+      if (payload === null) {
+        setProblem(`服务返回了无法解析的响应（HTTP ${response.status}）`);
+        return;
+      }
+
+      if (!response.ok || !payload.success || !payload.data?.destination) {
+        setProblem(payload.error?.message ?? "修改失败，请稍后重试");
         return;
       }
 
@@ -51,11 +58,9 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
       router.replace(payload.data.destination);
       router.refresh();
     } catch {
-      // 断网、请求被中止或跨域失败都会走到这里。
-      // 输入框内容由浏览器保留（受控组件未重置），用户可直接重试。
-      setProblem("网络连接失败，请检查网络后重试");
+      // 断网、请求被中止或跨域失败。文案与 adminFetch 的 NETWORK_ERROR 对齐。
+      setProblem("网络异常，请检查连接后重试");
     } finally {
-      // 无论成功与否都解除按钮的禁用状态。
       setBusy(false);
     }
   }
