@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 import { AppError } from "@/lib/api/errors";
 import { hashGeneratedPassword, hashPassword } from "@/lib/security/secrets";
-import type { ProvisionSourceType } from "@/types/contracts";
+import type { MemberDepartment, ProvisionSourceType } from "@/types/contracts";
 
 type IdentityInput = { qq: string; phone: string };
 
@@ -79,6 +79,7 @@ export async function ensureMemberProfile(
     realName: string;
     studentId?: string;
     className?: string;
+    department?: MemberDepartment;
   },
 ): Promise<string> {
   const existing = await tx.memberProfile.findUnique({ where: { userId: input.userId } });
@@ -90,6 +91,12 @@ export async function ensureMemberProfile(
         realName: input.realName,
         studentId: input.studentId,
         className: input.className,
+        department: input.department,
+        // 部门变更使旧的管理端编辑草稿失效；未提供部门时保留既有归属。
+        version:
+          input.department && input.department !== existing.department
+            ? { increment: 1 }
+            : undefined,
         status: "ACTIVE",
         deletedAt: null,
       },
@@ -104,6 +111,7 @@ export async function ensureMemberProfile(
       realName: input.realName,
       studentId: input.studentId,
       className: input.className,
+      department: input.department,
       status: "ACTIVE",
       joinedAt: now,
       createdAt: now,

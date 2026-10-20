@@ -57,6 +57,7 @@ function application(
   overrides: Partial<JoinApplicationSummary> = {},
 ): JoinApplicationSummary {
   return {
+    admittedDepartment: null,
     id,
     status,
     provisionStatus: "NOT_REQUIRED",

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { TagPicker } from "@/components/ui/TagPicker";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
+import { memberDepartmentOptions } from "@/config/member-department";
 import { adminFetch, firstFieldError } from "@/features/admin/admin-client";
 import type {
   MemberAnalytics,
@@ -22,6 +23,7 @@ import type {
   MemberListEntry,
   MemberMutationResult,
   MemberView,
+  MemberUpdateView,
   RoleCode,
   SkillView,
   UpdateMemberSkillsResult,
@@ -31,8 +33,8 @@ import type {
  * 成员详情窗口（M6 §63「编辑成员 / 重置密码 / 设置角色 / 设置技能标签 / 查看成员统计」）。
  *
  * 这里把管理端成员操作集中在一个窗口里，因为它们共享同一份「当前成员 + 版本号」状态：
- * 编辑与技能都用乐观锁（`version` / `profileVersion`），任何一次成功写入后必须重新拉取，
- * 否则第二次提交一定撞版本冲突。
+ * 编辑与技能都用乐观锁（`version` / `profileVersion`），成功后合并返回的新版本或重新拉取，
+ * 保证下一次提交使用最新版本。
  *
  * 窗口本身由 `AdminModal` 提供：详情有两三屏高，早先内联在表格下方时用户根本看不到。
  */
@@ -40,10 +42,12 @@ export function MemberDetailPanel({
   memberId,
   onClose,
   onChanged,
+  onUpdated,
 }: {
   memberId: string;
   onClose: () => void;
   onChanged: () => void;
+  onUpdated: (member: MemberUpdateView) => void;
 }) {
   const copy = adminCopy.members;
   const [detail, setDetail] = useState<MemberDetail | null>(null);
@@ -93,9 +97,9 @@ export function MemberDetailPanel({
     void load();
   }, [load]);
 
-  /** 详情页里的每个写操作都以「重新加载」收尾，保证乐观锁版本号是最新的。 */
+  /** 资料编辑合并权威返回值，其余操作重新加载，始终保持最新版本。 */
   async function mutate(
-    run: () => Promise<{ ok: boolean; message?: string }>,
+    run: () => Promise<{ ok: boolean; message?: string; member?: MemberUpdateView }>,
     successText: string,
     tone: AdminToastTone = "success",
   ) {
@@ -107,6 +111,12 @@ export function MemberDetailPanel({
       return;
     }
     setToast({ text: successText, tone });
+    if (result.member) {
+      const member = result.member;
+      setDetail((current) => (current ? { ...current, ...member } : current));
+      onUpdated(member);
+      return;
+    }
     await load();
     onChanged();
   }
@@ -294,7 +304,7 @@ export function MemberDetailPanel({
 }
 
 type Mutate = (
-  run: () => Promise<{ ok: boolean; message?: string }>,
+  run: () => Promise<{ ok: boolean; message?: string; member?: MemberUpdateView }>,
   successText: string,
 ) => Promise<void>;
 
@@ -307,18 +317,19 @@ function EditMemberForm({ detail, onSave }: { detail: MemberDetail; onSave: Muta
     setBusy(true);
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     await onSave(async () => {
-      const result = await adminFetch<MemberView>(`/api/v1/admin/members/${detail.id}`, {
+      const result = await adminFetch<MemberUpdateView>(`/api/v1/admin/members/${detail.id}`, {
         method: "PATCH",
         body: {
           realName: data.realName ?? "",
           studentId: data.studentId ?? "",
           className: data.className ?? "",
           nickname: data.nickname ?? "",
+          department: data.department,
           version: detail.version,
         },
       });
       return result.ok
-        ? { ok: true }
+        ? { ok: true, member: result.data }
         : { ok: false, message: firstFieldError(result.fieldErrors) ?? result.message };
     }, copy.saved);
     setBusy(false);
@@ -328,6 +339,22 @@ function EditMemberForm({ detail, onSave }: { detail: MemberDetail; onSave: Muta
     <form method="post" className="admin-form" onSubmit={submit} aria-label={copy.title}>
       <h4 className="admin-panel__title">{copy.title}</h4>
       <div className="admin-form__grid">
+        <label className="field">
+          <span className="field__label">{adminCopy.members.department}</span>
+          <select
+            className="field__input"
+            name="department"
+            defaultValue={detail.department}
+            disabled={busy}
+            required
+          >
+            {memberDepartmentOptions.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           <span className="field__label">姓名</span>
           <input

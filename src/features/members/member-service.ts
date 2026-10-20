@@ -13,6 +13,7 @@ import {
   type AccountRecoveryTarget,
 } from "@/features/auth/account-recovery";
 import { memberRepository } from "@/features/members/member-repository";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import { saveMemberSkills } from "@/features/member-profile/member-profile-service";
 import { claimHistoryForNewMember } from "@/features/repairs/repair-history-import-service";
 import { skillRepository } from "@/features/skills/skill-repository";
@@ -62,6 +63,9 @@ import {
 export class MemberService implements MemberServiceContract {
   async create(input: CreateMemberInput, actor: AuthorizedActor): Promise<MemberMutationResult> {
     requirePermission(actor, "member:manage");
+    const department = parseMemberDepartment(
+      input.department === undefined ? "REPAIR" : input.department,
+    );
     if (
       input.realName.trim().length < 2 ||
       input.realName.trim().length > 64 ||
@@ -123,6 +127,7 @@ export class MemberService implements MemberServiceContract {
         realName: input.realName.trim(),
         studentId: clean(input.studentId),
         className: clean(input.className),
+        department,
       });
       if (input.nickname !== undefined)
         await tx.memberProfile.update({
@@ -159,7 +164,7 @@ export class MemberService implements MemberServiceContract {
         targetType: "MemberProfile",
         targetId: memberProfileId,
         result: "SUCCESS",
-        after: { userId, realName: input.realName, qq: input.qq, phone: input.phone },
+        after: { userId, realName: input.realName, qq: input.qq, phone: input.phone, department },
       });
       return { memberProfileId, passwordCreated };
     });
@@ -232,6 +237,8 @@ export class MemberService implements MemberServiceContract {
     actor: AuthorizedActor,
   ): Promise<MemberUpdateView> {
     requirePermission(actor, "member:manage");
+    const department =
+      input.department === undefined ? undefined : parseMemberDepartment(input.department);
     if (!Number.isInteger(input.version) || input.version < 1)
       throw new AppError("VALIDATION_FAILED", "version 必须是正整数", {
         fieldErrors: { version: ["version 必须是正整数"] },
@@ -270,6 +277,7 @@ export class MemberService implements MemberServiceContract {
         where: { id: memberId, version: input.version, deletedAt: null },
         data: {
           realName,
+          department,
           studentId: input.studentId === undefined ? undefined : input.studentId?.trim() || null,
           className: input.className === undefined ? undefined : input.className?.trim() || null,
           nickname: input.nickname === undefined ? undefined : input.nickname?.trim() || null,
@@ -288,12 +296,14 @@ export class MemberService implements MemberServiceContract {
         result: "SUCCESS",
         before: {
           realName: before.realName,
+          department: before.department,
           studentId: before.studentId,
           className: before.className,
           nickname: before.nickname,
         },
         after: {
           realName: realName ?? before.realName,
+          department: department ?? before.department,
           studentId: input.studentId === undefined ? before.studentId : input.studentId,
           className: input.className === undefined ? before.className : input.className,
           nickname: input.nickname === undefined ? before.nickname : input.nickname,
@@ -684,6 +694,7 @@ export class MemberService implements MemberServiceContract {
       id: profile.id,
       userId: profile.userId,
       realName: profile.realName,
+      department: profile.department as MemberView["department"],
       nickname: profile.nickname,
       studentId: profile.studentId,
       className: profile.className,

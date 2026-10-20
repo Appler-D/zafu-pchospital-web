@@ -176,6 +176,10 @@ M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列
 
 ## 7. 检查与测试
 
+成员部门（issue #171）迁移 `20261020000000_member_department` 新增成员非空部门
+（默认 `REPAIR`）与报名可空录取部门，两列均以 CHECK 限定 `REPAIR / PUBLICITY / OFFICE`。
+存量成员归维修部，历史报名保持 NULL；不新增表、索引或权限。发布需先部署迁移再启用新版应用。
+
 ```powershell
 pnpm db:health
 pnpm test

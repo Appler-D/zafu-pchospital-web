@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { accountNotificationCopy as notificationCopy } from "@/config/account-notification";
+import { memberDepartmentLabels, memberDepartmentOptions } from "@/config/member-department";
 import {
   adminCopy,
   adminShared,
@@ -34,6 +35,7 @@ import {
   type JoinApplicationSummary,
   type JoinApplicationView,
   type ProvisionView,
+  type MemberDepartment,
 } from "@/types/contracts";
 
 const EMPTY_FILTERS = {
@@ -66,6 +68,8 @@ export function JoinApplicationAdminPanel() {
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 行内「通过」待确认的报名（issue #95）：非空即弹二次确认。 */
   const [approving, setApproving] = useState<JoinApplicationSummary | null>(null);
+  const [admittedDepartment, setAdmittedDepartment] = useState<MemberDepartment>("REPAIR");
+  const [approveProblem, setApproveProblem] = useState("");
   const [busy, setBusy] = useState(false);
 
   // 取数状态收在 `useAdminList` 里：往下滚动自动接下一页（邮箱式的连续列表，
@@ -154,7 +158,7 @@ export function JoinApplicationAdminPanel() {
   async function confirmApprove() {
     if (!approving) return;
     setBusy(true);
-    setProblem("");
+    setApproveProblem("");
     setToast(null);
     const result = await adminFetch<JoinApplicationView>(
       `/api/v1/admin/join-applications/${approving.id}/reviews`,
@@ -162,25 +166,27 @@ export function JoinApplicationAdminPanel() {
         method: "POST",
         body: {
           result: "PASSED",
+          admittedDepartment,
           interviewedAt: new Date().toISOString(),
           idempotencyKey: crypto.randomUUID(),
         },
       },
     );
-    setBusy(false);
-    setApproving(null);
     if (!result.ok) {
-      setProblem(
+      setApproveProblem(
         result.code === "JOIN_APPLICATION_NOT_REVIEWABLE"
           ? copy.review.notReviewable
           : result.message,
       );
       // 「通过」可能已经落库（失败只发生在随后的账号发放）：刷新让状态 / 发放两列反映实际。
       await load();
+      setBusy(false);
       return;
     }
+    setApproving(null);
     setToast({ text: copy.quickApprove.done, tone: "success" });
     await load();
+    setBusy(false);
   }
 
   return (
@@ -319,7 +325,15 @@ export function JoinApplicationAdminPanel() {
             spec={joinApplicationTableSpec}
             items={items}
             emptyText={joinApplicationEmptyText}
-            renderContext={{ onDetail: setDetailId, onApprove: setApproving, busy }}
+            renderContext={{
+              onDetail: setDetailId,
+              onApprove: (application) => {
+                setAdmittedDepartment("REPAIR");
+                setApproveProblem("");
+                setApproving(application);
+              },
+              busy,
+            }}
           />
           <AdminListEnd
             pagination={pagination}
@@ -351,6 +365,26 @@ export function JoinApplicationAdminPanel() {
           onConfirm={() => void confirmApprove()}
         >
           <p>{copy.quickApprove.hint}</p>
+          <label className="field">
+            <span className="field__label">{copy.review.admittedDepartment}</span>
+            <select
+              className="field__input"
+              value={admittedDepartment}
+              disabled={busy}
+              onChange={(event) => setAdmittedDepartment(event.target.value as MemberDepartment)}
+            >
+              {memberDepartmentOptions.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {approveProblem ? (
+            <p className="admin-status admin-status--error" role="alert">
+              {approveProblem}
+            </p>
+          ) : null}
           <p>
             <strong>
               {approving.ticketNo} · {approving.realName}
@@ -386,6 +420,8 @@ function ApplicationDetailPanel({
   /** 登记面试结果返回的初始密码：响应里的值只出现一次，留在窗口里展示（规则见下方说明）。 */
   const [secret, setSecret] = useState("");
   const [provision, setProvision] = useState<ProvisionView | null>(null);
+  const [reviewResult, setReviewResult] = useState<InterviewResult>("PASSED");
+  const [admittedDepartment, setAdmittedDepartment] = useState<MemberDepartment>("REPAIR");
   const idempotencyKey = useRef(crypto.randomUUID());
 
   const load = useCallback(async () => {
@@ -418,6 +454,10 @@ function ApplicationDetailPanel({
         method: "POST",
         body: {
           result: data.result === "PASSED" ? "PASSED" : "REJECTED",
+          admittedDepartment:
+            data.result === "PASSED" && detail?.status !== "INTERVIEW_PASSED"
+              ? data.admittedDepartment
+              : undefined,
           interviewedAt: toIso(data.interviewedAt) ?? new Date().toISOString(),
           internalNote: data.internalNote || undefined,
           idempotencyKey: idempotencyKey.current,
@@ -516,6 +556,12 @@ function ApplicationDetailPanel({
             <span>{joinApplicationStatusLabels[detail.status]}</span>
             <span>{detail.recruitmentCycle}</span>
             <span>{formatDateTime(detail.submittedAt)}</span>
+            {detail.admittedDepartment ? (
+              <span>
+                {copy.review.admittedDepartment} ·{" "}
+                {memberDepartmentLabels[detail.admittedDepartment]}
+              </span>
+            ) : null}
           </div>
 
           <div className="admin-section">
@@ -595,17 +641,45 @@ function ApplicationDetailPanel({
             <div className="admin-form__grid">
               <label className="field">
                 <span className="field__label">{copy.review.result}</span>
-                <select className="field__input" name="result" defaultValue={InterviewResult[0]}>
+                <select
+                  className="field__input"
+                  name="result"
+                  value={reviewResult}
+                  disabled={busy}
+                  onChange={(event) => setReviewResult(event.target.value as InterviewResult)}
+                >
                   <option value="PASSED">{copy.review.passed}</option>
                   <option value="REJECTED">{copy.review.rejected}</option>
                 </select>
               </label>
+              {reviewResult === "PASSED" && detail.status !== "INTERVIEW_PASSED" ? (
+                <label className="field">
+                  <span className="field__label">{copy.review.admittedDepartment}</span>
+                  <select
+                    className="field__input"
+                    name="admittedDepartment"
+                    value={admittedDepartment}
+                    disabled={busy}
+                    required
+                    onChange={(event) =>
+                      setAdmittedDepartment(event.target.value as MemberDepartment)
+                    }
+                  >
+                    {memberDepartmentOptions.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="field">
                 <span className="field__label">{copy.review.interviewedAt}</span>
                 <input
                   className="field__input"
                   type="datetime-local"
                   name="interviewedAt"
+                  disabled={busy}
                   defaultValue={toLocalInput(new Date().toISOString())}
                   required
                 />
@@ -614,7 +688,12 @@ function ApplicationDetailPanel({
                 <span className="field__label">
                   {copy.review.internalNote}（{copy.review.optional}）
                 </span>
-                <input className="field__input" name="internalNote" maxLength={2000} />
+                <input
+                  className="field__input"
+                  name="internalNote"
+                  maxLength={2000}
+                  disabled={busy}
+                />
               </label>
             </div>
             <div className="signup__actions">

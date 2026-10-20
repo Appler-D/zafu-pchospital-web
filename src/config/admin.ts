@@ -356,6 +356,7 @@ export const adminCopy = {
     } as Record<string, string>,
   },
   members: {
+    department: "部门",
     label: "Members",
     title: "成员管理",
     /* 短句，且不再解释脱敏与审计的实现细节 —— 那是系统行为，不是管理员要先读的说明书。
@@ -931,6 +932,7 @@ export const adminCopy = {
     },
     review: {
       title: "登记面试结果",
+      admittedDepartment: "录取部门",
       result: "结果",
       passed: "面试通过",
       rejected: "未通过",

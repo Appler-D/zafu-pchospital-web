@@ -240,8 +240,7 @@ export function MemberAdminPanel() {
       setToast({ text: result.message, tone: "neutral" });
       throw new Error(result.message);
     }
-    const { realName, nickname, studentId, className, version } = result.data;
-    list.patch(memberId, { realName, nickname, studentId, className, version });
+    list.patch(memberId, result.data);
   }
 
   /**
@@ -505,6 +504,7 @@ export function MemberAdminPanel() {
           memberId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={() => void load()}
+          onUpdated={(member) => list.patch(member.id, member)}
         />
       ) : null}
 
