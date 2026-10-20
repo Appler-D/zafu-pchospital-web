@@ -1,13 +1,12 @@
 import { Button } from "@/components/ui/Button";
 import { RankingRow } from "@/components/rankings/RankingRow";
 import { rankingsCopy } from "@/config/rankings";
-import type { RankingResult } from "@/types/contracts";
+import type { AnalyticsScope, RankingResult } from "@/types/contracts";
 
 /**
  * 排行榜结果区（纯展示）。
  *
  * 三种状态必须可区分，且**都不能被显示成「暂无记录」**：
- * 1. `status: "UNCONFIGURED"` —— 学期区间未配置 → 明确提示「待配置」；
  * 2. 正常但为空 —— 当前范围确实无人上榜；
  * 3. 有数据 —— 列表 + 「我的排名」。
  *
@@ -16,7 +15,7 @@ import type { RankingResult } from "@/types/contracts";
  */
 export type RankingsBoardProps = {
   result: RankingResult;
-  scopeLabels: Record<"MONTH" | "TERM" | "ALL_TIME", string>;
+  scopeLabels: Record<AnalyticsScope, string>;
   onPageChange: (page: number) => void;
   onRetry: () => void;
 };
@@ -30,14 +29,6 @@ function paginationText(result: RankingResult): string {
 }
 
 export function RankingsBoard({ result, scopeLabels, onPageChange, onRetry }: RankingsBoardProps) {
-  if (result.status === "UNCONFIGURED") {
-    return (
-      <p className="member-section__note" role="status">
-        {rankingsCopy.unconfigured}
-      </p>
-    );
-  }
-
   const { pagination, currentMember, items, metric, scope } = result;
   const summary = paginationText(result);
 

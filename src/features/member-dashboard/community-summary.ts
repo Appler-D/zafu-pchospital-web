@@ -20,7 +20,7 @@ import type {
  * 调用方（含未来的移动端、通知中心轮询）只会看到「0 条未读」，
  * 把一次数据库故障渲染成「你没有新消息」——静默丢消息，比报错更糟。
  *
- * M3 的口径是宁可标 `UNCONFIGURED` 也不给 0（见 `MetricValue`），这里与之对齐：
+ * M3 的口径是宁可标 `UNAVAILABLE` 也不给 0（见 `MetricValue`），这里与之对齐：
  * `available: false` + `unreadCount/count: null`。
  * 前端据 `available` 渲染错误态；`degraded` 数组仍由服务层同步登记，供页面定位区块。
  */
@@ -72,7 +72,9 @@ export const UNAVAILABLE_FAVORITE_SUMMARY: MemberFavoriteSummary = {
   latest: [],
 };
 
-export function toNotificationSummary(settled: Settled<NotificationSummaryData>): MemberNotificationSummary {
+export function toNotificationSummary(
+  settled: Settled<NotificationSummaryData>,
+): MemberNotificationSummary {
   return settled.status === "ready"
     ? { available: true, unreadCount: settled.data.unreadCount, latest: settled.data.latest }
     : UNAVAILABLE_NOTIFICATION_SUMMARY;
@@ -85,16 +87,14 @@ export function toFavoriteSummary(settled: Settled<FavoriteSummaryData>): Member
 }
 
 /**
- * 排行预览的失败占位：`available: false` + `status: null`。
+ * 排行预览的失败占位：`available: false`。
  *
  * 与通知/收藏同样不给「空榜单」——空榜在业务上是合法结果
- * （本学期确实没有人上榜），不能拿它冒充一次数据库故障。
- * 学期未配置走的是另一条路：`available: true, status: "UNCONFIGURED"`。
+ * （本学年确实没有人上榜），不能拿它冒充一次数据库故障。
  */
 export const UNAVAILABLE_RANKING_PREVIEW: MemberRankingPreview = {
   available: false,
-  status: null,
-  scope: "TERM",
+  scope: "ACADEMIC_YEAR",
   metric: "REPAIR_COUNT",
   leaders: [],
   currentMember: null,

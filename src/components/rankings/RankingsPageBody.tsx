@@ -7,7 +7,7 @@ import { RankingsBoard } from "@/components/rankings/RankingsBoard";
 import { memberCopy } from "@/config/member";
 import { rankingsCopy, rankingsPage, rankingsSections } from "@/config/rankings";
 import { createLatestOnlyGuard } from "@/features/analytics/latest-only";
-import type { RankingResult } from "@/types/contracts";
+import type { AnalyticsScope, RankingMetric, RankingResult } from "@/types/contracts";
 
 /**
  * `/member/rankings` —— 内部排行榜页面主体（客户端）。
@@ -16,11 +16,14 @@ import type { RankingResult } from "@/types/contracts";
  * 前端只负责把它们拼进查询串（非法值一律由服务端返回稳定 400，前端不自行降级）。
  *
  * 状态处理：加载中 / 加载失败 / 学期未配置 / 空数据 四种都必须可区分，
- * 且「学期未配置」来自服务端的 `status: "UNCONFIGURED"`，不是前端猜的。
+ * 且「加载失败」来自请求失败本身，不用空榜冒充。
  */
-export function RankingsPageBody({ scope: initialScope, metric: initialMetric }: {
-  scope: "MONTH" | "TERM" | "ALL_TIME";
-  metric: "REPAIR_COUNT" | "DURATION_MINUTES";
+export function RankingsPageBody({
+  scope: initialScope,
+  metric: initialMetric,
+}: {
+  scope: AnalyticsScope;
+  metric: RankingMetric;
 }) {
   const [scope, setScope] = useState(initialScope);
   const [metric, setMetric] = useState(initialMetric);
@@ -35,7 +38,9 @@ export function RankingsPageBody({ scope: initialScope, metric: initialMetric }:
     setState("loading");
     try {
       const params = new URLSearchParams({ scope, metric, page: String(page), pageSize: "20" });
-      const response = await fetch(`/api/v1/member/rankings?${params.toString()}`, { cache: "no-store" });
+      const response = await fetch(`/api/v1/member/rankings?${params.toString()}`, {
+        cache: "no-store",
+      });
       const json = await response.json();
       if (!json.success) throw new Error(json?.error?.code ?? "RANKINGS_FAILED");
       if (!guardRef.current.isLatest(token)) return;

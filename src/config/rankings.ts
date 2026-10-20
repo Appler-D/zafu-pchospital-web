@@ -21,7 +21,7 @@ export const rankingsCopy = {
   metricLabel: "排行指标",
   scopes: {
     MONTH: "本月",
-    TERM: "本学期",
+    ACADEMIC_YEAR: "本学年",
     ALL_TIME: "总榜",
   },
   metrics: {
@@ -36,7 +36,6 @@ export const rankingsCopy = {
   countUnit: "次",
   durationLabel: "时长",
   empty: "当前范围暂无上榜记录。",
-  unconfigured: "本学期区间未配置，暂不提供排行。",
   loadFailed: "排行榜加载失败。",
   reload: "重新加载",
   myRankTitle: "我的排名",

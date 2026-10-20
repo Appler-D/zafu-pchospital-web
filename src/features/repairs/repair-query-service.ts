@@ -130,24 +130,23 @@ function approvedForMember(
   return approvedRepairWhere({
     participants: { some: { memberProfileId } },
     // `repair_date` 是 DATE 列：区间必须换成日期边界再交给查询构造器，
-    // 否则本月/学期统计会被整体挪一天（issue #75）。
+    // 否则本月/学年统计会被整体挪一天（issue #75）。
     repairDate: range ? toDateOnlyBounds(range) : undefined,
   });
 }
 
 /**
- * 成员维修摘要。`termRange` 为 undefined 表示学期未配置，
- * 此时 `termApprovedCount` 返回 `{ value: null, status: "UNCONFIGURED" }`，
- * **绝不回退为 0**。
+ * 成员维修摘要。`yearRange` 缺省只出现在直接调用（页面路径都会传入固定的学年区间），
+ * 此时 `yearApprovedCount` 返回 `{ value: null, status: "UNAVAILABLE" }`，**绝不回退为 0**。
  */
 export async function listMemberRepairSummary(
   memberProfileId: string,
-  options: { monthRange?: UtcRange; termRange?: UtcRange } = {},
+  options: { monthRange?: UtcRange; yearRange?: UtcRange } = {},
 ): Promise<MemberRepairSummary> {
   const db = getDb();
   const generatedAt = new Date().toISOString();
 
-  const [totalApprovedCount, monthApprovedCount, durationAggregate, termApprovedCount] =
+  const [totalApprovedCount, monthApprovedCount, durationAggregate, yearApprovedCount] =
     await Promise.all([
       db.repairRecord.count({ where: approvedForMember(memberProfileId) }),
       options.monthRange
@@ -157,17 +156,17 @@ export async function listMemberRepairSummary(
         where: approvedForMember(memberProfileId),
         _sum: { durationMinutes: true },
       }),
-      options.termRange
-        ? db.repairRecord.count({ where: approvedForMember(memberProfileId, options.termRange) })
+      options.yearRange
+        ? db.repairRecord.count({ where: approvedForMember(memberProfileId, options.yearRange) })
         : Promise.resolve(null),
     ]);
 
   return {
     totalApprovedCount: available(totalApprovedCount),
-    termApprovedCount:
-      termApprovedCount === null
-        ? { value: null, status: "UNCONFIGURED" }
-        : available(termApprovedCount),
+    yearApprovedCount:
+      yearApprovedCount === null
+        ? { value: null, status: "UNAVAILABLE" }
+        : available(yearApprovedCount),
     monthApprovedCount: available(monthApprovedCount),
     // 时长为空表示该成员尚无已通过记录；有记录但时长为空则合计为 0 分钟（真实值）。
     totalApprovedDurationMinutes: available(durationAggregate._sum.durationMinutes ?? 0),
@@ -235,7 +234,14 @@ export async function listMemberRecentActivity(
 ): Promise<MemberRecentActivity[]> {
   const rows = await getDb().repairRecord.findMany({
     where: { deletedAt: null, memberProfileId },
-    select: { id: true, status: true, repairDate: true, content: true, remark: true, updatedAt: true },
+    select: {
+      id: true,
+      status: true,
+      repairDate: true,
+      content: true,
+      remark: true,
+      updatedAt: true,
+    },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: limit,
   });

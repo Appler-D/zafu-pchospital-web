@@ -1,5 +1,4 @@
 import { AppError } from "@/lib/api/errors";
-import { parseAcademicTermConfig } from "@/lib/academic-term";
 import { EMAIL_BUDGET_DAILY_DEFAULT } from "@/lib/security/email-policy";
 
 const REQUIRED_SERVER_ENV = [
@@ -11,9 +10,6 @@ const REQUIRED_SERVER_ENV = [
 
 export type ServerEnv = Record<(typeof REQUIRED_SERVER_ENV)[number], string> & {
   APP_BASE_URL: string;
-  /** 学期口径原始值。空串表示未配置；非法配置在下方校验阶段直接抛错。 */
-  ACADEMIC_TERM_START: string;
-  ACADEMIC_TERM_END: string;
   /** 邮件功能总开关（issue #146），默认 false：未启用不影响应用启动。 */
   MAIL_ENABLED: boolean;
   /**
@@ -100,22 +96,12 @@ export function getServerEnv(): ServerEnv {
     });
   }
 
-  // 学期口径启动校验：两项皆空合法；只配一项 / 格式非法 / 区间倒置直接失败。
-  const academicTermStart = process.env.ACADEMIC_TERM_START ?? "";
-  const academicTermEnd = process.env.ACADEMIC_TERM_END ?? "";
-  const termParse = parseAcademicTermConfig(academicTermStart, academicTermEnd);
-  if (!termParse.ok) {
-    throw new AppError("ACADEMIC_TERM_CONFIG_INVALID", `学期配置无效：${termParse.message}`);
-  }
-
   cached = {
     DATABASE_URL: process.env.DATABASE_URL!,
     AUTH_SECRET: process.env.AUTH_SECRET!,
     INVITE_CODE_PEPPER: process.env.INVITE_CODE_PEPPER!,
     PII_AUDIT_PEPPER: process.env.PII_AUDIT_PEPPER!,
     APP_BASE_URL: process.env.APP_BASE_URL ?? "http://localhost:3000",
-    ACADEMIC_TERM_START: academicTermStart.trim(),
-    ACADEMIC_TERM_END: academicTermEnd.trim(),
     MAIL_ENABLED: process.env.MAIL_ENABLED === "true",
     EMAIL_DAILY_BUDGET: process.env.EMAIL_DAILY_BUDGET?.trim() ?? "",
     SMTP_HOST: process.env.SMTP_HOST?.trim() ?? "",

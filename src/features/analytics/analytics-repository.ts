@@ -97,29 +97,29 @@ function rangeSql(range: UtcRange | null, alias = "rr"): Prisma.Sql {
  * 个人四项正式指标。
  *
  * **直接委托 M2 已冻结的 `listMemberRepairSummary()`**，而不是在这里重写一遍
- * count/aggregate：那四个指标的「时长缺省按 0」「学期未配置返回 UNCONFIGURED」
- * 等语义已经在 M2/M3 定稿并有测试，重写一遍只会制造第二个真相来源。
+ * count/aggregate：那四个指标的「时长缺省按 0」等语义已经在 M2/M3 定稿并有测试，
+ * 重写一遍只会制造第二个真相来源。
  * M5 的贡献是把它的 `source` 标注为 `M5_ANALYTICS`，因为对外契约已改由
  * Analytics Service 提供。
  */
 export async function getMemberSummary(
   memberProfileId: string,
-  options: { monthRange: UtcRange; termRange?: UtcRange },
+  options: { monthRange: UtcRange; yearRange: UtcRange },
 ) {
   const summary = await listMemberRepairSummary(memberProfileId, options);
   return { ...summary, source: "M5_ANALYTICS" as const };
 }
 
 /** 官网总量按维修记录聚合，不能累加成员贡献（多人参与会重复计数）。 */
-export async function getPublicRepairSummary(detailEnabled: boolean, termRange?: UtcRange) {
+export async function getPublicRepairSummary(detailEnabled: boolean, yearRange: UtcRange) {
   const db = getDb();
-  const [total, term, duration] = await Promise.all([
+  const [total, year, duration] = await Promise.all([
     db.repairRecord.count({ where: approvedRepairWhere() }),
-    detailEnabled && termRange
+    detailEnabled
       ? db.repairRecord.count({
-          where: approvedRepairWhere({ repairDate: toDateOnlyBounds(termRange) }),
+          where: approvedRepairWhere({ repairDate: toDateOnlyBounds(yearRange) }),
         })
-      : Promise.resolve(null),
+      : Promise.resolve(0),
     detailEnabled
       ? db.repairRecord.aggregate({
           where: approvedRepairWhere(),
@@ -132,10 +132,7 @@ export async function getPublicRepairSummary(detailEnabled: boolean, termRange?:
     ...(detailEnabled
       ? {
           details: {
-            termApprovedCount:
-              term === null
-                ? { status: "UNCONFIGURED" as const, value: null }
-                : { status: "AVAILABLE" as const, value: term },
+            yearApprovedCount: year,
             totalApprovedDurationMinutes: duration?._sum.durationMinutes ?? 0,
           },
         }

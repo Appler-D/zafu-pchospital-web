@@ -10,7 +10,6 @@ import { UNCATEGORIZED_LABEL } from "@/types/contracts";
 import type {
   AnalyticsRange,
   AnalyticsScope,
-  AnalyticsStatus,
   CategoryDistributionItem,
   MonthlyTrendPoint,
 } from "@/types/contracts";
@@ -20,28 +19,22 @@ import { toSafeDuration, toSafeInteger } from "./analytics-policy";
 /**
  * 统计范围解析。
  *
- * **复用 M3 的 `resolveMemberRanges()`**，而不是自己再算一次上海自然月或读一遍学期配置：
+ * **复用 M3 的 `resolveMemberRanges()`**，而不是自己再算一次上海自然月或学年：
  * 三个入口（工作台 / 个人主页 / 排行榜）必须共用同一套日期口径，否则同名指标会不相等。
  *
  * - `MONTH` → 当前 `Asia/Shanghai` 自然月；
- * - `TERM` → 学期区间；**未配置时返回 `UNCONFIGURED` 且 `range: null`**，
- *   由调用方渲染「待配置」，绝不退化成空榜或 0；
+ * - `ACADEMIC_YEAR` → 固定学年区间（9/1 → 次年 9/1），不存在「未配置」态；
  * - `ALL_TIME` → `range: null` 表示不附加任何日期条件。
  */
-export function resolveScopeRange(
-  scope: AnalyticsScope,
-  now: Date,
-): { status: AnalyticsStatus; range: UtcRange | null } {
-  const { monthRange, termRange } = resolveMemberRanges(now);
+export function resolveScopeRange(scope: AnalyticsScope, now: Date): { range: UtcRange | null } {
+  const { monthRange, yearRange } = resolveMemberRanges(now);
   switch (scope) {
     case "MONTH":
-      return { status: "AVAILABLE", range: monthRange };
-    case "TERM":
-      return termRange
-        ? { status: "AVAILABLE", range: termRange }
-        : { status: "UNCONFIGURED", range: null };
+      return { range: monthRange };
+    case "ACADEMIC_YEAR":
+      return { range: yearRange };
     case "ALL_TIME":
-      return { status: "AVAILABLE", range: null };
+      return { range: null };
   }
 }
 

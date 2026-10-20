@@ -67,22 +67,21 @@ export const homePublicAnalytics = {
   label: "Service Records",
   statsTitle: "维修统计",
   total: "累计服务设备",
-  term: "本学期维修",
+  /** 学年口径（issue #178）：`{academicYear}` 由服务端下发的同一段区间替换，如「2026–2027 学年维修」。 */
+  year: "{academicYear}维修",
   duration: "累计维修时长",
   countUnit: "台",
   durationUnit: "小时",
-  unconfigured: "待配置",
-  rankingTitle: "本学期维修排行",
+  rankingTitle: "{academicYear}维修排行",
   rankingTag: "TOP 3",
   rankColumn: "排名",
   memberColumn: "成员",
   countColumn: "维修次数",
   rankingUnit: "次",
-  rankingUnconfigured: "本学期排行待配置。",
-  rankingEmpty: "本学期暂无上榜记录。",
+  rankingEmpty: "本学年暂无上榜记录。",
   rankLabel: "第 {rank} 名",
   note: "仅统计已审核通过、未删除的维修记录；每条维修记录按一次计入总量。",
-  rankingNote: "按本学期审核通过的维修次数排序。",
+  rankingNote: "按{academicYear}审核通过的维修次数排序。",
 } as const;
 
 export const aboutContent = {

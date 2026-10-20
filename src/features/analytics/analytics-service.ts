@@ -24,10 +24,10 @@ import {
 import { buildMonthlyTrend, toCategoryDistribution } from "./analytics-view";
 
 export const analyticsService: MemberAnalyticsServiceContract = {
-  async getMemberAnalytics(actor): Promise<MemberAnalytics> {
+  async getMemberAnalytics(actor, now: Date = new Date()): Promise<MemberAnalytics> {
     requirePermission(actor, "analytics:read_internal");
     const self = await memberProfileRepository.activeForUser(actor.userId);
-    return computeMemberAnalytics(self.id);
+    return computeMemberAnalytics(self.id, now);
   },
 
   /**
@@ -38,26 +38,32 @@ export const analyticsService: MemberAnalyticsServiceContract = {
    * 权限码仍是 `analytics:read_internal`，且 `member.profile.read_internal` 的
    * 读取审计由路由层负责（见 `GET /api/v1/admin/members/:id/stats`）。
    */
-  async getMemberAnalyticsFor(memberProfileId, actor): Promise<MemberAnalytics> {
+  async getMemberAnalyticsFor(
+    memberProfileId,
+    actor,
+    now: Date = new Date(),
+  ): Promise<MemberAnalytics> {
     requirePermission(actor, "analytics:read_internal");
     const member = await memberProfileRepository.findById(memberProfileId);
     if (!member) throw new AppError("MEMBER_PROFILE_NOT_FOUND", "成员不存在");
-    return computeMemberAnalytics(member.id);
+    return computeMemberAnalytics(member.id, now);
   },
 };
 
 /** 个人统计的唯一实现：本人版本与管理端版本都必须走这里，禁止各写一套口径。 */
-async function computeMemberAnalytics(memberProfileId: string): Promise<MemberAnalytics> {
-  const now = new Date();
-  // 与工作台/个人主页共用同一套日期口径；学期配置非法时由它按 M3 规则抛出。
-  const { monthRange, termRange } = resolveMemberRanges(now);
+async function computeMemberAnalytics(
+  memberProfileId: string,
+  now: Date,
+): Promise<MemberAnalytics> {
+  // 与工作台/个人主页共用同一套日期口径（本月 + 固定学年区间）。
+  const { monthRange, yearRange } = resolveMemberRanges(now);
 
   const months = recentShanghaiMonths(now, ANALYTICS_TREND_MONTHS);
   const trendStart = shanghaiDateToUtc(`${months[0]}-01`);
   if (!trendStart) throw new Error("趋势窗口起点异常");
 
   const [summary, categoryRows, trendRows] = await Promise.all([
-    getMemberSummary(memberProfileId, { monthRange, termRange }),
+    getMemberSummary(memberProfileId, { monthRange, yearRange }),
     // 分类分布不附加日期条件：它描述的是「该成员的累计构成」。
     aggregateCategoryDistribution(memberProfileId, null),
     aggregateMonthlyTrend(memberProfileId, {

@@ -1,8 +1,4 @@
-import {
-  getAcademicTermConfig,
-  shanghaiMonthRange,
-  type UtcRange,
-} from "@/lib/academic-term";
+import { shanghaiAcademicYearRange, shanghaiMonthRange, type UtcRange } from "@/lib/academic-term";
 import {
   listMemberRecentActivity,
   listMemberRecentRepairs,
@@ -19,7 +15,7 @@ import type {
 /**
  * 工作台维修数据 Provider（M3 任务书 §7、§9、§12.1）。
  *
- * 边界：**不新建 RepairRecord 查询**，只把 M3 的日期口径（本月 / 学期）
+ * 边界：**不新建 RepairRecord 查询**，只把 M3 的日期口径（本月 / 学年）
  * 交给 M2 已冻结的成员维修读取函数，由后者复用
  * `APPROVED AND deletedAt IS NULL` 的正式语义。
  *
@@ -48,9 +44,7 @@ export type MemberOverviewQuery = {
  * 之所以不用 `null` 表示失败：`null` 会与「合法但为空」混淆
  * （例如某成员确实没有已通过记录，`recentRepairs` 就是空数组）。
  */
-export type SectionResult<T> =
-  | { status: "ready"; data: T }
-  | { status: "failed"; code: string };
+export type SectionResult<T> = { status: "ready"; data: T } | { status: "failed"; code: string };
 
 export type MemberOverviewResult = {
   repairSummary: SectionResult<MemberRepairSummary>;
@@ -69,13 +63,16 @@ export type MemberOverviewSettled = [
   PromiseSettledResult<MemberWorkQueue>,
 ];
 
-/** 解析当前应为哪个月与哪个学期区间；学期未配置时 `termRange` 为 undefined。 */
-export function resolveMemberRanges(now: Date): { monthRange: UtcRange; termRange?: UtcRange } {
+/** 解析当前应为哪个月与哪个学年区间；学年固定为 9/1 → 次年 9/1（issue #178），不存在「未配置」。 */
+export function resolveMemberRanges(now: Date): { monthRange: UtcRange; yearRange: UtcRange } {
   const monthRange = shanghaiMonthRange(now);
-  const term = getAcademicTermConfig();
+  const yearRange = shanghaiAcademicYearRange(now);
   return {
-    monthRange: { startInclusive: monthRange.startInclusive, endExclusive: monthRange.endExclusive },
-    termRange: term.configured ? term.range : undefined,
+    monthRange: {
+      startInclusive: monthRange.startInclusive,
+      endExclusive: monthRange.endExclusive,
+    },
+    yearRange: { startInclusive: yearRange.startInclusive, endExclusive: yearRange.endExclusive },
   };
 }
 
@@ -114,8 +111,10 @@ export function collectSections([
   };
 }
 
-export async function loadMemberOverview(query: MemberOverviewQuery): Promise<MemberOverviewResult> {
-  const { monthRange, termRange } = resolveMemberRanges(query.now);
+export async function loadMemberOverview(
+  query: MemberOverviewQuery,
+): Promise<MemberOverviewResult> {
+  const { monthRange, yearRange } = resolveMemberRanges(query.now);
 
   // 并行读取，但**逐项收敛**：使用 allSettled 而非 all，任一失败不影响其它区块。
   // 注意四路查询之间不构成强事务快照，页面不得假设快照一致性；
@@ -124,7 +123,7 @@ export async function loadMemberOverview(query: MemberOverviewQuery): Promise<Me
     await Promise.allSettled([
       // M5 起正式摘要统一由 Analytics 入口产出（source = M5_ANALYTICS），
       // 内部仍复用 M2 的正式谓词与同一套聚合，不产生第二个统计口径。
-      getMemberSummary(query.memberProfileId, { monthRange, termRange }),
+      getMemberSummary(query.memberProfileId, { monthRange, yearRange }),
       listMemberRecentRepairs(query.memberProfileId, query.recentLimit),
       listMemberRecentActivity(query.memberProfileId, query.recentLimit),
       listMemberWorkQueue(query.memberProfileId),

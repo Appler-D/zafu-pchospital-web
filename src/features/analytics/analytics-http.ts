@@ -10,10 +10,10 @@ import { AppError } from "@/lib/api/errors";
 import { AnalyticsScope, RankingMetric } from "@/types/contracts";
 import type { AnalyticsScope as Scope, RankingMetric as Metric } from "@/types/contracts";
 
-/** `scope` 缺省 `TERM`（任务书 §9.2）。 */
+/** `scope` 缺省 `ACADEMIC_YEAR`（issue #178：统计口径由学期改为学年）。 */
 export function rankingScopeFilter(params: URLSearchParams): Scope {
   const raw = params.get("scope");
-  if (!raw) return "TERM";
+  if (!raw) return "ACADEMIC_YEAR";
   if (!(AnalyticsScope as readonly string[]).includes(raw)) {
     throw new AppError("ANALYTICS_SCOPE_INVALID", "统计范围无效");
   }

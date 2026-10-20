@@ -7,6 +7,7 @@ import type { AdminToastMessage } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared } from "@/config/admin";
+import { shanghaiAcademicYearRange } from "@/lib/academic-term";
 import { adminFetch } from "@/features/admin/admin-client";
 import { RankingDisplayNameMode } from "@/types/contracts";
 import type {
@@ -34,6 +35,11 @@ type SettingsDraft = {
  * 3. 展示名单独一段并写明需求 §74 的边界（QQ 等私人信息禁止公开），
  *    因为「打开排行榜」和「公开真实姓名」是两件严重程度完全不同的事。
  */
+/** 预览与真实首页同一口径：学年由日期推导（9/1 → 次年 9/1），不需要任何配置。 */
+function previewYearLabel(template: string): string {
+  return template.replace("{academicYear}", shanghaiAcademicYearRange(new Date()).label);
+}
+
 export function PublicContentSettingsPanel() {
   const copy = adminCopy.settings;
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -265,7 +271,9 @@ export function PublicContentSettingsPanel() {
                 {draft.publicRepairStatsDetailEnabled ? (
                   <>
                     <div className="member-metric">
-                      <span className="member-metric__label">{copy.preview.statsTerm}</span>
+                      <span className="member-metric__label">
+                        {previewYearLabel(copy.preview.statsTerm)}
+                      </span>
                       <span className="member-metric__value">
                         {copy.preview.placeholder}
                         <span className="member-metric__unit">{copy.preview.statsTermUnit}</span>
@@ -289,7 +297,9 @@ export function PublicContentSettingsPanel() {
 
             {draft.publicRankingsEnabled ? (
               <div className="admin-preview">
-                <p className="admin-preview__title">{copy.preview.rankingsTitle}</p>
+                <p className="admin-preview__title">
+                  {previewYearLabel(copy.preview.rankingsTitle)}
+                </p>
                 <ol className="admin-preview__list">
                   {copy.preview.rankingCounts.map((count, index) => (
                     <li className="admin-preview__row" key={count}>
