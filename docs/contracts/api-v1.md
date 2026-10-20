@@ -167,6 +167,22 @@ Route Handler 必须从数据库 Session、账号状态和有效 UserRole 构造
 
 ## Contract 变更
 
+### 成员部门（issue #171）
+
+- 部门代码为 `REPAIR` / `PUBLICITY` / `OFFICE`，中文标签分别为维修部 / 宣传部 / 办公室。
+- `POST /api/v1/admin/members` 可传 `department`，缺省 `REPAIR`；
+  `PATCH /api/v1/admin/members/:id` 可传 `department`（省略不改），仍须 `version`，权限为
+  `member:manage`，冲突返回 `MEMBER_PROFILE_VERSION_CONFLICT`，成功递增版本并审计前后部门。
+  成员列表、详情、创建与修改响应的成员视图均包含 `department`，修改响应包含新 `version`。
+- `POST /api/v1/admin/join-applications/:id/reviews` 首次 `result=PASSED` 必须传有效
+  `admittedDepartment`；`REJECTED` 不传该字段。非法代码、NULL、空串或首次通过缺失字段返回
+  `VALIDATION_FAILED`，`fieldErrors.admittedDepartment` 给出纠正提示。
+  已通过再次提交通过可省略部门；合法的新值被忽略，补记备注与发放重试沿用首次保存值。
+- 报名管理列表、详情与审核响应追加 `admittedDepartment`（历史与未录取为 NULL），不修改公开回执。
+  已成功发放的重放不覆盖成员当前部门；历史 NULL 任务新建默认维修部、复用保留当前归属。
+- 成员自助 `PATCH /api/v1/member/profile` 不接受 `department`，未知字段继续拒绝。
+  部门不改变登录、角色、权限或导出列。无新增权限、依赖或外部数据传输。
+
 修改公共 Type、Enum、错误码、API 信封或已记录端点时，必须先搜索所有生产者与消费者并在
 PR 中记录影响范围。不强制单独评审；但若影响其他模块，必须在同一变更中同步 Route、Service、
 客户端调用、数据迁移（如有）、Contract 测试和文档，不能保留新旧两套不兼容语义。

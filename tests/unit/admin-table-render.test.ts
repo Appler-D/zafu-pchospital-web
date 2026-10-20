@@ -59,12 +59,13 @@ async function load(): Promise<Modules> {
 }
 
 /** 迁移前的列宽（第九轮验收后的值），迁移后必须逐列一致。 */
-const LEGACY_WIDTHS = [221, 124, 92, 96, 96, 72, 96, 132, 150];
+const LEGACY_WIDTHS = [221, 84, 124, 92, 96, 96, 72, 96, 132, 150];
 
 function legacyLabels(modules: Modules): string[] {
   const table = modules.admin.adminCopy.members.table;
   return [
     table.realName,
+    modules.admin.adminCopy.members.department,
     table.skills,
     table.studentId,
     table.className,
@@ -81,6 +82,7 @@ function member(overrides: Partial<MemberListEntry> = {}): MemberListEntry {
     id: "m-1",
     userId: "u-1",
     realName: "张三",
+    department: "REPAIR",
     nickname: "小三",
     studentId: "S001",
     className: "计科 2101",

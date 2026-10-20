@@ -92,6 +92,23 @@ verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`�
 - 清理：`pnpm email:cleanup`（`tools/email-cleanup.ts`）分批删除 7 天前已结束的挑战、
   过期授权与过期计数桶，幂等、可重复执行。
 
+## 成员部门（issue #171）
+
+- `MemberDepartment` 固定为 `REPAIR`（维修部）、`PUBLICITY`（宣传部）、`OFFICE`（办公室），
+  一名成员只有一个部门，不参与角色与权限计算，不新增部门表。
+- `member_profiles.department VARCHAR(32) NOT NULL DEFAULT 'REPAIR'`，数据库 CHECK 限定上述值；
+  前向迁移 `20261020000000_member_department` 将所有存量成员归入维修部。
+- `join_applications.admitted_department VARCHAR(32) NULL` 保存首次通过的录取部门，CHECK
+  允许上述三个值或 NULL。历史报名保持 NULL；当前成员归属与历史录取部门分别保存。
+- 首次通过必须选择部门，录取部门与面试结论、Provision 任务、审计在同一审核事务提交。
+  发放事务读取已保存的录取部门；失败重试、重复通过、补记备注均不修改录取部门。
+- 新版发放复用已有档案时按录取部门更新，部门变化递增档案版本并在发放审计记录前后值。
+  成功后重放不再建档，不覆盖管理员后来调整的归属。历史已通过且无录取部门的任务：
+  新建档案默认维修部，复用档案保留当前部门。
+- 管理员新增可选部门（缺省维修部），详情修改复用 `member:manage`、version 与
+  `member.profile.updated` 审计；邀请码注册新建默认维修部，未指定部门的共享建档调用不覆盖已有归属。
+  普通成员自助资料接口不开放部门修改。
+
 ## 招募与发放边界
 
 - `join_applications` 可独立存在，不要求先创建用户。

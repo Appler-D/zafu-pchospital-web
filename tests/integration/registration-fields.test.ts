@@ -270,6 +270,7 @@ function reviewPassed(applicationId: string, keyPrefix: string) {
     {
       applicationId,
       result: "PASSED",
+      admittedDepartment: "REPAIR",
       interviewedAt: new Date().toISOString(),
       idempotencyKey: `${keyPrefix}-${applicationId}`,
     },

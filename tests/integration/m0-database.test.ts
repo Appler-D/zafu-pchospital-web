@@ -206,6 +206,7 @@ dbTest("面试通过重复执行不创建重复账号、档案或角色", async 
   const review = {
     applicationId: receipt.id,
     result: "PASSED" as const,
+    admittedDepartment: "REPAIR" as const,
     interviewedAt: new Date().toISOString(),
     idempotencyKey: `join-${receipt.id}`,
   };
@@ -238,6 +239,7 @@ dbTest("已通过的报名再提交「通过」：状态不回流，携带的备
     {
       applicationId: receipt.id,
       result: "PASSED",
+      admittedDepartment: "REPAIR",
       interviewedAt: new Date().toISOString(),
       internalNote: "首次登记",
       idempotencyKey: `note-a-${receipt.id}`,
@@ -249,6 +251,7 @@ dbTest("已通过的报名再提交「通过」：状态不回流，携带的备
     {
       applicationId: receipt.id,
       result: "PASSED",
+      admittedDepartment: "REPAIR",
       interviewedAt: new Date().toISOString(),
       internalNote: "补记：技术方向",
       idempotencyKey: `note-b-${receipt.id}`,
@@ -327,6 +330,7 @@ dbTest("报名通过发放的 QQ 身份可登录，首次改密会轮换并撤�
     {
       applicationId: receipt.id,
       result: "PASSED",
+      admittedDepartment: "REPAIR",
       interviewedAt: new Date().toISOString(),
       idempotencyKey: `auth-${receipt.id}`,
     },

@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { adminCopy, adminShared } from "@/config/admin";
+import { memberDepartmentOptions } from "@/config/member-department";
 import { adminFetch, firstFieldError } from "@/features/admin/admin-client";
 import type { MemberMutationResult } from "@/types/contracts";
 
@@ -53,6 +54,7 @@ export function MemberCreateForm({
         studentId: data.studentId || undefined,
         className: data.className || undefined,
         nickname: data.nickname || undefined,
+        department: data.department,
         idempotencyKey: idempotencyKey.current,
       },
     });
@@ -89,6 +91,22 @@ export function MemberCreateForm({
   return (
     <form method="post" className="admin-form" onSubmit={submit} aria-label={copy.title}>
       <div className="admin-form__grid">
+        <label className="field">
+          <span className="field__label">{adminCopy.members.department}</span>
+          <select
+            className="field__input"
+            name="department"
+            defaultValue="REPAIR"
+            disabled={busy}
+            required
+          >
+            {memberDepartmentOptions.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           <span className="field__label">{copy.realName}</span>
           <input className="field__input" name="realName" required minLength={2} maxLength={64} />

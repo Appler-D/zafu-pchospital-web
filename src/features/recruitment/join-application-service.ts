@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { accountNotificationService } from "@/features/email/account-notification-service";
 import { accountProvisionService } from "@/features/accounts/account-provision-service";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import type { JoinApplication, Prisma } from "@/generated/prisma/client";
 import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
 import { AppError } from "@/lib/api/errors";
@@ -180,6 +181,15 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     actor: AuthorizedActor,
   ): Promise<JoinApplicationView> {
     requirePermission(actor, "join:review");
+    const admittedDepartment =
+      input.admittedDepartment === undefined
+        ? undefined
+        : parseMemberDepartment(input.admittedDepartment, "admittedDepartment");
+    if (input.result !== "PASSED" && admittedDepartment !== undefined) {
+      throw new AppError("VALIDATION_FAILED", "未通过面试时不能设置录取部门", {
+        fieldErrors: { admittedDepartment: ["仅面试通过时填写录取部门"] },
+      });
+    }
     const interviewedAt = new Date(input.interviewedAt);
     if (Number.isNaN(interviewedAt.getTime())) {
       throw new AppError("VALIDATION_FAILED", "面试时间格式无效");
@@ -235,6 +245,9 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       }
 
       const nextStatus = input.result === "PASSED" ? "INTERVIEW_PASSED" : "INTERVIEW_REJECTED";
+      // 首次通过必须明确选择；已通过的重放在上方返回，历史空值不被补写。
+      if (input.result === "PASSED")
+        parseMemberDepartment(admittedDepartment, "admittedDepartment");
       await tx.joinApplicationReview.create({
         data: {
           id: randomUUID(),
@@ -250,6 +263,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
         where: { id: application.id },
         data: {
           status: nextStatus,
+          admittedDepartment: input.result === "PASSED" ? admittedDepartment : undefined,
           provisionStatus: input.result === "PASSED" ? "PENDING" : "NOT_REQUIRED",
           lastReviewedAt: interviewedAt,
         },
@@ -275,8 +289,16 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
         targetType: "JoinApplication",
         targetId: application.id,
         result: "SUCCESS",
-        before: { status: application.status, provisionStatus: application.provisionStatus },
-        after: { status: nextStatus, provisionStatus: updated.provisionStatus },
+        before: {
+          status: application.status,
+          provisionStatus: application.provisionStatus,
+          admittedDepartment: application.admittedDepartment,
+        },
+        after: {
+          status: nextStatus,
+          provisionStatus: updated.provisionStatus,
+          admittedDepartment: updated.admittedDepartment,
+        },
       });
       return updated;
     });
@@ -433,6 +455,7 @@ function toView(record: JoinApplication): JoinApplicationView {
     id: record.id,
     status: record.status as JoinApplicationView["status"],
     provisionStatus: record.provisionStatus as JoinApplicationView["provisionStatus"],
+    admittedDepartment: record.admittedDepartment as JoinApplicationView["admittedDepartment"],
     lastReviewedAt: record.lastReviewedAt?.toISOString() ?? null,
   };
 }

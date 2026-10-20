@@ -5,6 +5,7 @@ import type { SortRule } from "@/types/table";
 export const UserStatus = ["ACTIVE", "DISABLED"] as const;
 export const RoleCode = ["MEMBER", "ADMIN"] as const;
 export const MemberStatus = ["ACTIVE", "REVOKED"] as const;
+export const MemberDepartment = ["REPAIR", "PUBLICITY", "OFFICE"] as const;
 export const IdentityType = ["PHONE", "QQ", "QQ_OAUTH", "WECHAT_OAUTH", "EMAIL"] as const;
 export const JoinApplicationStatus = [
   "SUBMITTED",
@@ -57,6 +58,7 @@ type ValueOf<T extends readonly string[]> = T[number];
 export type UserStatus = ValueOf<typeof UserStatus>;
 export type RoleCode = ValueOf<typeof RoleCode>;
 export type MemberStatus = ValueOf<typeof MemberStatus>;
+export type MemberDepartment = ValueOf<typeof MemberDepartment>;
 export type IdentityType = ValueOf<typeof IdentityType>;
 export type JoinApplicationStatus = ValueOf<typeof JoinApplicationStatus>;
 export type InterviewResult = ValueOf<typeof InterviewResult>;
@@ -281,6 +283,8 @@ export type JoinReceipt = {
 export type ReviewJoinApplicationInput = {
   applicationId: string;
   result: InterviewResult;
+  /** 首次通过必填；重复通过 / 补记备注不改变已保存的录取部门。 */
+  admittedDepartment?: MemberDepartment;
   interviewedAt: string;
   internalNote?: string;
   idempotencyKey: string;
@@ -290,6 +294,7 @@ export type JoinApplicationView = {
   id: string;
   status: JoinApplicationStatus;
   provisionStatus: ProvisionStatus;
+  admittedDepartment: MemberDepartment | null;
   lastReviewedAt: string | null;
   initializationSecret?: string;
 };
@@ -409,6 +414,7 @@ export type CreateMemberInput = {
   studentId?: string;
   className?: string;
   nickname?: string;
+  department?: MemberDepartment;
   idempotencyKey: string;
 };
 
@@ -416,6 +422,7 @@ export type MemberView = {
   id: string;
   userId: string;
   realName: string;
+  department: MemberDepartment;
   nickname: string | null;
   studentId: string | null;
   className: string | null;
@@ -503,6 +510,7 @@ export type MemberListEntry = {
   id: string;
   userId: string;
   realName: string;
+  department: MemberDepartment;
   nickname: string | null;
   studentId: string | null;
   className: string | null;
@@ -543,6 +551,7 @@ export type MemberDetail = MemberListEntry & {
 };
 
 export type UpdateMemberInput = {
+  department?: MemberDepartment;
   realName?: string;
   studentId?: string | null;
   className?: string | null;

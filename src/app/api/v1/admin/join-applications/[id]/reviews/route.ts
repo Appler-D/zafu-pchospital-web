@@ -1,4 +1,5 @@
 import { joinApplicationService } from "@/features/recruitment/join-application-service";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
@@ -14,6 +15,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         {
           applicationId: (await params).id,
           result: body.result === "PASSED" ? "PASSED" : "REJECTED",
+          admittedDepartment:
+            body.admittedDepartment === undefined
+              ? undefined
+              : parseMemberDepartment(body.admittedDepartment, "admittedDepartment"),
           interviewedAt: String(body.interviewedAt ?? ""),
           internalNote: typeof body.internalNote === "string" ? body.internalNote : undefined,
           idempotencyKey: String(body.idempotencyKey ?? ""),

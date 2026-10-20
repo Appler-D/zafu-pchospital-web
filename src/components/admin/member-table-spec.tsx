@@ -4,6 +4,7 @@ import { useRowSelect } from "@/components/admin/useRowSelect";
 import { Icon } from "@/components/ui/Icon";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
 import { formatDurationMinutes, formatShanghaiDate } from "@/config/member";
+import { memberDepartmentLabels } from "@/config/member-department";
 import { MemberStatus, type MemberListEntry } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
@@ -142,6 +143,14 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
           </button>
         </span>
       ),
+    },
+    {
+      key: "department",
+      label: adminCopy.members.department,
+      kind: "select",
+      width: 84,
+      sortable: false,
+      render: (member) => memberDepartmentLabels[member.department],
     },
     {
       key: "skills",

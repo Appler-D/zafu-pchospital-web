@@ -14,6 +14,7 @@ import {
 } from "@/features/accounts/account-repository";
 import { enqueueAccountNotification } from "@/features/email/account-notification-service";
 import { claimHistoryForNewMember } from "@/features/repairs/repair-history-import-service";
+import { parseMemberDepartment } from "@/features/members/member-department";
 
 export class AccountProvisionService implements AccountProvisionServiceContract {
   async provisionFromApplication(
@@ -79,6 +80,7 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
           },
           application.realName,
         );
+        const previousProfile = await tx.memberProfile.findUnique({ where: { userId } });
         const memberProfileId = await ensureMemberProfile(tx, {
           userId,
           realName: application.realName,
@@ -86,6 +88,11 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
           // 历史报名的 NULL / 空白转为 `undefined`（不更新该字段），不能清空档案里已有的有效值。
           studentId: blankToUndefined(application.studentId),
           className: blankToUndefined(application.className),
+          // 以审核事务保存的部门为准；历史 NULL 新建用默认值，复用保留当前归属。
+          department:
+            application.admittedDepartment === null
+              ? undefined
+              : parseMemberDepartment(application.admittedDepartment, "admittedDepartment"),
         });
         await grantMemberRole(tx, {
           userId,
@@ -118,11 +125,19 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
           targetType: "AccountProvision",
           targetId: provision.id,
           result: "SUCCESS",
+          before: previousProfile
+            ? {
+                memberProfileId: previousProfile.id,
+                department: previousProfile.department,
+                version: previousProfile.version,
+              }
+            : undefined,
           after: {
             sourceType: provision.sourceType,
             sourceId: applicationId,
             userId,
             memberProfileId,
+            department: application.admittedDepartment ?? previousProfile?.department ?? "REPAIR",
           },
         });
         return { completed, passwordCreated, memberProfileId, realName: application.realName };

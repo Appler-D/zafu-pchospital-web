@@ -21,6 +21,7 @@ const adminProfileSelect = {
   id: true,
   userId: true,
   realName: true,
+  department: true,
   nickname: true,
   studentId: true,
   className: true,
@@ -55,6 +56,7 @@ type AdminProfileRow = {
   id: string;
   userId: string;
   realName: string;
+  department: string;
   nickname: string | null;
   studentId: string | null;
   className: string | null;
@@ -243,6 +245,7 @@ function toEntry(row: AdminProfileRow, stats: RepairStats): MemberListEntry {
     id: row.id,
     userId: row.userId,
     realName: row.realName,
+    department: row.department as MemberListEntry["department"],
     nickname: row.nickname,
     studentId: row.studentId,
     className: row.className,

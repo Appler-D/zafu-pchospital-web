@@ -1,4 +1,5 @@
 import { memberService } from "@/features/members/member-service";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import { nullableText, requiredVersion } from "@/features/members/member-http";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
@@ -34,6 +35,8 @@ export async function PATCH(request: Request, { params }: Context) {
           studentId: nullableText(body.studentId),
           className: nullableText(body.className),
           nickname: nullableText(body.nickname),
+          department:
+            body.department === undefined ? undefined : parseMemberDepartment(body.department),
           version: requiredVersion(body),
         },
         actor,

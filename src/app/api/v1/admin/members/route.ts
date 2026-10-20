@@ -1,5 +1,6 @@
 import { memberListInput } from "@/features/members/member-http";
 import { memberService } from "@/features/members/member-service";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import { parsePagination } from "@/lib/api/pagination";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
@@ -39,6 +40,8 @@ export async function POST(request: Request) {
           studentId: optional(body.studentId),
           className: optional(body.className),
           nickname: optional(body.nickname),
+          department:
+            body.department === undefined ? undefined : parseMemberDepartment(body.department),
           idempotencyKey: String(body.idempotencyKey ?? ""),
         },
         actor,
