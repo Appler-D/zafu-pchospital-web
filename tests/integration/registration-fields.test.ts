@@ -265,6 +265,17 @@ async function createHistoricalApplication(input: {
   });
 }
 
+async function provisionHistoricalPass(applicationId: string, keyPrefix: string) {
+  await getDb().joinApplication.update({
+    where: { id: applicationId },
+    data: { status: "INTERVIEW_PASSED", provisionStatus: "PENDING" },
+  });
+  return accountProvisionService.provisionFromApplication(
+    applicationId,
+    `${keyPrefix}-${applicationId}`,
+  );
+}
+
 function reviewPassed(applicationId: string, keyPrefix: string) {
   return joinApplicationService.review(
     {
@@ -759,7 +770,7 @@ dbTest(
     assert.equal(cellsA[4], "", "历史班级导出空字符串");
     assert.ok(!rowA.includes("null") && !rowA.includes("undefined"), `不得导出字面量：${rowA}`);
 
-    await reviewPassed(appA.id, "i147-f06-a");
+    await provisionHistoricalPass(appA.id, "i147-f06-a");
     const profileA = await profileOfUser(regA.userId);
     assert.equal(profileA.studentId, "KEEP-A1", "历史空值不得清空档案学号");
     assert.equal(profileA.className, "KEEP-A2", "历史空值不得清空档案班级");
@@ -787,7 +798,7 @@ dbTest(
       studentId: null,
       className: "老班级 B",
     });
-    await reviewPassed(appB.id, "i147-f06-b");
+    await provisionHistoricalPass(appB.id, "i147-f06-b");
     const profileB = await profileOfUser(regB.userId);
     assert.equal(profileB.studentId, "KEEP-B1", "仅一项为空时，已有有效学号保留");
     assert.equal(profileB.className, "老班级 B", "有效新值沿用既有发放更新语义写入");
@@ -868,7 +879,7 @@ dbTest("F07 重复报名 / 邀请码重放 / 发放重试不重复计数、不�
       qq: `8${s3}`.slice(0, 11),
       phone: `139${s3}`.slice(0, 11),
       email: "applicant@example.com",
-      studentId: "001234",
+      studentId: "001234-retry",
       className: "计算机 233",
       privacyConsent: true,
     },
@@ -1324,10 +1335,19 @@ async function notificationFixture(
     typeof joinApplicationService.submit
   >[0];
   const receipt = await joinApplicationService.submit(
-    { ...body, recruitmentCycle: `${CYCLE_PREFIX}${randomUUID().slice(0, 8)}` },
+    {
+      ...body,
+      studentId: `N158-${body.qq}`,
+      recruitmentCycle: `${CYCLE_PREFIX}${randomUUID().slice(0, 8)}`,
+    },
     { requestId: "req_n158" },
   );
-  await reviewPassed(receipt.id, "n158");
+  if (overrides.phone) {
+    // 旧版本复用已有账号的历史已通过任务，仍须覆盖无密码通知模板。
+    await provisionHistoricalPass(receipt.id, "n158");
+  } else {
+    await reviewPassed(receipt.id, "n158");
+  }
   return getDb().accountNotification.findFirstOrThrow({ where: { applicationId: receipt.id } });
 }
 async function clearNotificationBudget() {

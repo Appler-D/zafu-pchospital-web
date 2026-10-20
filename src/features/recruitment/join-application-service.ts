@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { accountNotificationService } from "@/features/email/account-notification-service";
 import { accountProvisionService } from "@/features/accounts/account-provision-service";
 import { parseMemberDepartment } from "@/features/members/member-department";
+import { assertNoActiveMemberConflict } from "@/features/recruitment/member-conflicts";
 import type { JoinApplication, Prisma } from "@/generated/prisma/client";
 import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
 import { AppError } from "@/lib/api/errors";
@@ -125,7 +126,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     const qqNormalized = normalizeQq(input.qq);
     const phoneNormalized = normalizePhone(input.phone);
     const duplicate = await findDuplicate(input.recruitmentCycle, qqNormalized, phoneNormalized);
-    if (duplicate) return toReceipt(duplicate, true);
+    if (duplicate) return duplicateReceipt(duplicate);
 
     const now = new Date();
     try {
@@ -170,7 +171,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     } catch (error) {
       if (hasPrismaCode(error, "P2002")) {
         const raced = await findDuplicate(input.recruitmentCycle, qqNormalized, phoneNormalized);
-        if (raced) return toReceipt(raced, true);
+        if (raced) return duplicateReceipt(raced);
       }
       throw error;
     }
@@ -211,7 +212,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
         // 带备注时按「补记一条面试记录」落库；不带备注才是真正的重复提交，幂等返回。
         // （issue #97：此前一律直接返回，界面上表现为「填了备注、提示成功、备注却不在」。）
         const note = cleanOptional(input.internalNote);
-        if (!note) return application;
+        if (!note) return { application, provision: null };
         await tx.joinApplicationReview.create({
           data: {
             id: randomUUID(),
@@ -238,7 +239,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
             noteOnly: true,
           },
         });
-        return application;
+        return { application, provision: null };
       }
       if (application.status !== "SUBMITTED" && application.status !== "INTERVIEW_PENDING") {
         throw new AppError("JOIN_APPLICATION_NOT_REVIEWABLE", "该报名当前不可登记面试结果");
@@ -246,8 +247,10 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
 
       const nextStatus = input.result === "PASSED" ? "INTERVIEW_PASSED" : "INTERVIEW_REJECTED";
       // 首次通过必须明确选择；已通过的重放在上方返回，历史空值不被补写。
-      if (input.result === "PASSED")
+      if (input.result === "PASSED") {
         parseMemberDepartment(admittedDepartment, "admittedDepartment");
+        await assertNoActiveMemberConflict(tx, application);
+      }
       await tx.joinApplicationReview.create({
         data: {
           id: randomUUID(),
@@ -300,26 +303,72 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
           admittedDepartment: updated.admittedDepartment,
         },
       });
-      return updated;
+      // 查重与建档共享事务：并发成员写入会被 Serializable 锁定 / 重试，
+      // 冲突或发放失败时审核结论、录取部门、任务及通知全部回滚。
+      const provision =
+        input.result === "PASSED"
+          ? await accountProvisionService.provisionInTransaction(
+              tx,
+              application.id,
+              input.idempotencyKey,
+            )
+          : null;
+      return { application: updated, provision };
     });
 
     let initializationSecret: string | undefined;
-    if (input.result === "PASSED" && prepared.provisionStatus !== "SUCCEEDED") {
+    if (prepared.provision) {
+      const result = await accountProvisionService.finishProvision(prepared.provision);
+      initializationSecret = result.initializationSecret;
+    } else if (input.result === "PASSED" && prepared.application.provisionStatus !== "SUCCEEDED") {
       const provision = await getDb().accountProvision.findUniqueOrThrow({
-        where: { sourceType_sourceId: { sourceType: "JOIN_APPLICATION", sourceId: prepared.id } },
+        where: {
+          sourceType_sourceId: {
+            sourceType: "JOIN_APPLICATION",
+            sourceId: prepared.application.id,
+          },
+        },
       });
       const result = await accountProvisionService.provisionFromApplication(
-        prepared.id,
+        prepared.application.id,
         provision.idempotencyKey,
       );
       initializationSecret = result.initializationSecret;
     }
-    const final = await getDb().joinApplication.findUniqueOrThrow({ where: { id: prepared.id } });
+    const final = await getDb().joinApplication.findUniqueOrThrow({
+      where: { id: prepared.application.id },
+    });
     return { ...toView(final), ...(initializationSecret ? { initializationSecret } : {}) };
+  }
+
+  async softDelete(applicationId: string, actor: AuthorizedActor): Promise<void> {
+    requirePermission(actor, "join:review");
+    await inSerializableTransaction(async (tx) => {
+      // 与审核 / 发放锁同一行；删除不撤销已有成员，也不删除历史任务与审计。
+      await tx.$queryRaw`SELECT id FROM join_applications WHERE id = ${applicationId} FOR UPDATE`;
+      const application = await tx.joinApplication.findUnique({ where: { id: applicationId } });
+      if (!application || application.deletedAt) {
+        throw new AppError("RESOURCE_NOT_FOUND", "报名记录不存在");
+      }
+      const deletedAt = new Date();
+      await tx.joinApplication.update({ where: { id: applicationId }, data: { deletedAt } });
+      await appendAuditLog(tx, {
+        actor,
+        actorType: actor.actorType,
+        actorUserId: actor.userId,
+        action: "join.application.deleted",
+        targetType: "JoinApplication",
+        targetId: applicationId,
+        result: "SUCCESS",
+        before: { status: application.status, provisionStatus: application.provisionStatus },
+        after: { deletedAt: deletedAt.toISOString() },
+      });
+    });
   }
 
   async retryProvision(applicationId: string, actor: AuthorizedActor): Promise<ProvisionView> {
     requirePermission(actor, "member:provision");
+    await assertApplicationExists(applicationId);
     const provision = await getDb().accountProvision.findUnique({
       where: { sourceType_sourceId: { sourceType: "JOIN_APPLICATION", sourceId: applicationId } },
     });
@@ -347,6 +396,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
 
   async provision(applicationId: string, actor: AuthorizedActor): Promise<ProvisionView> {
     requirePermission(actor, "member:provision");
+    await assertApplicationExists(applicationId);
     const provision = await getDb().accountProvision.findUnique({
       where: { sourceType_sourceId: { sourceType: "JOIN_APPLICATION", sourceId: applicationId } },
     });
@@ -404,8 +454,13 @@ export function joinApplicationListWhere(
   input: Omit<JoinApplicationListInput, "page" | "pageSize">,
 ): Prisma.JoinApplicationWhereInput {
   const submitted = parseUtcDateFilter(input.submittedFrom, input.submittedTo, "提交时间");
+  const recruitmentCycle = input.recruitmentCycle?.trim() || undefined;
+  if (recruitmentCycle && recruitmentCycle.length > 32) {
+    throw new AppError("VALIDATION_FAILED", "招募批次不能超过 32 字符");
+  }
   return {
     deletedAt: null,
+    recruitmentCycle,
     status: input.status,
     provisionStatus: input.provisionStatus,
     submittedAt: dateRangeWhere(submitted),
@@ -429,10 +484,25 @@ async function findDuplicate(cycle: string, qq: string, phone: string) {
   return getDb().joinApplication.findFirst({
     where: {
       recruitmentCycle: cycle,
-      deletedAt: null,
       OR: [{ qqNormalized: qq }, { phoneNormalized: phone }],
     },
+    orderBy: { deletedAt: "desc" },
   });
+}
+
+function duplicateReceipt(record: JoinApplication): JoinReceipt {
+  if (record.deletedAt) {
+    throw new AppError("JOIN_APPLICATION_DUPLICATE", "本批次报名信息已被使用，请联系管理员处理");
+  }
+  return toReceipt(record, true);
+}
+
+async function assertApplicationExists(applicationId: string): Promise<void> {
+  const record = await getDb().joinApplication.findFirst({
+    where: { id: applicationId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!record) throw new AppError("RESOURCE_NOT_FOUND", "报名记录不存在");
 }
 
 function cleanOptional(value?: string): string | undefined {

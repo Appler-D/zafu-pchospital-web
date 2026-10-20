@@ -884,6 +884,8 @@ export const adminCopy = {
     title: "招募审核",
     lead: "查看与筛选报名、登记面试结果、跟进账号自动发放，并按当前筛选导出报名数据。",
     filter: {
+      recruitmentCycle: "招募批次",
+      cyclePlaceholder: "输入完整批次，留空显示全部",
       query: "报名编号 / 姓名 / QQ / 手机号",
       status: "报名状态",
       provisionStatus: "账号发放",
@@ -909,6 +911,13 @@ export const adminCopy = {
       title: "通过报名",
       hint: "通过后立即创建成员账号并自动发放。初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字），首次登录后必须修改。",
       done: "已通过，账号已发放。",
+    },
+    deletion: {
+      action: "删除报名",
+      title: "删除这条报名？",
+      hint: "删除后不再显示或导出此报名，并停止后续发放与通知重试。已创建的成员账号不受影响。",
+      retained: "同批次的 QQ 号和手机号仍被占用；需要重新报名时请联系管理员。",
+      done: "报名已删除。",
     },
     /** 列表工具栏右侧的总数文案；`{count}` 由组件填当前总数。 */
     count: "共 {count} 条报名",
@@ -941,7 +950,7 @@ export const adminCopy = {
       optional: "选填",
       submit: "保存结果",
       saved: "面试结果已登记。",
-      passedSaved: "已登记为面试通过，账号发放任务已创建。",
+      passedSaved: "已登记为面试通过，账号已发放。",
       noteAppended: "备注已补记到面试记录。",
       notReviewable: "该报名当前不可登记面试结果。",
       secretNote: "初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字）；成员首次登录后必须修改。",

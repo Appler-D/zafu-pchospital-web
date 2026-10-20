@@ -300,6 +300,8 @@ export type JoinApplicationView = {
 };
 
 export type JoinApplicationListInput = PaginationInput & {
+  /** 精确匹配历史或当前招募批次，空白视为不筛选。 */
+  recruitmentCycle?: string;
   status?: JoinApplicationStatus;
   provisionStatus?: ProvisionStatus;
   submittedFrom?: string;
@@ -1502,6 +1504,7 @@ export interface JoinApplicationServiceContract {
     actor: AuthorizedActor,
   ): Promise<{ items: JoinApplicationSummary[]; pagination: PaginationMeta }>;
   get(applicationId: string, actor: AuthorizedActor): Promise<JoinApplicationDetail>;
+  softDelete(applicationId: string, actor: AuthorizedActor): Promise<void>;
   submit(input: SubmitJoinApplicationInput, context: PublicRequestContext): Promise<JoinReceipt>;
   review(input: ReviewJoinApplicationInput, actor: AuthorizedActor): Promise<JoinApplicationView>;
   retryProvision(applicationId: string, actor: AuthorizedActor): Promise<ProvisionView>;

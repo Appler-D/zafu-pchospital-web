@@ -52,6 +52,25 @@ export function ConfirmDialog({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busy) onClose();
+      if (event.key !== "Tab" || !windowRef.current) return;
+      const controls = [
+        ...windowRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]',
+        ),
+      ].filter((element) => element.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        windowRef.current.focus();
+      } else if (
+        !controls.includes(document.activeElement as HTMLElement) ||
+        (event.shiftKey && document.activeElement === first) ||
+        (!event.shiftKey && document.activeElement === last)
+      ) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -92,12 +111,7 @@ export function ConfirmDialog({
             <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
               {cancelLabel}
             </Button>
-            <Button
-              type="button"
-              variant={confirmVariant}
-              disabled={busy}
-              onClick={onConfirm}
-            >
+            <Button type="button" variant={confirmVariant} disabled={busy} onClick={onConfirm}>
               {confirmLabel}
             </Button>
           </div>

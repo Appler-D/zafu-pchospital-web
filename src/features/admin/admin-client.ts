@@ -37,6 +37,7 @@ export type AdminApiResult<T> =
  */
 const GET_CACHE_TTL_MS = 15_000;
 const getCache = new Map<string, { at: number; value: AdminApiResult<unknown> }>();
+let cacheVersion = 0;
 
 /** 预热：鼠标悬停在「详情」之类按钮上时先把数据取回来，点下去就不用等。 */
 export function prefetchAdmin(path: string): void {
@@ -45,6 +46,7 @@ export function prefetchAdmin(path: string): void {
 
 /** 手动失效（测试或已知数据变化的场景用；正常写路径会自动清空）。 */
 export function clearAdminCache(): void {
+  cacheVersion++;
   getCache.clear();
 }
 
@@ -61,8 +63,9 @@ export async function adminFetch<T>(
     }
   } else {
     // 写操作可能改变任何列表的内容，整体失效比逐个推断前缀可靠。
-    getCache.clear();
+    clearAdminCache();
   }
+  const requestCacheVersion = cacheVersion;
 
   let response: Response;
   try {
@@ -75,6 +78,8 @@ export async function adminFetch<T>(
     return { ok: false, code: "NETWORK_ERROR", message: "网络异常，请检查连接后重试", status: 0 };
   }
 
+  // 写请求期间也可能有后台 GET 完成；响应到达后再清理一次，覆盖这段窗口。
+  if (!isRead) clearAdminCache();
   let json: unknown;
   try {
     json = await response.json();
@@ -100,7 +105,10 @@ export async function adminFetch<T>(
       data: envelope.data as T,
       pagination: envelope.meta?.pagination,
     };
-    if (isRead) getCache.set(path, { at: Date.now(), value: ok });
+    // 删除等写操作之前开始的 GET 可能迟到，不能把已失效的分页重新写回缓存。
+    if (isRead && requestCacheVersion === cacheVersion) {
+      getCache.set(path, { at: Date.now(), value: ok });
+    }
     return ok;
   }
   const code = envelope.error?.code ?? "UNKNOWN_ERROR";

@@ -110,7 +110,7 @@ export class AccountNotificationService implements AccountNotificationServiceCon
   async get(applicationId: string, actor: AuthorizedActor) {
     requirePermission(actor, "join:read");
     const row = await getDb().accountNotification.findFirst({
-      where: { applicationId, kind: ACCOUNT_NOTIFICATION_KIND },
+      where: { applicationId, kind: ACCOUNT_NOTIFICATION_KIND, application: { deletedAt: null } },
     });
     return row ? view(row) : null;
   }

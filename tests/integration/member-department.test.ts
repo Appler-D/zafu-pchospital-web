@@ -122,12 +122,43 @@ async function application(contact = identity()) {
       realName: `${prefix}报名${sequence}`,
       recruitmentCycle: "I171",
       email: "i171@example.com",
-      studentId: "00171",
+      studentId: `00171-${sequence}`,
       className: "计科171",
       privacyConsent: true,
     },
     { requestId: "req_i171_submit" },
   );
+}
+
+async function prepareHistoricalPass(id: string, admittedDepartment: MemberDepartment) {
+  await getDb().joinApplication.update({
+    where: { id },
+    data: {
+      status: "INTERVIEW_PASSED",
+      provisionStatus: "PENDING",
+      admittedDepartment,
+      reviews: {
+        create: {
+          id: randomUUID(),
+          result: "PASSED",
+          interviewedAt: new Date(),
+          reviewerUserId: adminId,
+          createdAt: new Date(),
+        },
+      },
+    },
+  });
+  await getDb().accountProvision.create({
+    data: {
+      id: randomUUID(),
+      sourceType: "JOIN_APPLICATION",
+      sourceId: id,
+      idempotencyKey: `i171:${id}`,
+      status: "PENDING",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
 }
 
 function reviewInput(id: string, admittedDepartment?: MemberDepartment) {
@@ -311,10 +342,11 @@ dbTest("首次通过须有效部门；拒绝不通过携带部门；审核、发
 dbTest("发放失败保留首次部门；重试成功后重复通过、补记备注与成功重放不覆盖管理员变更", async () => {
   const existing = await createMember("REPAIR");
   const record = await application(existing);
-  // 暂停身份所属账号，让后续发放事务真实失败；审核事务仍应成功持久化。
+  // 历史版本已通过、尚未完成发放；新版首次审核遇到重复成员会直接拦截。
+  await prepareHistoricalPass(record.id, "PUBLICITY");
   await getDb().user.update({ where: { id: existing.userId }, data: { status: "DISABLED" } });
   await assert.rejects(
-    joinApplicationService.review(reviewInput(record.id, "PUBLICITY"), admin),
+    accountProvisionService.provisionFromApplication(record.id, `i171:${record.id}`),
     errorCode("ACCOUNT_IDENTITY_CONFLICT"),
   );
   const failed = await getDb().joinApplication.findUniqueOrThrow({ where: { id: record.id } });
@@ -370,8 +402,11 @@ dbTest("发放失败保留首次部门；重试成功后重复通过、补记备
 dbTest("重复通过在失败任务上沿用首次部门；历史空录取部门新建默认、复用保留", async () => {
   const existing = await createMember("OFFICE");
   const receipt = await application(existing);
+  await prepareHistoricalPass(receipt.id, "PUBLICITY");
   await getDb().user.update({ where: { id: existing.userId }, data: { status: "DISABLED" } });
-  await assert.rejects(joinApplicationService.review(reviewInput(receipt.id, "PUBLICITY"), admin));
+  await assert.rejects(
+    accountProvisionService.provisionFromApplication(receipt.id, `i171:${receipt.id}`),
+  );
   await getDb().user.update({ where: { id: existing.userId }, data: { status: "ACTIVE" } });
   await joinApplicationService.review(reviewInput(receipt.id, "REPAIR"), admin);
   assert.equal((await profileForApplication(receipt.id)).department, "PUBLICITY");
