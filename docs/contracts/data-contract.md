@@ -102,7 +102,7 @@ verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`�
   允许上述三个值或 NULL。历史报名保持 NULL；当前成员归属与历史录取部门分别保存。
 - 首次通过必须选择部门，录取部门与面试结论、Provision 任务、审计在同一审核事务提交。
   发放事务读取已保存的录取部门；失败重试、重复通过、补记备注均不修改录取部门。
-- 新版发放复用已有档案时按录取部门更新，部门变化递增档案版本并在发放审计记录前后值。
+- 历史已通过任务发放复用已有档案时按录取部门更新，部门变化递增档案版本并在发放审计记录前后值。
   成功后重放不再建档，不覆盖管理员后来调整的归属。历史已通过且无录取部门的任务：
   新建档案默认维修部，复用档案保留当前部门。
 - 管理员新增可选部门（缺省维修部），详情修改复用 `member:manage`、version 与
@@ -113,13 +113,28 @@ verify_failed / verify_blocked`、`email.reset.authorization.issued / consumed`�
 
 - `join_applications` 可独立存在，不要求先创建用户。
 - 同一招募批次的规范化 QQ、手机号分别有数据库唯一约束。
+- 软删除保留这两个唯一键；同批次再次报名明确返回 `JOIN_APPLICATION_DUPLICATE` 并提示联系管理员，
+  不恢复旧记录、不返回删除回执，不新增或修改 Migration。跨批次仍可报名。
+- 管理员以 `join:review` 可软删除任意状态报名；只写 `deleted_at` 和 `join.application.deleted` 审计，
+  不撤销成员与账号，不级联删除 Review / Provision / Notification / AuditLog。
+  列表、详情、导出排除删除记录，后续审核、发放与通知重试拒绝操作。删除与审核 / 发放锁同一报名行；
+  通知发送准备保留删除检查。已交给 SMTP 的邮件无法撤回。
+- 首次面试通过查重只匹配有效成员（User ACTIVE 且未删除、档案 ACTIVE 且未删除、MEMBER 角色未撤销）；
+  QQ / 手机号 / 邮箱匹配其未删除身份，学号匹配档案。沿用身份规范化，学号 trim、保留前导零，
+  NULL / 空白不判重；不把报名通知地址当作已绑定的成员邮箱。
+  冲突只返回字段名称，不披露其他成员联系方式，不复用 / 合并有效成员资料。
+- 首次审核用 `AccountProvisionService.provisionInTransaction` 复用既有发放过程：
+  查重、审核记录、录取部门、账号 / 档案 / 角色、Provision、通知入队及审计共享 Serializable 事务，
+  并发冲突重试后重新核对，任一步失败整笔回滚。`finishProvision` 只在提交后认领历史维修数据。
+  原 `provisionFromApplication` 保留历史已通过任务的独立事务、失败记录与重试；成功重放不覆盖部门或凭据。
 - 报名通知邮箱 `JoinApplication.email`（issue #158）为可空 `VARCHAR(191)`，新提交应用层必填并使用现有 `normalizeEmail` 规范化。迁移 `20261019090000_join_application_email` 只加可空列，不回填；历史无邮箱保持 NULL，仍可查看与审核建档。不增加唯一索引，不按邮箱去重，不从 QQ 推导，也不由重复提交覆盖。
 - 通知地址保存于报名记录及下述通知任务快照，不写 `user_identities` / verifiedAt / MemberProfile，不授予邮箱门禁或找回资格。仅授权且有访问审计的完整报名详情可见；列表、回执及原导出列不新增邮箱披露。审计摘要继续按既有邮箱字段脱敏，第一轮仅保存地址，第二轮仅为本次成功报名建档创建通知任务。
 - 面试状态与账号发放状态使用两个独立字段。
 - `account_provisions` 同时约束幂等键以及 `(source_type, source_id)` 唯一。
 - Review、Redemption、Provision、AuditLog 不提供业务删除入口。
 - 招募与邀请码注册都要求学号 / 班级**必填**（issue #147）：学号是保留前导零的自由字符串，
-  trim 后 1–32 字符，不要求纯数字、不做唯一性校验、不进入 `user_identities`、不参与去重；
+  trim 后 1–32 字符，不要求纯数字、不建唯一索引、不进入 `user_identities`；
+  提交报名 / 邀请码注册不按学号去重，首次面试通过另按上述规则检查有效成员；
   班级 trim 后 1–80 字符。`join_applications` 的两列为可空列 —— 迁移前的历史报名没有
   该信息，保持 `NULL`、不批量回填；新提交由应用层保证必填。
 - 面试通过发放把报名上的有效学号 / 班级带入成员档案；历史 `NULL` / 空白值转为

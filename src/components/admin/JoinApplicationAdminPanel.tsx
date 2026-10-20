@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
 import { AdminModal } from "@/components/admin/AdminModal";
@@ -39,6 +40,7 @@ import {
 } from "@/types/contracts";
 
 const EMPTY_FILTERS = {
+  recruitmentCycle: "",
   query: "",
   status: "",
   provisionStatus: "",
@@ -65,6 +67,7 @@ export function JoinApplicationAdminPanel() {
   const [actionProblem, setProblem] = useState("");
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   const [applied, setApplied] = useState(EMPTY_FILTERS);
+  const [cycleDraft, setCycleDraft] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 行内「通过」待确认的报名（issue #95）：非空即弹二次确认。 */
   const [approving, setApproving] = useState<JoinApplicationSummary | null>(null);
@@ -102,6 +105,7 @@ export function JoinApplicationAdminPanel() {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     setApplied({
+      recruitmentCycle: data.recruitmentCycle ?? "",
       query: data.query ?? "",
       status: data.status ?? "",
       provisionStatus: data.provisionStatus ?? "",
@@ -178,8 +182,7 @@ export function JoinApplicationAdminPanel() {
           ? copy.review.notReviewable
           : result.message,
       );
-      // 「通过」可能已经落库（失败只发生在随后的账号发放）：刷新让状态 / 发放两列反映实际。
-      await load();
+      // 首次通过与发放原子提交，失败时保留列表、部门选择和确认窗口。
       setBusy(false);
       return;
     }
@@ -193,7 +196,7 @@ export function JoinApplicationAdminPanel() {
     <div className="admin-workspace__content">
       <div className="admin-workspace__header">
         <div>
-          <h1 className="admin-workspace__title" id="admin-recruitment-title">
+          <h1 className="admin-workspace__title" id="admin-recruitment-title" tabIndex={-1}>
             {copy.title}
           </h1>
           <p className="admin-workspace__lead">{copy.lead}</p>
@@ -217,6 +220,17 @@ export function JoinApplicationAdminPanel() {
         aria-label={copy.filter.submit}
       >
         <div className="admin-filters__row">
+          <label className="field">
+            <span className="field__label">{copy.filter.recruitmentCycle}</span>
+            <input
+              className="field__input"
+              name="recruitmentCycle"
+              value={cycleDraft}
+              onChange={(event) => setCycleDraft(event.target.value)}
+              maxLength={32}
+              placeholder={copy.filter.cyclePlaceholder}
+            />
+          </label>
           <label className="field">
             <span className="field__label">{copy.filter.query}</span>
             <input
@@ -273,7 +287,13 @@ export function JoinApplicationAdminPanel() {
           <Button type="submit" icon="check">
             {copy.filter.submit}
           </Button>
-          <Button variant="ghost" onClick={() => setApplied(EMPTY_FILTERS)}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setApplied(EMPTY_FILTERS);
+              setCycleDraft("");
+            }}
+          >
             {copy.filter.reset}
           </Button>
         </div>
@@ -350,6 +370,13 @@ export function JoinApplicationAdminPanel() {
           applicationId={detailId}
           onClose={() => setDetailId(null)}
           onChanged={() => void load()}
+          onDeleted={async () => {
+            // 先完成弹窗卸载及其焦点清理，再恢复焦点，避免刷新完成后打断后续操作。
+            flushSync(() => setDetailId(null));
+            document.getElementById("admin-recruitment-title")?.focus({ preventScroll: true });
+            setToast({ text: copy.deletion.done, tone: "neutral" });
+            await list.refreshLoaded();
+          }}
         />
       ) : null}
 
@@ -406,10 +433,12 @@ function ApplicationDetailPanel({
   applicationId,
   onClose,
   onChanged,
+  onDeleted,
 }: {
   applicationId: string;
   onClose: () => void;
   onChanged: () => void;
+  onDeleted: () => Promise<void>;
 }) {
   const copy = adminCopy.recruitment;
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
@@ -417,11 +446,15 @@ function ApplicationDetailPanel({
   const [problem, setProblem] = useState("");
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteProblem, setDeleteProblem] = useState("");
   /** 登记面试结果返回的初始密码：响应里的值只出现一次，留在窗口里展示（规则见下方说明）。 */
   const [secret, setSecret] = useState("");
   const [provision, setProvision] = useState<ProvisionView | null>(null);
   const [reviewResult, setReviewResult] = useState<InterviewResult>("PASSED");
   const [admittedDepartment, setAdmittedDepartment] = useState<MemberDepartment>("REPAIR");
+  const [interviewedAt, setInterviewedAt] = useState(() => toLocalInput(new Date().toISOString()));
+  const [internalNote, setInternalNote] = useState("");
   const idempotencyKey = useRef(crypto.randomUUID());
 
   const load = useCallback(async () => {
@@ -519,11 +552,55 @@ function ApplicationDetailPanel({
 
   const currentProvision = provision?.status ?? detail?.provisionStatus ?? "NOT_REQUIRED";
 
+  async function deleteApplication() {
+    setBusy(true);
+    setDeleteProblem("");
+    const result = await adminFetch<null>(`/api/v1/admin/join-applications/${applicationId}`, {
+      method: "DELETE",
+    });
+    if (!result.ok) {
+      setDeleteProblem(result.message);
+      setBusy(false);
+      return;
+    }
+    await onDeleted();
+  }
+
+  if (deleting) {
+    return (
+      <ConfirmDialog
+        title={copy.deletion.title}
+        cancelLabel={adminShared.cancel}
+        confirmLabel={busy ? adminShared.submitting : copy.deletion.action}
+        busy={busy}
+        onClose={() => {
+          if (!busy) setDeleting(false);
+        }}
+        onConfirm={() => void deleteApplication()}
+      >
+        <p>{copy.deletion.hint}</p>
+        <p className="admin-note">{copy.deletion.retained}</p>
+        <p>
+          <strong>
+            {detail?.ticketNo} · {detail?.realName}
+          </strong>
+        </p>
+        {deleteProblem ? (
+          <p className="admin-status admin-status--error" role="alert">
+            {deleteProblem}
+          </p>
+        ) : null}
+      </ConfirmDialog>
+    );
+  }
+
   return (
     <AdminModal
       title={copy.detail.title}
       subtitle={detail ? `${detail.ticketNo} · ${detail.realName}` : undefined}
-      onClose={onClose}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
     >
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
 
@@ -680,7 +757,8 @@ function ApplicationDetailPanel({
                   type="datetime-local"
                   name="interviewedAt"
                   disabled={busy}
-                  defaultValue={toLocalInput(new Date().toISOString())}
+                  value={interviewedAt}
+                  onChange={(event) => setInterviewedAt(event.target.value)}
                   required
                 />
               </label>
@@ -691,6 +769,8 @@ function ApplicationDetailPanel({
                 <input
                   className="field__input"
                   name="internalNote"
+                  value={internalNote}
+                  onChange={(event) => setInternalNote(event.target.value)}
                   maxLength={2000}
                   disabled={busy}
                 />
@@ -725,11 +805,23 @@ function ApplicationDetailPanel({
               </div>
             ) : null}
           </div>
+          <div className="admin-section">
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setDeleteProblem("");
+                setDeleting(true);
+              }}
+            >
+              {copy.deletion.action}
+            </Button>
+          </div>
         </>
       ) : null}
 
       <div className="signup__actions">
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
           {adminShared.close}
         </Button>
       </div>
@@ -757,6 +849,7 @@ function filterParams(filters: typeof EMPTY_FILTERS, page: number): URLSearchPar
     { page, pageSize: 20, query: filters.query, sort: [] },
     {
       fixed: {
+        recruitmentCycle: filters.recruitmentCycle,
         status: filters.status,
         provisionStatus: filters.provisionStatus,
         submittedFrom: filters.submittedFrom,

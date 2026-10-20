@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const result = await joinApplicationService.list(
       {
         ...pagination,
+        recruitmentCycle: query.get("recruitmentCycle") ?? undefined,
         status: optionalStatus(query.get("status")),
         provisionStatus: optionalProvisionStatus(query.get("provisionStatus")),
         submittedFrom: query.get("submittedFrom") ?? undefined,

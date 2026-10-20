@@ -28,6 +28,8 @@ export type AdminListController<T> = {
   loadingMore: boolean;
   /** 重新取第一页（筛选变化、写操作之后调用）。 */
   reload: () => Promise<void>;
+  /** 写操作后刷新已加载的页数，保留长列表上下文。 */
+  refreshLoaded: () => Promise<void>;
   /** 追加下一页；已在末页或正在加载时无动作。 */
   loadMore: () => void;
   /**
@@ -57,6 +59,7 @@ export function useAdminList<T extends { id: string }>(
   const [items, setItems] = useState<T[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);
+  const pageRef = useRef(1);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [problem, setProblem] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
@@ -66,28 +69,57 @@ export function useAdminList<T extends { id: string }>(
   fetchRef.current = fetchPage;
   // 并发保护：滚动会连续触发，避免同一页被拉两次。
   const inFlight = useRef(false);
+  const requestDone = useRef<Promise<void>>(Promise.resolve());
+  const generation = useRef(0);
 
-  const run = useCallback(async (targetPage: number, append: boolean) => {
+  const run = useCallback(async (targetPage: number, append: boolean, refreshLoaded = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
+    const requestGeneration = generation.current;
+    const fetch = fetchRef.current;
+    let completeRequest = () => {};
+    requestDone.current = new Promise<void>((resolve) => {
+      completeRequest = resolve;
+    });
     if (append) setLoadingMore(true);
     else setState((current) => (current === "ready" ? "ready" : "loading"));
     setProblem("");
 
-    const result = await fetchRef.current(targetPage);
-    inFlight.current = false;
-    if (append) setLoadingMore(false);
+    try {
+      let result = await fetch(refreshLoaded ? 1 : targetPage);
+      if (requestGeneration !== generation.current) return;
+      if (refreshLoaded && result.ok) {
+        result = { ...result, data: [...result.data] };
+        const lastPage = Math.min(targetPage, result.pagination?.totalPages || 1);
+        for (let nextPage = 2; nextPage <= lastPage; nextPage++) {
+          const next = await fetch(nextPage);
+          if (requestGeneration !== generation.current) return;
+          if (!next.ok) {
+            setProblem(next.message);
+            return;
+          }
+          result.data.push(...next.data);
+          result.pagination = next.pagination;
+        }
+        targetPage = lastPage;
+      }
 
-    if (!result.ok) {
-      // 追加失败时不要把已有的列表换掉（那会让用户以为数据没了），只报错。
-      if (!append) setState("error");
-      setProblem(result.message);
-      return;
+      if (!result.ok) {
+        // 追加失败时不要把已有的列表换掉（那会让用户以为数据没了），只报错。
+        if (!append && !refreshLoaded) setState("error");
+        setProblem(result.message);
+        return;
+      }
+      setItems((current) => (append ? [...current, ...result.data] : result.data));
+      setPagination(result.pagination ?? null);
+      setPage(targetPage);
+      pageRef.current = targetPage;
+      setState("ready");
+    } finally {
+      inFlight.current = false;
+      if (append) setLoadingMore(false);
+      completeRequest();
     }
-    setItems((current) => (append ? [...current, ...result.data] : result.data));
-    setPagination(result.pagination ?? null);
-    setPage(targetPage);
-    setState("ready");
   }, []);
 
   // 同步镜像：`reorder` 要在 setState 之外先拿到「改动前」的顺序用于回滚。
@@ -116,7 +148,20 @@ export function useAdminList<T extends { id: string }>(
     return previous;
   }, []);
 
-  const reload = useCallback(() => run(1, false), [run]);
+  const reload = useCallback(async () => {
+    // 新筛选立即作废旧结果；在途请求结束后只执行最新一次重载，不能静默丢弃。
+    const nextGeneration = ++generation.current;
+    while (inFlight.current) await requestDone.current;
+    if (nextGeneration !== generation.current) return;
+    await run(1, false);
+  }, [run]);
+  const refreshLoaded = useCallback(async () => {
+    // 删除时可能还有追加页在途；等待完成再刷新，不能被 inFlight 静默丢弃。
+    const currentGeneration = generation.current;
+    while (inFlight.current) await requestDone.current;
+    if (currentGeneration !== generation.current) return;
+    await run(pageRef.current, false, true);
+  }, [run]);
 
   const loadMore = useCallback(() => {
     const total = pagination?.totalPages ?? 1;
@@ -143,6 +188,7 @@ export function useAdminList<T extends { id: string }>(
     problem,
     loadingMore,
     reload,
+    refreshLoaded,
     loadMore,
     reorder,
     setOrder,

@@ -105,6 +105,7 @@ Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 
 
 - `GET /api/v1/admin/join-applications`
 - `GET /api/v1/admin/join-applications/:id`
+- `DELETE /api/v1/admin/join-applications/:id`（`join:review`，软删除）
 - `POST /api/v1/admin/join-applications/:id/reviews`
 - `POST /api/v1/admin/join-applications/:id/provision`
 - `POST /api/v1/admin/join-applications/:id/provision/retry`
@@ -122,9 +123,25 @@ Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 
 - `POST /api/v1/admin/accounts/lookup`
 - `POST /api/v1/admin/accounts/:userId/password-reset`
 
-报名列表接受 `page`、`pageSize`、`status`、`provisionStatus`、`submittedFrom`、
+报名列表接受 `page`、`pageSize`、`recruitmentCycle`、`status`、`provisionStatus`、`submittedFrom`、
 `submittedTo` 与 `query`；列表只返回脱敏 QQ/手机号，完整联系方式、内部备注和审核记录只在
 管理员详情接口返回。邀请码注册要求密码确认，并与报名入口一样执行公开写限流。
+
+Issue #176 的报名管理约定：
+
+- `recruitmentCycle` 去首尾空白后精确匹配，最长 32 字符，空白不筛选；支持任意历史批次，
+  不受当前 `RECRUITMENT_CYCLE` 配置限制。列表和 CSV / XLSX 导出共用同一筛选谓词。
+- `DELETE` 要求登录、同源与 `join:review`，所有报名状态均可软删除；不存在或已删除返回
+  404 `RESOURCE_NOT_FOUND`。写 `join.application.deleted` 审计，不删除成员、账号、面试历史、
+  发放或通知任务。删除后默认列表、详情与导出不可见，审核、发放和通知重试不可操作。
+- 同批次已删除报名仍占用 QQ / 手机号唯一键，再次提交返回 409 `JOIN_APPLICATION_DUPLICATE`，
+  提示联系管理员，不返回已删除的回执；其他批次仍可提交。
+- 首次通过前核对 QQ、手机号、学号、邮箱。已有成员必须同时具备有效 User、未删除且 ACTIVE
+  的档案和未撤销 MEMBER 角色；QQ / 手机号 / 邮箱只匹配其未删除的身份，邮箱不要求已验证。
+  报名通知邮箱本身不构成成员邮箱身份。历史 NULL / 空白忽略；学号 trim 后按字符串比较，保留前导零。
+- 任一重复返回 409 `ACCOUNT_IDENTITY_CONFLICT`，只指出冲突字段并提示管理员联系处理，不能强行通过。
+  查重、首次审核、录取部门、发放和通知入队在同一 Serializable 事务；失败全部回滚。
+  已成功通过的幂等重放不再次查重；历史已通过的失败任务继续沿用原发放冲突保护及重试流程。
 
 这些端点的输入/输出 Service 契约位于 `src/types/contracts.ts`。管理员路径不是权限边界；
 Route Handler 必须从数据库 Session、账号状态和有效 UserRole 构造 actor，Service 再
@@ -736,7 +753,7 @@ DELETE /api/v1/member/notifications/:id
 
 - 约束只有一份（`src/lib/security/normalization.ts`）：学号 trim 后 1–32 字符、
   **保留前导零**，不要求纯数字 / 固定长度，**不做唯一性校验**（学号不是身份，
-  不进 `user_identities`，两人同学号合法）；班级 trim 后 1–80 字符，不引入命名规则；
+  不进 `user_identities`，提交报名 / 邀请码注册不按学号去重；首次面试通过另有 issue #176 的成员查重）；班级 trim 后 1–80 字符，不引入命名规则；
 - 缺失、空串、纯空白、**非字符串值**（对象 / 数字不做强制转换）与超长输入返回
   400 `VALIDATION_FAILED`，`fieldErrors` 带 `studentId` / `className`；
 - 校验失败不创建报名 / 账号，也不消耗邀请码次数；密码、QQ / 手机号与招募批次规则不变；

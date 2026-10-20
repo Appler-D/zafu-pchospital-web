@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     }
     const result = await joinApplicationExportService.export(
       {
+        recruitmentCycle: queryString(params, "recruitmentCycle"),
         status: queryOneOf(params, "status", JoinApplicationStatus),
         provisionStatus: queryOneOf(params, "provisionStatus", ProvisionStatus),
         submittedFrom: queryString(params, "submittedFrom"),
