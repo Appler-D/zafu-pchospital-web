@@ -133,6 +133,15 @@ async function cleanupFixtures(): Promise<void> {
   });
   await db.repairActivityAttendance.deleteMany({ where: { activityId: ACTIVITY_ID } });
   // 参与行（issue #114）与照片先于记录删除：两者都是 RESTRICT 外键。
+  // 评论 / 收藏同样 RESTRICT 引用记录（撤销用例会给草稿挂上它们），先清再删记录。
+  await db.commentMention.deleteMany({
+    where: { comment: { repairRecordId: { in: recordIds } } },
+  });
+  await db.repairComment.deleteMany({
+    where: { repairRecordId: { in: recordIds }, parentCommentId: { not: null } },
+  });
+  await db.repairComment.deleteMany({ where: { repairRecordId: { in: recordIds } } });
+  await db.repairFavorite.deleteMany({ where: { repairRecordId: { in: recordIds } } });
   await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
   await db.repairPhoto.deleteMany({ where: { repairRecordId: { in: recordIds } } });
   await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
@@ -751,4 +760,73 @@ dbTest("撤销接待：非接待者且非管理员被拒；已提交记录不能
     "ACTIVITY_REGISTRATION_STATE_INVALID",
   );
   await discardServeDrafts();
+});
+
+dbTest("撤销接待：草稿带评论、收藏与通知时一并清理，不撞外键（审查 #195）", async () => {
+  await discardServeDrafts();
+  const registration = await createCheckedInRegistration("撤己", "13900002014");
+  const served = await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
+  const db = getDb();
+  const now = new Date();
+  // 作者对自己的 DRAFT 有读权限，评论 / 收藏在详情页就是可点的；通知随评论产生。
+  await db.repairComment.create({
+    data: {
+      id: randomUUID(),
+      repairRecordId: served.repairRecordId,
+      authorMemberProfileId: STAFF_PROFILE_ID,
+      body: "草稿下的一句评论",
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await db.repairFavorite.create({
+    data: {
+      id: randomUUID(),
+      memberProfileId: STAFF_PROFILE_ID,
+      repairRecordId: served.repairRecordId,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await db.notification.create({
+    data: {
+      id: randomUUID(),
+      recipientMemberProfileId: STAFF_PROFILE_ID,
+      type: "REPAIR_COMMENTED",
+      status: "UNREAD",
+      repairRecordId: served.repairRecordId,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+
+  const reverted = await repairActivityStaffService.revertServe(
+    ACTIVITY_ID,
+    registration.id,
+    staffActor,
+  );
+  assert.equal(reverted.deletedRecordId, served.repairRecordId);
+  assert.equal(await db.repairRecord.findUnique({ where: { id: served.repairRecordId } }), null);
+  assert.equal(
+    await db.repairComment.count({ where: { repairRecordId: served.repairRecordId } }),
+    0,
+  );
+  assert.equal(
+    await db.repairFavorite.count({ where: { repairRecordId: served.repairRecordId } }),
+    0,
+  );
+  assert.equal(
+    await db.notification.count({ where: { repairRecordId: served.repairRecordId } }),
+    0,
+  );
+  const audit = await db.auditLog.findFirstOrThrow({
+    where: { action: "repair_activity.registration_serve_reverted", targetId: registration.id },
+  });
+  const after = audit.afterSummary as { commentsDeleted: number; favoritesDeleted: number };
+  assert.equal(after.commentsDeleted, 1);
+  assert.equal(after.favoritesDeleted, 1);
+  const row = await db.repairActivityRegistration.findUniqueOrThrow({
+    where: { id: registration.id },
+  });
+  assert.equal(row.status, "CHECKED_IN", "撤销后报名回到排队");
 });

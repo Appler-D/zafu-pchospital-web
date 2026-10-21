@@ -671,6 +671,30 @@ export const repairActivityStaffService = {
         },
       });
 
+      // 社区与通知子表同样以 RESTRICT 引用记录：作者能读自己的 DRAFT，就可能留下
+      // 评论 / 收藏 / 通知（审查 #195），不先清掉删记录会撞外键、把撤销打成 500。
+      const commentIds = (
+        await tx.repairComment.findMany({
+          where: { repairRecordId: record.id },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const favoritesDeleted = await tx.repairFavorite.deleteMany({
+        where: { repairRecordId: record.id },
+      });
+      const notificationsDeleted = await tx.notification.deleteMany({
+        where: { OR: [{ repairRecordId: record.id }, { commentId: { in: commentIds } }] },
+      });
+      await tx.commentMention.deleteMany({ where: { commentId: { in: commentIds } } });
+      // 评论自引用 RESTRICT：先删回复，再删顶层。
+      const repliesDeleted = await tx.repairComment.deleteMany({
+        where: { repairRecordId: record.id, parentCommentId: { not: null } },
+      });
+      const topCommentsDeleted = await tx.repairComment.deleteMany({
+        where: { repairRecordId: record.id },
+      });
+      const commentsDeleted = repliesDeleted.count + topCommentsDeleted.count;
+
       // 草稿及子表按外键顺序硬删：参与行、照片、时间线都是 RESTRICT。
       await tx.repairRecordParticipant.deleteMany({ where: { repairRecordId: record.id } });
       await tx.repairPhoto.deleteMany({ where: { repairRecordId: record.id } });
@@ -690,6 +714,9 @@ export const repairActivityStaffService = {
           status: restoredStatus,
           deletedRecordId: record.id,
           photosDeleted: photos.length,
+          commentsDeleted,
+          favoritesDeleted: favoritesDeleted.count,
+          notificationsDeleted: notificationsDeleted.count,
         },
       });
 
