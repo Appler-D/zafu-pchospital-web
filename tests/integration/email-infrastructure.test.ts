@@ -755,7 +755,11 @@ dbTest("并发验码串行化：预置 4 次失败后少量并发错码只放行
     1,
     `只允许剩余 1 次实际尝试，实际分布：${codes.join(",")}`,
   );
-  assert.equal(codes.filter((item) => item === "EMAIL_RATE_LIMITED").length, 4);
+  assert.equal(
+    codes.filter((item) => item === "EMAIL_RATE_LIMITED").length,
+    4,
+    `限流次数不符，实际分布：${codes.join(",")}`,
+  );
 
   // 持久化失败数必须恰为 5（不越过上限），阻断已生效，失败审计随判决事务先行提交。
   const final = await counterRow(failKey);
