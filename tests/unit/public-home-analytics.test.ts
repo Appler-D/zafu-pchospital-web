@@ -14,6 +14,9 @@ import type { PublicHomeAnalytics } from "../../src/types/contracts";
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
+/** 固定时钟：学年 / DATE 边界与「服务端算出的学年」用同一个 now（issue #183）。 */
+const CONTROLLED_NOW = new Date("2020-10-15T12:00:00.000Z");
+
 /** 只替换数据库边界；测试执行真正的策略、聚合查询构造与公开 DTO 投影，不连接任何库。 */
 function fixture(t: TestContext) {
   const globals = globalThis as typeof globalThis & { __pcHospitalDb?: PrismaClient };
@@ -72,7 +75,7 @@ function fixture(t: TestContext) {
 
 /** 服务端在**同一次**统计里下发的学年 DTO；用同一段区间对账，避免各算各的。 */
 function yearDto(): PublicHomeAnalytics["academicYear"] {
-  const year = shanghaiAcademicYearRange(new Date());
+  const year = shanghaiAcademicYearRange(CONTROLLED_NOW);
   return {
     label: year.label,
     startInclusive: year.startInclusive.toISOString(),
@@ -82,7 +85,7 @@ function yearDto(): PublicHomeAnalytics["academicYear"] {
 
 /** 学年区间的 DATE 边界（`repair_date` 是 DATE 列，见 toDateOnlyBounds）。 */
 function yearDateBounds(): { gte: Date; lt: Date } {
-  const year = shanghaiAcademicYearRange(new Date());
+  const year = shanghaiAcademicYearRange(CONTROLLED_NOW);
   const start = new Date(year.startInclusive.getTime() + 8 * 60 * 60 * 1000);
   const end = new Date(year.endExclusive.getTime() + 8 * 60 * 60 * 1000);
   return {
@@ -96,13 +99,13 @@ test("公开策略缺行、读取失败或全关：没有任何数据查询或�
   f.policy.publicRepairStatsEnabled = false;
   f.policy.publicRankingsEnabled = false;
   const hidden = { academicYear: yearDto(), repairStats: null, rankings: null };
-  assert.deepEqual(await publicHomeService.get(), hidden);
+  assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), hidden);
   f.db.publicContentSetting.findUnique = async () => null;
-  assert.deepEqual(await publicHomeService.get(), hidden);
+  assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), hidden);
   f.db.publicContentSetting.findUnique = async () => {
     throw new Error("database unavailable");
   };
-  assert.deepEqual(await publicHomeService.get(), hidden);
+  assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), hidden);
   assert.equal(f.counts.length, 0);
   assert.deepEqual(f.queries(), { aggregates: 0, rankingQueries: 0, memberQueries: 0 });
 });
@@ -111,7 +114,7 @@ test("辅助开关关闭：只查询并输出总量；后续请求重新读取�
   const f = fixture(t);
   f.policy.publicRepairStatsDetailEnabled = false;
   f.policy.publicRankingsEnabled = false;
-  assert.deepEqual(await publicHomeService.get(), {
+  assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), {
     academicYear: yearDto(),
     repairStats: { totalApprovedCount: 7 },
     rankings: null,
@@ -119,7 +122,7 @@ test("辅助开关关闭：只查询并输出总量；后续请求重新读取�
   assert.deepEqual(f.counts, [{ where: { status: "APPROVED", deletedAt: null } }]);
   assert.equal(f.queries().aggregates, 0);
   f.policy.publicRepairStatsEnabled = false;
-  assert.deepEqual(await publicHomeService.get(), {
+  assert.deepEqual(await publicHomeService.get(CONTROLLED_NOW), {
     academicYear: yearDto(),
     repairStats: null,
     rankings: null,
@@ -129,7 +132,7 @@ test("辅助开关关闭：只查询并输出总量；后续请求重新读取�
 
 test("学年固定可算：总量 / 学年数 / 时长都有效，排行按学年查询（不再有「待配置」）", async (t) => {
   const f = fixture(t);
-  const result = await publicHomeService.get();
+  const result = await publicHomeService.get(CONTROLLED_NOW);
   assert.deepEqual(result, {
     academicYear: yearDto(),
     repairStats: {
@@ -144,7 +147,7 @@ test("学年固定可算：总量 / 学年数 / 时长都有效，排行按学�
 
 test("学年首末边界走 DATE 口径；昵称缺失不公开实名、账号或后台 ID", async (t) => {
   const f = fixture(t);
-  const result = await publicHomeService.get();
+  const result = await publicHomeService.get(CONTROLLED_NOW);
   assert.deepEqual(f.counts[1], {
     where: { status: "APPROVED", deletedAt: null, repairDate: yearDateBounds() },
   });
@@ -167,10 +170,16 @@ test("学年首末边界走 DATE 口径；昵称缺失不公开实名、账号�
 test("隐藏姓名时不读取成员资料；实名与昵称模式各自独立", async (t) => {
   const f = fixture(t);
   f.policy.rankingDisplayName = "HIDDEN";
-  assert.equal((await publicHomeService.get()).rankings?.items[0].displayName, "成员");
+  assert.equal(
+    (await publicHomeService.get(CONTROLLED_NOW)).rankings?.items[0].displayName,
+    "成员",
+  );
   assert.equal(f.queries().memberQueries, 0);
   f.policy.rankingDisplayName = "REAL_NAME";
-  assert.equal((await publicHomeService.get()).rankings?.items[0].displayName, "私人实名");
+  assert.equal(
+    (await publicHomeService.get(CONTROLLED_NOW)).rankings?.items[0].displayName,
+    "私人实名",
+  );
   const member = { nickname: " 昵称 ", realName: " 实名 " };
   assert.equal(publicRankingName("NICKNAME", member), "昵称");
   assert.equal(publicRankingName("REAL_NAME", member), "实名");
@@ -183,14 +192,14 @@ test("统计失败不隐藏正常排行，排行失败不隐藏正常统计", as
   f.db.repairRecord.count = async () => {
     throw new Error("stats unavailable");
   };
-  const rankingsOnly = await publicHomeService.get();
+  const rankingsOnly = await publicHomeService.get(CONTROLLED_NOW);
   assert.equal(rankingsOnly.repairStats, null);
   assert.equal(rankingsOnly.rankings?.items.length, 1);
   f.db.repairRecord.count = count;
   f.db.$queryRaw = async () => {
     throw new Error("ranking unavailable");
   };
-  const statsOnly = await publicHomeService.get();
+  const statsOnly = await publicHomeService.get(CONTROLLED_NOW);
   assert.equal(statsOnly.repairStats?.totalApprovedCount, 7);
   assert.equal(statsOnly.rankings, null);
 });

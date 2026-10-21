@@ -26,6 +26,13 @@ import { sameOriginHeaders } from "./http-harness";
    实际事故）。未开启时返回 false，各文件照常走 test.skip。 */
 const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
+
+/**
+ * 固定时钟（上海 2026-10-15 12:00）：用例里的「今天」不再随运行时刻变化，
+ * 避免跨月 / 学年边界（尤其 8/31→9/1）时统计窗口与断言错位（issue #183）。
+ */
+const FIXED_NOW = new Date("2026-10-15T04:00:00.000Z");
+const FIXED_TODAY = "2026-10-15";
 /**
  * 本文件使用**独立的** admin UUID，不复用 M2 测试的 `10000000-…-0001`。
  * 原因：`tsx --test tests/integration/**` 把两个文件放在同一进程顺序执行，
@@ -476,7 +483,7 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   const other = memberActor(otherCreated.member.userId, "req_m3_dash_other");
 
   // 本人：2 条已通过（90 + 30 分钟），1 条草稿、1 条待审核
-  const today = new Date().toISOString().slice(0, 10);
+  const today = FIXED_TODAY;
   await createApprovedRepair(owner, { repairDate: today, durationMinutes: 90 });
   await createApprovedRepair(owner, { repairDate: today, durationMinutes: 30 });
   // 第一条草稿带上正文内容：空白草稿会被「进页面即建档」的复用逻辑拦下（PR #73 评审 3），
@@ -516,7 +523,7 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   // 他人：1 条已通过，不得计入本人摘要
   await createApprovedRepair(other, { repairDate: today, durationMinutes: 500 });
 
-  const dashboard = await memberDashboardService.getDashboard(owner);
+  const dashboard = await memberDashboardService.getDashboard(owner, FIXED_NOW);
   assert.equal(dashboard.repairSummary.totalApprovedCount.value, 2);
   assert.equal(dashboard.repairSummary.totalApprovedCount.status, "AVAILABLE");
   assert.equal(dashboard.repairSummary.totalApprovedDurationMinutes.value, 120);
@@ -550,10 +557,10 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
 dbTest("M3 学年口径覆盖今天：摘要与月份计数一致", async () => {
   const created = await createMember("学年");
   const actor = memberActor(created.member.userId, "req_m3_year");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = FIXED_TODAY;
 
   await createApprovedRepair(actor, { repairDate: today, durationMinutes: 45 });
-  const dashboard = await memberDashboardService.getDashboard(actor);
+  const dashboard = await memberDashboardService.getDashboard(actor, FIXED_NOW);
   assert.equal(dashboard.repairSummary.yearApprovedCount.status, "AVAILABLE");
   assert.equal(dashboard.repairSummary.yearApprovedCount.value, 1);
   assert.equal(dashboard.repairSummary.monthApprovedCount.value, 1);
@@ -563,7 +570,7 @@ dbTest("M3 他人内部主页不返回未通过记录且裁剪受控字段", asy
   const viewer = await createMember("查看者");
   const targetActor = memberActor(target.member.userId, "req_m3_target");
   const viewerActor = memberActor(viewer.member.userId, "req_m3_viewer");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = FIXED_TODAY;
 
   await createApprovedRepair(targetActor, { repairDate: today, durationMinutes: 60 });
   // 目标成员的草稿与待审记录不得出现在他人视图中
@@ -837,12 +844,12 @@ dbTest("M3 越权字段被拒而不是被静默忽略", async () => {
 dbTest("回归：个人主页摘要与工作台使用同一日期口径（本月/本学年不再恒为空）", async () => {
   const created = await createMember("主页口径");
   const actor = memberActor(created.member.userId, "req_m3_profile_range");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = FIXED_TODAY;
 
   await createApprovedRepair(actor, { repairDate: today, durationMinutes: 50 });
 
-  const self = await memberProfileService.getSelf(actor);
-  const dashboard = await memberDashboardService.getDashboard(actor);
+  const self = await memberProfileService.getSelf(actor, FIXED_NOW);
+  const dashboard = await memberDashboardService.getDashboard(actor, FIXED_NOW);
 
   // 修复前：listMemberRepairSummary 未传区间 → month 恒为 0、学年计数恒为 UNAVAILABLE。
   assert.equal(self.repairSummary.monthApprovedCount.value, 1, "个人主页本月计数必须真实");
@@ -859,7 +866,11 @@ dbTest("回归：个人主页摘要与工作台使用同一日期口径（本月
   // 他人内部主页走同一条修复路径，同样不得退回 0 / UNAVAILABLE。
   const viewer = await createMember("主页口径查看者");
   const viewerActor = memberActor(viewer.member.userId, "req_m3_profile_range_viewer");
-  const internal = await memberProfileService.getInternal(created.member.id, viewerActor);
+  const internal = await memberProfileService.getInternal(
+    created.member.id,
+    viewerActor,
+    FIXED_NOW,
+  );
   assert.equal(internal.repairSummary.monthApprovedCount.value, 1);
   assert.equal(internal.repairSummary.yearApprovedCount.value, 1);
 });
@@ -977,7 +988,7 @@ dbTest("issue #68：成员自建标签——同名复用同一行，已被停用
 dbTest("回归：单路查询失败只降级该区块，其余区块照常返回真实数据", async () => {
   const created = await createMember("局部降级");
   const actor = memberActor(created.member.userId, "req_m3_degrade");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = FIXED_TODAY;
   await createApprovedRepair(actor, { repairDate: today, durationMinutes: 20 });
 
   // `collectSections` 是 provider 收敛 `allSettled` 结果的纯函数出口，
@@ -1032,7 +1043,7 @@ dbTest("回归：单路查询失败只降级该区块，其余区块照常返回
     await import("../../src/features/member-dashboard/member-overview-provider");
   const overview = await loadMemberOverview({
     memberProfileId: created.member.id,
-    now: new Date(),
+    now: FIXED_NOW,
     recentLimit: 5,
   });
   assert.equal(overview.allFailed, false);
@@ -1041,11 +1052,11 @@ dbTest("回归：单路查询失败只降级该区块，其余区块照常返回
   assert.equal(overview.recentRepairs.status, "ready");
   assert.equal(overview.recentActivity.status, "ready");
   // 日期口径解析在工作台与个人主页之间必须一致。
-  const ranges = resolveMemberRanges(new Date());
+  const ranges = resolveMemberRanges(FIXED_NOW);
   assert.ok(ranges.monthRange.endExclusive > ranges.monthRange.startInclusive);
   assert.ok(ranges.yearRange.endExclusive > ranges.yearRange.startInclusive);
 
-  const dashboard = await memberDashboardService.getDashboard(actor);
+  const dashboard = await memberDashboardService.getDashboard(actor, FIXED_NOW);
   assert.deepEqual(dashboard.degraded, []);
   assert.equal(dashboard.repairSummary.monthApprovedCount.value, 1);
 });

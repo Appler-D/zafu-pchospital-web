@@ -34,14 +34,17 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 const adminId = "10000000-0000-4000-8000-000000000001";
 let uploadTestRoot = "";
+/** 只有闸门通过（`_test` 库）才允许在 `after` 里再清一次库。 */
+let destructiveAllowed = false;
 
-before(async () => {
-  if (!enabled) return;
-  // 这个文件的第一件事是**整表清空**（身份、口令、档案、审计……），所以除了文件加载时的
-  // 通用闸门，这里再过一道更严的：`ALLOW_NON_TEST_DB=1` 放行不了它。
-  assertDestructiveDbAllowed();
-  uploadTestRoot = await mkdtemp(join(tmpdir(), "pc-hospital-m2-"));
-  process.env.UPLOAD_PATH = uploadTestRoot;
+/**
+ * 整表清空（只用于 `_test` 库）：`before` 与 `after` 共用同一份。
+ *
+ * 只在开头清会让本文件写下的 `account_notifications`（issue #179）与测试分类
+ * （issue #184 里 m5 曾反过来依赖它）遗留到后续文件；结束前复用同一套清理，
+ * 做到「自己走完不留东西」。顺序与注释见下方各步。
+ */
+async function resetDatabase(): Promise<void> {
   const db = getDb();
   // M4 子表必须先于 repair_records / member_profiles 清空，否则 FK RESTRICT 会挡住全表清理。
   await db.notification.deleteMany();
@@ -87,6 +90,18 @@ before(async () => {
   // 这里只**解绑引用**、不删除技能本身 —— 既保住共享 seed，又让清理对所有残留状态都成立。
   await db.skill.updateMany({ where: { createdBy: { not: null } }, data: { createdBy: null } });
   await db.user.deleteMany();
+}
+
+before(async () => {
+  if (!enabled) return;
+  // 这个文件的第一件事是**整表清空**（身份、口令、档案、审计……），所以除了文件加载时的
+  // 通用闸门，这里再过一道更严的：`ALLOW_NON_TEST_DB=1` 放行不了它。
+  assertDestructiveDbAllowed();
+  destructiveAllowed = true;
+  uploadTestRoot = await mkdtemp(join(tmpdir(), "pc-hospital-m2-"));
+  process.env.UPLOAD_PATH = uploadTestRoot;
+  await resetDatabase();
+  const db = getDb();
   await db.user.create({
     data: {
       id: adminId,
@@ -120,7 +135,11 @@ before(async () => {
 });
 
 after(async () => {
-  if (enabled) {
+  if (!enabled) return;
+  try {
+    // 闸门没通过时绝不动库：此时可能指向非 `_test` 库。
+    if (destructiveAllowed) await resetDatabase();
+  } finally {
     await disconnectDb();
     if (uploadTestRoot) await rm(uploadTestRoot, { recursive: true, force: true });
   }
@@ -223,55 +242,58 @@ dbTest("面试通过重复执行不创建重复账号、档案或角色", async 
   );
 });
 
-dbTest("已通过的报名再提交「通过」：状态不回流，携带的备注补记为面试记录（issue #97）", async () => {
-  const input = {
-    recruitmentCycle: `NOTE-${randomUUID().slice(0, 8)}`,
-    realName: "补记成员",
-    qq: `6${String(Date.now()).slice(-9)}`,
-    phone: `135${String(Date.now()).slice(-8)}`,
-    studentId: "20230003",
-    className: "计算机 233",
-    privacyConsent: true,
-    email: "applicant@example.com",
-  };
-  const receipt = await joinApplicationService.submit(input, { requestId: "req_note_submit" });
-  await joinApplicationService.review(
-    {
-      applicationId: receipt.id,
-      result: "PASSED",
-      admittedDepartment: "REPAIR",
-      interviewedAt: new Date().toISOString(),
-      internalNote: "首次登记",
-      idempotencyKey: `note-a-${receipt.id}`,
-    },
-    adminActor,
-  );
-  // 修复前：这一条会被静默丢弃（界面提示成功，备注却不在面试记录里）。
-  const second = await joinApplicationService.review(
-    {
-      applicationId: receipt.id,
-      result: "PASSED",
-      admittedDepartment: "REPAIR",
-      interviewedAt: new Date().toISOString(),
-      internalNote: "补记：技术方向",
-      idempotencyKey: `note-b-${receipt.id}`,
-    },
-    adminActor,
-  );
-  assert.equal(second.status, "INTERVIEW_PASSED", "补记不能改动已通过状态");
-  const detail = await joinApplicationService.get(receipt.id, adminActor);
-  assert.equal(detail.reviews.length, 2, "补记应作为新的一条面试记录落库");
-  const notes = detail.reviews.map((review) => review.internalNote);
-  assert.ok(notes.includes("首次登记"));
-  assert.ok(notes.includes("补记：技术方向"));
-  // 补记不等于重新发放：发放任务仍然只有一条。
-  assert.equal(
-    await getDb().accountProvision.count({
-      where: { sourceType: "JOIN_APPLICATION", sourceId: receipt.id },
-    }),
-    1,
-  );
-});
+dbTest(
+  "已通过的报名再提交「通过」：状态不回流，携带的备注补记为面试记录（issue #97）",
+  async () => {
+    const input = {
+      recruitmentCycle: `NOTE-${randomUUID().slice(0, 8)}`,
+      realName: "补记成员",
+      qq: `6${String(Date.now()).slice(-9)}`,
+      phone: `135${String(Date.now()).slice(-8)}`,
+      studentId: "20230003",
+      className: "计算机 233",
+      privacyConsent: true,
+      email: "applicant@example.com",
+    };
+    const receipt = await joinApplicationService.submit(input, { requestId: "req_note_submit" });
+    await joinApplicationService.review(
+      {
+        applicationId: receipt.id,
+        result: "PASSED",
+        admittedDepartment: "REPAIR",
+        interviewedAt: new Date().toISOString(),
+        internalNote: "首次登记",
+        idempotencyKey: `note-a-${receipt.id}`,
+      },
+      adminActor,
+    );
+    // 修复前：这一条会被静默丢弃（界面提示成功，备注却不在面试记录里）。
+    const second = await joinApplicationService.review(
+      {
+        applicationId: receipt.id,
+        result: "PASSED",
+        admittedDepartment: "REPAIR",
+        interviewedAt: new Date().toISOString(),
+        internalNote: "补记：技术方向",
+        idempotencyKey: `note-b-${receipt.id}`,
+      },
+      adminActor,
+    );
+    assert.equal(second.status, "INTERVIEW_PASSED", "补记不能改动已通过状态");
+    const detail = await joinApplicationService.get(receipt.id, adminActor);
+    assert.equal(detail.reviews.length, 2, "补记应作为新的一条面试记录落库");
+    const notes = detail.reviews.map((review) => review.internalNote);
+    assert.ok(notes.includes("首次登记"));
+    assert.ok(notes.includes("补记：技术方向"));
+    // 补记不等于重新发放：发放任务仍然只有一条。
+    assert.equal(
+      await getDb().accountProvision.count({
+        where: { sourceType: "JOIN_APPLICATION", sourceId: receipt.id },
+      }),
+      1,
+    );
+  },
+);
 
 dbTest("同一码可限次复用且 10 个并发请求不会超卖最后一个名额", async () => {
   const created = await inviteCodeService.create({ maxUses: 1 }, adminActor);
