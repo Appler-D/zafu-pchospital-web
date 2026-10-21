@@ -1,10 +1,5 @@
 import { canReadRepair } from "@/features/repairs/repair-policy";
-import type {
-  AuthorizedActor,
-  FavoriteView,
-  NotificationView,
-  RepairCommentView,
-} from "@/types/contracts";
+import type { AuthorizedActor, FavoriteView, NotificationView } from "@/types/contracts";
 
 type MemberNameSource = {
   id: string;
@@ -32,40 +27,6 @@ export function excerptText(
   if (!flat) return "未填写备注";
   const chars = [...flat];
   return chars.length > limit ? `${chars.slice(0, limit).join("")}…` : flat;
-}
-
-type CommentRow = {
-  id: string;
-  body: string;
-  parentCommentId: string | null;
-  createdAt: Date;
-  authorMemberProfileId: string;
-  author: MemberNameSource;
-  mentions: Array<{ mentioned: MemberNameSource }>;
-};
-
-/**
- * `selfMemberProfileId` 允许为 `null`：管理员可能没有成员档案（纯管理员账号），
- * 此时「是不是我写的」恒为假，`canDelete` 退化为按权限判断。
- */
-export function toCommentView(
-  row: CommentRow,
-  actor: AuthorizedActor,
-  selfMemberProfileId: string | null,
-): RepairCommentView {
-  const author = memberRef(row.author);
-  return {
-    id: row.id,
-    body: row.body,
-    author,
-    parentCommentId: row.parentCommentId,
-    mentions: row.mentions.map((entry) => memberRef(entry.mentioned)),
-    createdAt: row.createdAt.toISOString(),
-    canDelete:
-      (selfMemberProfileId !== null && row.authorMemberProfileId === selfMemberProfileId) ||
-      actor.permissions.includes("comment:delete"),
-    replies: [],
-  };
 }
 
 type FavoriteRow = {
@@ -122,7 +83,7 @@ export function toNotificationView(row: NotificationRow, actor: AuthorizedActor)
     type: row.type as NotificationView["type"],
     status: row.status as NotificationView["status"],
     repairRecordId: visibleRecord ? row.repairRecordId : null,
-    commentId: visibleRecord ? row.commentId : null,
+    commentId: null,
     actor: row.actor ? memberRef(row.actor) : null,
     repairExcerpt: visibleRecord ? excerptText(visibleRecord) : null,
     createdAt: row.createdAt.toISOString(),

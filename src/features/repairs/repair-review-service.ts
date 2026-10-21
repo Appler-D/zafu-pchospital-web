@@ -4,7 +4,7 @@ import { AppError } from "@/lib/api/errors";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { createReviewNotification } from "@/features/community/comment-service";
+import { createReviewNotification } from "@/features/community/notification-service";
 import { repairDetailInclude } from "./repair-repository";
 import { timeline } from "./repair-service";
 import { toRepairView } from "./repair-view";

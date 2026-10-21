@@ -33,7 +33,7 @@ M3 新增 `Skill` / `UserSkill` 两张表与技能 Seed，落地 `/member` 工�
 `listApprovedRepairsForAnalytics()` 正式入口，不复制统计逻辑。
 
 M4 新增 `RepairComment` / `CommentMention` / `RepairFavorite` / `Notification` 四张表，
-落地维修详情评论（两层回复、`@` 提及）、成员通知（已读/全部已读/软删除）与收藏
+历史交付包含维修详情评论（两层回复、`@` 提及）；issue #198 已将评论与提及统一退役，保留历史数据。当前继续开放审核通知（已读/全部已读/软删除）与收藏
 （取消软删除、再次收藏恢复同一行）；疑难/典型案例复用 M2 的 `RepairRecord` 标记与
 `PATCH /api/v1/admin/repairs/:id/flags`。工作台 `notifications` / `favorites` 换成真实摘要，
 `ranking` 仍为 `{ available: false, module: "M5" }`。

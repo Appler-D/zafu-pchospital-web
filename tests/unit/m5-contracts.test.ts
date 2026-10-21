@@ -39,7 +39,10 @@ test("M5 权限 analytics:read_internal 授予 MEMBER 与 ADMIN，未授予其�
     .sort();
   assert.deepEqual(holders, ["ADMIN", "MEMBER"]);
   // 只读权限：不得顺带带出写权限
-  assert.equal(rolePermissions.MEMBER.includes("comment:delete"), false);
+  assert.equal(
+    rolePermissions.MEMBER.some((permission) => permission.startsWith("comment:")),
+    false,
+  );
 });
 
 test("M5 权限并集不产生重复项", () => {

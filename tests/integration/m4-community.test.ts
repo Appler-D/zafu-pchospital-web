@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
 
-import { repairCommentService } from "../../src/features/community/comment-service";
 import { repairFavoriteService } from "../../src/features/community/favorite-service";
-import { notificationService } from "../../src/features/community/notification-service";
+import {
+  notificationService,
+  summarizeNotifications,
+} from "../../src/features/community/notification-service";
 import { memberDashboardService } from "../../src/features/member-dashboard/member-dashboard-service";
 import { memberService } from "../../src/features/members/member-service";
 import { repairService } from "../../src/features/repairs/repair-service";
@@ -181,7 +183,7 @@ async function createApprovedRepair(
       categoryId: category.id,
       ownerName: "M4 集成机主",
       ownerPhone: "13800138004",
-      content: "M4 集成测试维修记录正文内容，用于覆盖评论与收藏。",
+      content: "M4 集成测试维修记录正文内容，用于覆盖通知与收藏。",
       result: "COMPLETED",
     },
     owner,
@@ -267,172 +269,6 @@ function hasCode(error: unknown, code: string): boolean {
   return error instanceof AppError && error.code === code;
 }
 
-dbTest("M4 回复超过两层时拍平到根评论", async () => {
-  const owner = await createMember("作者");
-  const actor = memberActor(owner.member.userId, "req_m4_flatten");
-  const record = await createApprovedRepair(actor);
-
-  const root = await repairCommentService.create(
-    record.id,
-    { body: "这是根评论内容足够长" },
-    actor,
-  );
-  const reply = await repairCommentService.create(
-    record.id,
-    { body: "这是直接回复内容足够长", parentCommentId: root.id },
-    actor,
-  );
-  const nested = await repairCommentService.create(
-    record.id,
-    { body: "这是嵌套回复应挂到根", parentCommentId: reply.id },
-    actor,
-  );
-
-  assert.equal(root.parentCommentId, null);
-  assert.equal(reply.parentCommentId, root.id);
-  assert.equal(nested.parentCommentId, root.id);
-
-  const listed = await repairCommentService.list(record.id, { page: 1, pageSize: 20 }, actor);
-  assert.equal(listed.pagination.total, 1);
-  assert.equal(listed.items.length, 1);
-  assert.equal(listed.items[0]?.id, root.id);
-  assert.equal(listed.items[0]?.replies.length, 2);
-  assert.deepEqual(
-    listed.items[0]?.replies.map((item) => item.id).sort(),
-    [reply.id, nested.id].sort(),
-  );
-});
-
-dbTest("M4 评论按根评论分页，且每页只带本页根评论的回复", async () => {
-  const owner = await createMember("分页作者");
-  const actor = memberActor(owner.member.userId, "req_m4_paging");
-  const record = await createApprovedRepair(actor);
-
-  // 3 条根评论，每条挂 1 条回复
-  const roots: string[] = [];
-  for (let index = 0; index < 3; index += 1) {
-    const root = await repairCommentService.create(
-      record.id,
-      { body: `第 ${index} 条根评论内容足够长` },
-      actor,
-    );
-    await repairCommentService.create(
-      record.id,
-      { body: `第 ${index} 条回复内容足够长`, parentCommentId: root.id },
-      actor,
-    );
-    roots.push(root.id);
-  }
-
-  const page1 = await repairCommentService.list(record.id, { page: 1, pageSize: 2 }, actor);
-  const page2 = await repairCommentService.list(record.id, { page: 2, pageSize: 2 }, actor);
-
-  // total 只数根评论（回复不计入），回复必须跟着它所属的根评论一起返回。
-  // 分页已下推到 SQL，回复改为「只查本页根评论的那些」—— 这条用例就是那个改动的回归网。
-  assert.equal(page1.pagination.total, 3);
-  assert.equal(page1.pagination.totalPages, 2);
-  assert.equal(page1.items.length, 2);
-  assert.equal(page2.items.length, 1);
-
-  const listedIds = [...page1.items, ...page2.items].map((item) => item.id);
-  assert.equal(new Set(listedIds).size, listedIds.length, "两页出现重复的根评论");
-  assert.deepEqual([...listedIds].sort(), [...roots].sort(), "两页合起来应覆盖全部根评论");
-
-  for (const item of [...page1.items, ...page2.items]) {
-    assert.equal(item.replies.length, 1, `根评论 ${item.id} 的回复没有被带出`);
-    assert.equal(item.replies[0]?.parentCommentId, item.id);
-  }
-
-  // 越界页返回空列表而不是报错
-  const page3 = await repairCommentService.list(record.id, { page: 3, pageSize: 2 }, actor);
-  assert.deepEqual(page3.items, []);
-  assert.equal(page3.pagination.total, 3);
-});
-
-dbTest("M4 @成员与显式 ID 并集会通知，提及优先于记录评论通知", async () => {
-  const ownerCreated = await createMember("记录主人", "主人");
-  const mentionedCreated = await createMember("被提及", "小林");
-  const commenterCreated = await createMember("评论者", "评论者");
-  const owner = memberActor(ownerCreated.member.userId, "req_m4_owner");
-  const mentioned = memberActor(mentionedCreated.member.userId, "req_m4_mentioned");
-  const commenter = memberActor(commenterCreated.member.userId, "req_m4_commenter");
-  const record = await createApprovedRepair(owner);
-
-  const comment = await repairCommentService.create(
-    record.id,
-    {
-      body: "请 @小林 看一下这台机器",
-      mentionedMemberProfileIds: [mentionedCreated.member.id],
-    },
-    commenter,
-  );
-  assert.equal(comment.mentions.length, 1);
-  assert.equal(comment.mentions[0]?.id, mentionedCreated.member.id);
-
-  const mentionedInbox = await notificationService.list({ page: 1, pageSize: 20 }, mentioned);
-  const ownerInbox = await notificationService.list({ page: 1, pageSize: 20 }, owner);
-  const selfInbox = await notificationService.list({ page: 1, pageSize: 20 }, commenter);
-
-  assert.equal(
-    mentionedInbox.items.some((item) => item.type === "MENTIONED" && item.commentId === comment.id),
-    true,
-  );
-  assert.equal(
-    ownerInbox.items.some(
-      (item) => item.type === "REPAIR_COMMENTED" && item.commentId === comment.id,
-    ),
-    true,
-  );
-  assert.equal(
-    selfInbox.items.some((item) => item.commentId === comment.id),
-    false,
-    "作者不应收到自己的评论通知",
-  );
-
-  const ownerMentioned = await repairCommentService.create(
-    record.id,
-    { body: "请 @主人 自己看一眼" },
-    commenter,
-  );
-  const ownerAfter = await notificationService.list({ page: 1, pageSize: 50 }, owner);
-  const related = ownerAfter.items.filter((item) => item.commentId === ownerMentioned.id);
-  assert.equal(related.length, 1);
-  assert.equal(related[0]?.type, "MENTIONED");
-});
-
-dbTest("M4 未知显式提及 ID 拒绝，超限拒绝不截断", async () => {
-  const created = await createMember("提及校验");
-  const actor = memberActor(created.member.userId, "req_m4_mention_limit");
-  const record = await createApprovedRepair(actor);
-
-  await assert.rejects(
-    () =>
-      repairCommentService.create(
-        record.id,
-        { body: "提及一个不存在的人", mentionedMemberProfileIds: [randomUUID()] },
-        actor,
-      ),
-    (error) => hasCode(error, "VALIDATION_FAILED"),
-  );
-
-  const extras: Awaited<ReturnType<typeof createMember>>[] = [];
-  for (let index = 0; index < 11; index += 1) {
-    extras.push(await createMember(`提及${index}`, `提及${index}`));
-  }
-  await assert.rejects(
-    () =>
-      repairCommentService.create(
-        record.id,
-        {
-          body: extras.map((item) => `@${item.member.nickname}`).join(" "),
-          mentionedMemberProfileIds: extras.map((item) => item.member.id),
-        },
-        actor,
-      ),
-    (error) => hasCode(error, "MENTION_LIMIT_EXCEEDED"),
-  );
-});
-
 dbTest("M4 通知已读幂等、全部已读与软删除不改状态", async () => {
   const created = await createMember("通知收件");
   const actor = memberActor(created.member.userId, "req_m4_read");
@@ -502,49 +338,13 @@ dbTest("M4 收藏取消走软删除，再次收藏恢复同一行并刷新时间
   assert.equal(dashboard.favorites.latest[0]?.id, first.id);
 });
 
-dbTest("M4 作者可删自己的评论，其他成员越权被拒，管理员可删", async () => {
-  const authorCreated = await createMember("评论作者");
-  const otherCreated = await createMember("其他成员");
-  const author = memberActor(authorCreated.member.userId, "req_m4_author");
-  const other = memberActor(otherCreated.member.userId, "req_m4_other");
-  const record = await createApprovedRepair(author);
-
-  const comment = await repairCommentService.create(
-    record.id,
-    { body: "这条评论随后会被删除" },
-    author,
-  );
-  await assert.rejects(
-    () => repairCommentService.softDelete(record.id, comment.id, other),
-    (error) => hasCode(error, "FORBIDDEN"),
-  );
-  await repairCommentService.softDelete(record.id, comment.id, author);
-  const afterSelf = await repairCommentService.list(record.id, { page: 1, pageSize: 20 }, author);
-  assert.equal(afterSelf.items.length, 0);
-
-  const second = await repairCommentService.create(
-    record.id,
-    { body: "管理员将删除这条评论" },
-    author,
-  );
-  await repairCommentService.softDelete(record.id, second.id, adminActor);
-  const afterAdmin = await repairCommentService.list(record.id, { page: 1, pageSize: 20 }, author);
-  assert.equal(afterAdmin.items.length, 0);
-  const stored = await getDb().repairComment.findUniqueOrThrow({ where: { id: second.id } });
-  assert.notEqual(stored.deletedAt, null);
-});
-
-dbTest("M4 不能评论他人未通过记录，不能操作他人通知或收藏", async () => {
+dbTest("M4 不能收藏他人未通过记录，不能操作他人通知或收藏", async () => {
   const ownerCreated = await createMember("草稿主人");
   const otherCreated = await createMember("旁观者");
   const owner = memberActor(ownerCreated.member.userId, "req_m4_draft_owner");
   const other = memberActor(otherCreated.member.userId, "req_m4_draft_other");
   const draft = await repairService.createDraft({ idempotencyKey: randomUUID() }, owner);
 
-  await assert.rejects(
-    () => repairCommentService.create(draft.id, { body: "不应出现在他人草稿上" }, other),
-    (error) => hasCode(error, "REPAIR_NOT_FOUND"),
-  );
   await assert.rejects(
     () => repairFavoriteService.add(draft.id, other),
     (error) => hasCode(error, "REPAIR_NOT_FOUND"),
@@ -571,41 +371,12 @@ dbTest("M4 不能评论他人未通过记录，不能操作他人通知或收藏
   assert.equal(favorite.repairRecordId, approved.id);
 });
 
-dbTest("M4 HTTP 评论/通知/收藏信封固定且写接口校验同源", async () => {
+dbTest("M4 HTTP 通知/收藏信封固定", async () => {
   const created = await createMember("信封");
   const actor = memberActor(created.member.userId, "req_m4_http");
   const token = await createSessionToken(created.member.userId);
   const record = await createApprovedRepair(actor);
   const cookie = { cookie: `pc_hospital_session=${token}` };
-
-  const { GET: listComments, POST: createComment } =
-    await import("../../src/app/api/v1/repairs/[id]/comments/route");
-  const createdComment = await callRoute(
-    createComment,
-    `http://localhost/api/v1/repairs/${record.id}/comments`,
-    {
-      method: "POST",
-      headers: cookie,
-      body: { body: "通过 HTTP 发表的内部评论内容" },
-      params: { id: record.id },
-    },
-  );
-  assert.equal(createdComment.status, 201, JSON.stringify(createdComment.json));
-  assert.equal(createdComment.cacheControl, "private, no-store");
-  const commentData = createdComment.json.data as { id: string; body: string };
-  assert.equal(commentData.body, "通过 HTTP 发表的内部评论内容");
-
-  const listed = await callRoute(
-    listComments,
-    `http://localhost/api/v1/repairs/${record.id}/comments`,
-    {
-      headers: cookie,
-      params: { id: record.id },
-    },
-  );
-  assert.equal(listed.status, 200);
-  assert.equal(listed.cacheControl, "private, no-store");
-  assert.equal(Array.isArray(listed.json.data), true);
 
   const { GET: listNotifications } =
     await import("../../src/app/api/v1/member/notifications/route");
@@ -633,4 +404,169 @@ dbTest("M4 HTTP 评论/通知/收藏信封固定且写接口校验同源", async
   assert.equal(unauth.status, 401);
   assert.equal(unauth.json.success, false);
   assert.equal("data" in unauth.json, false);
+});
+
+dbTest(
+  "#198 混合历史通知：查询、分页、摘要和写操作只开放审核类型，历史行及他人消息保留",
+  async () => {
+    const created = await createMember("历史通知");
+    const other = await createMember("其他收件人");
+    const actor = memberActor(created.member.userId, "req_198_notifications");
+    const record = await createApprovedRepair(actor);
+    const oldAt = new Date("2026-01-01T00:00:00Z");
+    const comment = await getDb().repairComment.create({
+      data: {
+        id: randomUUID(),
+        repairRecordId: record.id,
+        authorMemberProfileId: created.member.id,
+        body: "仅历史夹具，不通过退役接口创建",
+        createdAt: oldAt,
+      },
+    });
+    const hiddenIds: string[] = [];
+    for (const type of ["MENTIONED", "REPAIR_COMMENTED"]) {
+      for (const status of ["UNREAD", "READ"]) {
+        const id = randomUUID();
+        hiddenIds.push(id);
+        await getDb().notification.create({
+          data: {
+            id,
+            type,
+            status,
+            recipientMemberProfileId: created.member.id,
+            repairRecordId: record.id,
+            commentId: comment.id,
+            createdAt: oldAt,
+            readAt: status === "READ" ? oldAt : null,
+          },
+        });
+      }
+    }
+    const rejected = await getDb().notification.create({
+      data: {
+        id: randomUUID(),
+        type: "REPAIR_REJECTED",
+        status: "READ",
+        readAt: oldAt,
+        recipientMemberProfileId: created.member.id,
+        repairRecordId: record.id,
+        // 兼容字段即使历史上有值，对客户端也必须为 null。
+        commentId: comment.id,
+        createdAt: oldAt,
+      },
+    });
+    const otherNotice = await getDb().notification.create({
+      data: {
+        id: randomUUID(),
+        type: "REPAIR_APPROVED",
+        status: "UNREAD",
+        recipientMemberProfileId: other.member.id,
+        createdAt: oldAt,
+      },
+    });
+    const historical = () =>
+      getDb().notification.findMany({
+        where: { id: { in: [...hiddenIds, otherNotice.id] } },
+        orderBy: { id: "asc" },
+      });
+    const before = await historical();
+    const first = await notificationService.list({ page: 1, pageSize: 1 }, actor);
+    const second = await notificationService.list({ page: 2, pageSize: 1 }, actor);
+    assert.equal(first.pagination.total, 2);
+    assert.equal(first.pagination.totalPages, 2);
+    assert.equal(first.unreadCount, 1);
+    assert.equal(second.items[0].id, rejected.id);
+    assert.ok([...first.items, ...second.items].every((item) => item.commentId === null));
+    const unread = await notificationService.list(
+      { page: 1, pageSize: 20, status: "UNREAD" },
+      actor,
+    );
+    assert.equal(unread.pagination.total, 1);
+    const summary = await summarizeNotifications(created.member.id, actor);
+    assert.equal(summary.unreadCount, 1);
+    assert.equal(summary.latest.length, 2);
+    const dashboard = await memberDashboardService.getDashboard(actor);
+    assert.equal(dashboard.notifications.available, true);
+    assert.equal(dashboard.notifications.unreadCount, 1);
+    assert.equal(dashboard.notifications.latest.length, 2);
+    for (const id of hiddenIds) {
+      await assert.rejects(notificationService.markRead(id, actor), (error) =>
+        hasCode(error, "NOTIFICATION_NOT_FOUND"),
+      );
+      await assert.rejects(notificationService.softDelete(id, actor), (error) =>
+        hasCode(error, "NOTIFICATION_NOT_FOUND"),
+      );
+    }
+    assert.equal((await notificationService.markAllRead(actor)).updatedCount, 1);
+    assert.deepEqual(await historical(), before);
+    assert.equal(await getDb().repairComment.count({ where: { id: comment.id } }), 1);
+    await notificationService.softDelete(rejected.id, actor);
+    assert.equal(
+      (await notificationService.list({ page: 1, pageSize: 20 }, actor)).pagination.total,
+      1,
+    );
+  },
+);
+
+dbTest("#198 五个旧评论方法统一退役：正常请求 404、正文不解析、历史内容不变", async () => {
+  const created = await createMember("退役接口");
+  const actor = memberActor(created.member.userId, "req_198_retired");
+  const token = await createSessionToken(created.member.userId);
+  const record = await createApprovedRepair(actor);
+  const historical = await getDb().repairComment.create({
+    data: {
+      id: randomUUID(),
+      repairRecordId: record.id,
+      authorMemberProfileId: created.member.id,
+      body: "必须保留的历史内容",
+      createdAt: new Date(),
+    },
+  });
+  const comments = await import("../../src/app/api/v1/repairs/[id]/comments/route");
+  const single = await import("../../src/app/api/v1/repairs/[id]/comments/[commentId]/route");
+  const admin = await import("../../src/app/api/v1/admin/comments/route");
+  const adminSingle = await import("../../src/app/api/v1/admin/comments/[id]/route");
+  // 不存在的目标 + 畸形 JSON 仍是退役响应，不做目标查询或正文校验。
+  for (const [method, handler, path] of [
+    ["GET", comments.GET, "/repairs/nonexistent/comments"],
+    ["POST", comments.POST, "/repairs/nonexistent/comments"],
+    ["DELETE", single.DELETE, `/repairs/${record.id}/comments/${historical.id}`],
+    ["GET", admin.GET, "/admin/comments?invalid=pagination"],
+    ["DELETE", adminSingle.DELETE, `/admin/comments/${historical.id}`],
+  ] as const) {
+    const response = await handler(
+      new Request(`http://localhost/api/v1${path}`, {
+        method,
+        headers: {
+          ...sameOriginHeaders(),
+          cookie: `pc_hospital_session=${token}`,
+          "x-request-id": "req_198_retired",
+        },
+        ...(method === "POST" ? { body: "not-json" } : {}),
+      }),
+    );
+    const body = await response.json();
+    assert.equal(response.status, 404);
+    assert.equal(body.error.code, "RESOURCE_NOT_FOUND");
+    assert.equal(body.meta.requestId, "req_198_retired");
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }
+  const anonymous = await comments.GET(new Request("http://localhost/api/v1/repairs/any/comments"));
+  assert.equal(anonymous.status, 401);
+  const crossOrigin = await comments.POST(
+    new Request("http://localhost/api/v1/repairs/any/comments", {
+      method: "POST",
+      headers: { origin: "https://untrusted.test", cookie: `pc_hospital_session=${token}` },
+      body: "not-json",
+    }),
+  );
+  assert.equal(crossOrigin.status, 403);
+  assert.deepEqual(
+    await getDb().repairComment.findUniqueOrThrow({ where: { id: historical.id } }),
+    historical,
+  );
+  assert.equal(
+    await getDb().auditLog.count({ where: { action: { startsWith: "repair.comment." } } }),
+    0,
+  );
 });

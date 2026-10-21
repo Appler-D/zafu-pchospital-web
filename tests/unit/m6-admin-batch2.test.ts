@@ -16,7 +16,6 @@ import { movedIds, reorderedIds } from "../../src/features/admin/reorder";
 import { applyOrder, movedManyIds, movingRowIds } from "../../src/lib/list-order";
 import { stableCodeFromName } from "../../src/lib/stable-code";
 import {
-  CommentModerationFilter,
   Permission,
   RankingDisplayNameMode,
   ReorderDirection,
@@ -33,16 +32,13 @@ import type { JoinApplicationExportRow, RepairExportRow } from "../../src/types/
 
 /* ------------------------------------------------------------------- 权限 */
 
-test("批次 2 的三个权限码只授予 ADMIN", () => {
+test("批次 2 的管理权限只授予 ADMIN", () => {
   const member = permissionsForRoles(["MEMBER"]);
   const admin = permissionsForRoles(["ADMIN"]);
-  for (const permission of ["comment:moderate", "skill:manage", "settings:manage"] as const) {
+  for (const permission of ["skill:manage", "settings:manage"] as const) {
     assert.equal(admin.includes(permission), true, `管理员缺少 ${permission}`);
     assert.equal(member.includes(permission), false, `成员不应拥有 ${permission}`);
   }
-  // 管理端评论列表跨记录，不能靠成员也持有的 comment:read 放行。
-  assert.equal(member.includes("comment:read"), true);
-  assert.equal(member.includes("comment:moderate"), false);
   // 审计是只读权限，M6 批次 2 起才有界面；它不该顺带给出任何写能力。
   assert.equal(admin.includes("audit:read"), true);
   assert.equal(member.includes("audit:read"), false);
@@ -193,7 +189,7 @@ test("报名 CSV 复用同一套转义：BOM、CRLF、公式注入防护", () =>
 
 /* ------------------------------------------------------------------ 导航 */
 
-test("后台导航按 5 组平铺全部 11 个模块，不再有足部设置菜单", () => {
+test("后台导航按 5 组平铺全部 10 个模块，不再有足部设置菜单", () => {
   // 工作台重构：入口并回分组，不再收进侧栏足部「设置」菜单。
   assert.deepEqual(
     adminNavGroups.map((group) => group.title),
@@ -209,7 +205,6 @@ test("后台导航按 5 组平铺全部 11 个模块，不再有足部设置菜�
       "/admin/invite-codes",
       "/admin/categories",
       "/admin/skills",
-      "/admin/comments",
       "/admin/export",
       "/admin/audit",
       "/admin/settings",
@@ -256,8 +251,7 @@ test("公开统计的默认值是「全部关闭 + 仅昵称」", () => {
 
 /* ------------------------------------------------------------------ 枚举 */
 
-test("评论删除态筛选只允许三种取值", () => {
-  assert.deepEqual([...CommentModerationFilter], ["ACTIVE", "DELETED", "ALL"]);
+test("排序方向只允许两种取值", () => {
   assert.deepEqual([...ReorderDirection], ["UP", "DOWN"]);
 });
 

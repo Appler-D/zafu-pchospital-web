@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
 import { FavoriteToggle } from "@/components/community/FavoriteToggle";
-import { RepairComments } from "@/components/community/RepairComments";
 import { RepairFlagControls } from "@/components/community/RepairFlagControls";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -198,9 +197,6 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
             </li>
           ))}
         </ol>
-      </Card>
-      <Card className="repair-panel">
-        <RepairComments recordId={record.id} />
       </Card>
       <p className="sr-only">{repairCopy.detail.title}</p>
     </div>

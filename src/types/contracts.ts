@@ -45,12 +45,7 @@ export const RepairTimelineEventType = [
   "DELETED",
   "FLAG_CHANGED",
 ] as const;
-export const NotificationType = [
-  "MENTIONED",
-  "REPAIR_COMMENTED",
-  "REPAIR_APPROVED",
-  "REPAIR_REJECTED",
-] as const;
+export const NotificationType = ["REPAIR_APPROVED", "REPAIR_REJECTED"] as const;
 export const NotificationStatus = ["UNREAD", "READ"] as const;
 
 type ValueOf<T extends readonly string[]> = T[number];
@@ -154,9 +149,6 @@ export const Permission = [
   "member.profile.update_self",
   "member.profile.read_internal",
   "member.skill.assign_self",
-  "comment:create",
-  "comment:read",
-  "comment:delete",
   "favorite:manage",
   "notification:read",
   "analytics:read_internal",
@@ -164,9 +156,6 @@ export const Permission = [
   // 不复用 repair:review —— 维修审核与「把数据带出系统」是两件事。
   "data:export",
   // M6 批次 2。
-  // `comment:moderate` 不复用 `comment:read`：成员也有 `comment:read`，而管理端评论列表
-  // 是**跨记录**的（不过 `assertCanReadRepair`），拿成员权限放行会绕过记录可见性。
-  "comment:moderate",
   // 技能标签库与故障分类是两类资源，各自管理；不复用 `member:manage`
   // （那是「给某个成员分配标签」，和「维护标签库本身」不是一件事）。
   "skill:manage",
@@ -777,7 +766,7 @@ export type UpdateRepairCategoryInput = {
 };
 
 // ---------------------------------------------------------------------------
-// M6 批次 2（管理端）：技能标签库 / 评论管理 / 邀请码 / 审计 / 公开统计配置 / 报名导出
+// M6 批次 2（管理端）：技能标签库 / 邀请码 / 审计 / 公开统计配置 / 报名导出
 // ---------------------------------------------------------------------------
 
 /** 技能标签库管理视图。`usedByMemberCount` 只统计**当前生效**的成员关联，回答「停用会不会影响人」。 */
@@ -798,53 +787,6 @@ export type UpdateSkillInput = {
   name?: string;
   description?: string | null;
   sortOrder?: number;
-};
-
-/**
- * 评论管理列表的删除态筛选。
- *
- * 默认只看未删除的；`DELETED` 用来复核「刚才那条是不是真的删掉了」——
- * 软删除后评论仍在库里，界面若完全看不见，管理员无法确认删除结果。
- */
-export const CommentModerationFilter = ["ACTIVE", "DELETED", "ALL"] as const;
-export type CommentModerationFilter = ValueOf<typeof CommentModerationFilter>;
-
-export type AdminCommentListInput = PaginationInput & {
-  query?: string;
-  recordId?: string;
-  authorMemberProfileId?: string;
-  deleted?: CommentModerationFilter;
-  createdFrom?: string;
-  createdTo?: string;
-};
-
-/**
- * 管理端评论条目。
- *
- * 与成员端的 `RepairCommentView` 不同：这里**面向审核**，因此带上所属记录的最小摘要
- * （成员名 / 维修日期 / 审核状态）与回复、提及计数，且**不**返回 `canDelete` 一类
- * 以当前成员视角计算的字段 —— 管理端的动作由权限决定，不由条目字段决定。
- */
-export type AdminCommentEntry = {
-  id: string;
-  body: string;
-  author: MemberRef;
-  record: {
-    id: string;
-    memberName: string;
-    repairDate: string | null;
-    status: RepairStatus;
-  };
-  parentCommentId: string | null;
-  replyCount: number;
-  mentionCount: number;
-  createdAt: string;
-  deletedAt: string | null;
-};
-
-export type AdminCommentListResult = {
-  items: AdminCommentEntry[];
-  pagination: PaginationMeta;
 };
 
 /** 邀请码管理列表入参。`status` 是**生效状态**（含派生的过期/用尽），不是存储状态。 */
@@ -1111,35 +1053,12 @@ export type MemberDashboardDegraded =
 
 export type MemberRef = { id: string; name: string };
 
-export type CommentMentionView = MemberRef;
-
-export type RepairCommentView = {
-  id: string;
-  body: string;
-  author: MemberRef;
-  parentCommentId: string | null;
-  mentions: CommentMentionView[];
-  createdAt: string;
-  canDelete: boolean;
-  replies: RepairCommentView[];
-};
-
-export type CreateRepairCommentInput = {
-  body: string;
-  parentCommentId?: string | null;
-  mentionedMemberProfileIds?: string[];
-};
-
-export type RepairCommentListResult = {
-  items: RepairCommentView[];
-  pagination: PaginationMeta;
-};
-
 export type NotificationView = {
   id: string;
   type: NotificationType;
   status: NotificationStatus;
   repairRecordId: string | null;
+  /** 已废弃的兼容字段；评论退役后始终为 null。 */
   commentId: string | null;
   actor: MemberRef | null;
   repairExcerpt: string | null;
@@ -1356,8 +1275,6 @@ export type UpdateMemberSkillsResult = {
 export const MEMBER_SKILL_LIMIT = 12;
 export const MEMBER_NICKNAME_MAX_LENGTH = 64;
 export const MEMBER_RECENT_REPAIR_LIMIT = 5;
-export const COMMENT_BODY_MAX_LENGTH = 2000;
-export const COMMENT_MENTION_LIMIT = 10;
 export const MEMBER_DASHBOARD_NOTIFICATION_LIMIT = 5;
 export const MEMBER_DASHBOARD_FAVORITE_LIMIT = 5;
 
@@ -1538,11 +1455,6 @@ export interface SkillAdminServiceContract {
   move(skillId: string, beforeId: string | null, actor: AuthorizedActor): Promise<void>;
 }
 
-export interface CommentAdminServiceContract {
-  list(input: AdminCommentListInput, actor: AuthorizedActor): Promise<AdminCommentListResult>;
-  softDelete(commentId: string, actor: AuthorizedActor): Promise<void>;
-}
-
 export interface AuditLogServiceContract {
   list(input: AuditLogListInput, actor: AuthorizedActor): Promise<AuditLogListResult>;
   listActions(actor: AuthorizedActor): Promise<AuditActionOption[]>;
@@ -1581,20 +1493,6 @@ export interface RepairReviewServiceContract {
 export interface RepairQueryServiceContract {
   list(input: RepairListInput, actor: AuthorizedActor): Promise<RepairListResult>;
   getById(recordId: string, actor: AuthorizedActor): Promise<RepairDetailView>;
-}
-
-export interface RepairCommentServiceContract {
-  list(
-    recordId: string,
-    input: PaginationInput,
-    actor: AuthorizedActor,
-  ): Promise<RepairCommentListResult>;
-  create(
-    recordId: string,
-    input: CreateRepairCommentInput,
-    actor: AuthorizedActor,
-  ): Promise<RepairCommentView>;
-  softDelete(recordId: string, commentId: string, actor: AuthorizedActor): Promise<void>;
 }
 
 export interface RepairFavoriteServiceContract {

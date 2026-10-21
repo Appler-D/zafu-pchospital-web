@@ -297,20 +297,14 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 
 - 学生身份标识（学号、班级）当前由管理员维护，M3 不提供自助修改入口。
 
-## M4 内部交流契约
+## M4 收藏与审核通知契约（评论已退役，issue #198）
 
-- `repair_comments` 主体是维修记录 + 作者成员档案。`parent_comment_id` 为空表示根评论；
-  回复一律挂到根评论（两层）。默认查询排除 `deleted_at IS NOT NULL`。
-- `comment_mentions` 唯一约束 `(comment_id, mentioned_member_profile_id)`，同一评论对同一成员只记一次。
-  提及对象必须是有效成员档案；QQ / 手机号 / `users.id` 不进入该表。
-- `repair_favorites` 唯一约束 `(member_profile_id, repair_record_id)`。取消收藏只写
-  `deleted_at`，再次收藏恢复同一行并刷新时间。并发下不会产生重复关联。
-- `notifications` 收件人是 `member_profiles.id`。类型为 `MENTIONED` /
-  `REPAIR_COMMENTED` / `REPAIR_APPROVED` / `REPAIR_REJECTED`；状态为 `UNREAD` / `READ`。
-  删除走 `deleted_at`，状态保留。审核员可以没有成员档案（`actor_member_profile_id` 可空）。
-- 业务外键一律 `ON DELETE RESTRICT`，指向 `member_profiles` / `repair_records` /
-  `repair_comments`，不存联系方式。
-- 评论与收藏可见性继承维修记录对象级权限；通知只能由收件人本人读取、标已读或软删除。
+- `repair_comments`、`comment_mentions` 及反向关系仅保留历史兼容；不再提供评论、回复或提及的 Service / UI / 写入入口，不销毁旧行或修改旧 Migration。
+- `repair_favorites` 唯一约束 `(member_profile_id, repair_record_id)`。取消收藏只写 `deleted_at`，再次收藏恢复同一行并刷新时间；可见性仍继承维修记录对象级权限。
+- `notifications` 收件人为 `member_profiles.id`。公开 `NotificationType` 仅 `REPAIR_APPROVED` / `REPAIR_REJECTED`；历史 `MENTIONED` / `REPAIR_COMMENTED` 继续存储但不可查询或操作，也不计入列表 total、未读数或工作台摘要。全读只更新开放类型的本人未读行。
+- `NotificationView.commentId` 为废弃兼容字段，始终返回 null。通知只由收件人读取、标已读或软删除；删除不改状态 / readAt，记录可见性的既有降级不变。
+- 审核通知仍在审核事务内向所有参与者去重发送、跳过审核人本人，兼容没有成员档案的管理员。审核失败时通知和审计一并回滚。
+- `ON DELETE RESTRICT` 关系继续保留；接待草稿撤销沿用 #195 的历史通知 / 提及 / 回复 / 根评论清理顺序，不因评论下线删除历史表或跳过关联。
 
 ## M6 批次 2 管理端契约
 
@@ -319,11 +313,7 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
   停用后成员侧 `GET /api/v1/skills` 不再返回它，已有的关联仍然回显。
   `code` 是小写输入也统一大写的稳定机器码，创建后不可修改；重复 code 返回 409
   `SKILL_CODE_CONFLICT`（在入口查重，不让唯一键冲突冒泡成 500）。
-- **评论管理**：`repair_comments` 的软删除语义与成员端**完全同一份实现**（写 `deleted_at`，
-  正文保留供审计），只是不再要求操作者拥有有效成员档案。因此
-  `repairCommentService.softDelete` 的成员档案解析改为**可空**：没有档案时 `isAuthor`
-  恒为 false，必然走 `comment:delete`（仅 ADMIN）。管理端列表跨记录，使用独立权限
-  `comment:moderate`，不复用成员也持有的 `comment:read`。
+- **原评论管理**：已随全部维修评论统一退役；保留历史评论与 `repair.comment.*` 审计的可读解释，不再授予评论权限或提供管理能力。
 - **邀请码列表**：`status` 筛选的是**生效状态**（`NOT_STARTED` / `ACTIVE` / `REVOKED` /
   `EXPIRED` / `EXHAUSTED`），不是库里的存储状态 —— 除 `REVOKED` 外，其余四态在库里都是
   `status = 'ACTIVE'` 加时间或计数条件推出来的，因此判定被下推到 SQL，与纯函数
