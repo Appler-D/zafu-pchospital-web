@@ -58,3 +58,10 @@ test("报名倒计时：满一天给出天数", () => {
     seconds: "00",
   });
 });
+
+test("报名倒计时：Infinity / NaN 兜底归零，绝不渲染出 Infinity", () => {
+  const zeros = { days: 0, hours: "00", minutes: "00", seconds: "00" };
+  assert.deepEqual(signupCountdownParts(Number.POSITIVE_INFINITY), zeros);
+  assert.deepEqual(signupCountdownParts(Number.NEGATIVE_INFINITY), zeros);
+  assert.deepEqual(signupCountdownParts(Number.NaN), zeros);
+});

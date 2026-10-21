@@ -46,7 +46,10 @@ export const repairActivitiesPage = {
     countdownPrefix: "距报名开始",
     countdownOpeningSoon: "即将开放，请稍候",
     countdownUnits: { days: "天", hours: "时", minutes: "分", seconds: "秒" },
-    countdownWindowHint: "{open} 开始报名 · {close} 截止",
+    /** 块下只提示开始时间：截止时间由上方「报名时间」承载，避免整行重复。 */
+    countdownOpensHint: "{open} 开始报名",
+    /** 倒计时归零、状态转为可报名时对读屏的一次性播报。 */
+    countdownOpened: "报名已开放，现在可以提交报名。",
     closedDisabled: "报名已截止",
     fullDisabled: "名额已满",
     notEditable: "当前状态不可修改故障类型（可能已签到或已接待）。",

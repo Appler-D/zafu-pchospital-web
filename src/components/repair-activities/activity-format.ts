@@ -32,6 +32,10 @@ export function signupCountdownParts(remainingMs: number): {
   minutes: string;
   seconds: string;
 } {
+  // 防御：解析失败 / 非有限值一律归零，绝不把 Infinity / NaN 渲染进数字块。
+  if (!Number.isFinite(remainingMs)) {
+    return { days: 0, hours: "00", minutes: "00", seconds: "00" };
+  }
   const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
