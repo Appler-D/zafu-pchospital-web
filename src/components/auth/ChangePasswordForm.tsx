@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { authRequestCopy } from "@/config/auth";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
 
 type ChangePasswordPayload = {
@@ -44,7 +45,7 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
       }
 
       if (payload === null) {
-        setProblem(`服务返回了无法解析的响应（HTTP ${response.status}）`);
+        setProblem(authRequestCopy.invalidResponse(response.status));
         return;
       }
 
@@ -59,7 +60,7 @@ export function ChangePasswordForm({ returnTo }: { returnTo?: string | null }) {
       router.refresh();
     } catch {
       // 断网、请求被中止或跨域失败。文案与 adminFetch 的 NETWORK_ERROR 对齐。
-      setProblem("网络异常，请检查连接后重试");
+      setProblem(authRequestCopy.networkError);
     } finally {
       setBusy(false);
     }

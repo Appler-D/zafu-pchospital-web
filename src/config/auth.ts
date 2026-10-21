@@ -1,3 +1,8 @@
+export const authRequestCopy = {
+  networkError: "网络异常，请检查连接后重试",
+  invalidResponse: (status: number) => `服务返回了无法解析的响应（HTTP ${status}）`,
+} as const;
+
 export const loginCopy = {
   brandMark: "PC",
   brandName: "ZAFU PC HOSPITAL",

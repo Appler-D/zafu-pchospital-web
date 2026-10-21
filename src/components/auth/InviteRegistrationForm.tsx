@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { registerCopy } from "@/config/auth";
+import { authRequestCopy, registerCopy } from "@/config/auth";
 import {
   CLASS_NAME_MAX_LENGTH,
   PERSON_NAME_MAX_LENGTH,
@@ -13,6 +13,12 @@ import {
   STUDENT_ID_MAX_LENGTH,
 } from "@/lib/security/normalization";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/security/password-policy";
+
+type InviteRegistrationPayload = {
+  success: boolean;
+  data?: { destination?: string };
+  error?: { message?: string };
+};
 
 type FieldSpec = {
   name: string;
@@ -125,35 +131,44 @@ export function InviteRegistrationForm({ returnTo }: { returnTo?: string | null 
     event.preventDefault();
     setBusy(true);
     setProblem("");
-    const data = Object.fromEntries(new FormData(event.currentTarget));
-    if (data.password !== data.passwordConfirmation) {
-      setProblem(registerCopy.passwordMismatch);
+    try {
+      const data = Object.fromEntries(new FormData(event.currentTarget));
+      if (data.password !== data.passwordConfirmation) {
+        setProblem(registerCopy.passwordMismatch);
+        return;
+      }
+      const response = await fetch("/api/v1/member-registrations/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...data,
+          idempotencyKey: key.current,
+          ...(returnTo ? { returnTo } : {}),
+        }),
+      });
+      let payload: InviteRegistrationPayload | null = null;
+      try {
+        payload = (await response.json()) as InviteRegistrationPayload;
+      } catch {
+        payload = null;
+      }
+      if (payload === null) {
+        setProblem(authRequestCopy.invalidResponse(response.status));
+        return;
+      }
+      if (!response.ok || !payload.success || !payload.data?.destination) {
+        setProblem(payload.error?.message ?? registerCopy.failed);
+        return;
+      }
+      // 邀请码注册者自设密码（服务端 mustChangePassword = false），落点仍由服务端的
+      // 统一门禁编排决定：模式开启时先被引导到邮箱步骤页，前端不写死 /member。
+      router.replace(payload.data.destination);
+      router.refresh();
+    } catch {
+      setProblem(authRequestCopy.networkError);
+    } finally {
       setBusy(false);
-      return;
     }
-    const response = await fetch("/api/v1/member-registrations/invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...data,
-        idempotencyKey: key.current,
-        ...(returnTo ? { returnTo } : {}),
-      }),
-    });
-    const payload = (await response.json()) as {
-      success: boolean;
-      data?: { destination?: string };
-      error?: { message?: string };
-    };
-    if (!response.ok || !payload.success || !payload.data?.destination) {
-      setProblem(payload.error?.message ?? registerCopy.failed);
-      setBusy(false);
-      return;
-    }
-    // 邀请码注册者自设密码（服务端 mustChangePassword = false），落点仍由服务端的
-    // 统一门禁编排决定：模式开启时先被引导到邮箱步骤页，前端不写死 /member。
-    router.replace(payload.data.destination);
-    router.refresh();
   }
 
   return (
