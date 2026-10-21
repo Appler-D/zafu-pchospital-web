@@ -22,6 +22,7 @@ import {
 } from "@/features/repair-activities/repair-activity-validation";
 import { resolveDisplayName } from "@/features/analytics/analytics-policy";
 import { createServeDraftForActivity } from "@/features/repairs/repair-service";
+import { localRepairPhotoStorage } from "@/features/repairs/repair-photo-storage";
 import { repairRepository } from "@/features/repairs/repair-repository";
 import { AppError } from "@/lib/api/errors";
 import { appendAuditLog } from "@/lib/audit/audit-service";
@@ -62,13 +63,23 @@ export type StaffRegistrationView = {
 /** 已接待行：报名视图 + 对应维修单状态（`null` = 记录缺失或已软删除）。 */
 export type StaffServedRow = StaffRegistrationView & {
   recordStatus: RepairStatus | null;
+  /** 当前操作者能否撤销这次接待：接待者本人或活动管理员，且草稿仍未提交（issue #166）。 */
+  canRevert: boolean;
 };
 
 /** 未提交的接待草稿：看板弹层与全局接单拦截共用（issue #79 第 6 项）。 */
 export type StaffServeDraft = {
   repairRecordId: string;
+  registrationId: string;
   ownerName: string;
   activityTitle: string;
+};
+
+/** 撤销接待（issue #166）：报名回到接待前状态，草稿及照片已删除。 */
+export type RevertServeResultView = {
+  registration: StaffRegistrationView;
+  deletedRecordId: string;
+  photosDeleted: number;
 };
 
 /**
@@ -220,13 +231,14 @@ async function findPendingServeDraft(memberProfileId: string): Promise<StaffServ
       id: true,
       ownerName: true,
       activityRegistration: {
-        select: { name: true, activity: { select: { title: true } } },
+        select: { id: true, name: true, activity: { select: { title: true } } },
       },
     },
   });
   if (!draft) return null;
   return {
     repairRecordId: draft.id,
+    registrationId: draft.activityRegistration?.id ?? "",
     // 接待草稿按定义必有 ownerName；回退到报名姓名与「客户」只为类型兜底。
     ownerName: draft.ownerName ?? draft.activityRegistration?.name ?? "客户",
     activityTitle: draft.activityRegistration?.activity.title ?? "",
@@ -429,13 +441,19 @@ export const repairActivityStaffService = {
 
     const served: StaffServedRow[] = servedRows
       .sort((a, b) => (b.servedAt?.getTime() ?? 0) - (a.servedAt?.getTime() ?? 0))
-      .map((row) => ({
-        ...toStaffReg(row),
-        recordStatus:
+      .map((row) => {
+        const recordStatus =
           row.repairRecord && !row.repairRecord.deletedAt
             ? (row.repairRecord.status as RepairStatus)
-            : null,
-      }));
+            : null;
+        return {
+          ...toStaffReg(row),
+          recordStatus,
+          // 撤销接待：仅接待者本人或活动管理员；已提交 / 已审核的记录不能撤（issue #166）。
+          canRevert:
+            recordStatus === "DRAFT" && (canAdmin || row.servedByMemberProfileId === member.id),
+        };
+      });
 
     const attendanceMembers: StaffAttendanceMemberView[] = attendanceRows.map((row) => ({
       memberProfileId: row.memberProfileId,
@@ -598,6 +616,122 @@ export const repairActivityStaffService = {
       });
       return toStaffReg(updated);
     });
+  },
+
+  /**
+   * 撤销接待（issue #166）：把接错客户的已接待报名恢复成接待前的状态，并删掉那次接待
+   * 自动创建的**未提交**草稿（连同参与行、时间线与照片文件）。
+   *
+   * 权限：接待者本人或活动管理员（`activity:admin`）。已提交 / 已审核的记录不能撤销 ——
+   * 那属于审核流程，仍走退回与管理员纠正。每一步都写审计。
+   */
+  async revertServe(
+    activityId: string,
+    registrationId: string,
+    actor: AuthorizedActor,
+  ): Promise<RevertServeResultView> {
+    const member = await requireStaffMember(actor);
+    await loadActivityOrThrow(activityId);
+    const isAdmin = actor.permissions.includes("activity:admin");
+    const photoKeys: string[] = [];
+    const result = await inSerializableTransaction(async (tx) => {
+      const reg = await tx.repairActivityRegistration.findFirst({
+        where: { id: registrationId, activityId, deletedAt: null },
+      });
+      if (!reg) throw new AppError("ACTIVITY_REGISTRATION_NOT_FOUND", "报名记录不存在");
+      if (reg.status !== "SERVED" || !reg.repairRecordId)
+        throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "该报名当前不是已接待状态");
+      if (!isAdmin && reg.servedByMemberProfileId !== member.id)
+        throw new AppError("FORBIDDEN", "只有接待者本人或活动管理员可以撤销接待");
+
+      const record = await tx.repairRecord.findFirst({
+        where: { id: reg.repairRecordId, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!record || record.status !== "DRAFT")
+        throw new AppError(
+          "ACTIVITY_REGISTRATION_STATE_INVALID",
+          "维修记录已提交或不存在，不能撤销接待",
+        );
+
+      const photos = await tx.repairPhoto.findMany({
+        where: { repairRecordId: record.id },
+        select: { storageKey: true },
+      });
+      // 报名先解除对草稿的外键引用（RESTRICT），再删草稿本身。
+      // 接待前的具体状态没有单独留存，用「是否签过到」还原：签过到回排队，否则回待签到。
+      const restoredStatus = reg.checkedInAt ? "CHECKED_IN" : "REGISTERED";
+      const updated = await tx.repairActivityRegistration.update({
+        where: { id: reg.id },
+        data: {
+          status: restoredStatus,
+          servedAt: null,
+          servedByMemberProfileId: null,
+          repairRecordId: null,
+        },
+      });
+
+      // 社区与通知子表同样以 RESTRICT 引用记录：作者能读自己的 DRAFT，就可能留下
+      // 评论 / 收藏 / 通知（审查 #195），不先清掉删记录会撞外键、把撤销打成 500。
+      const commentIds = (
+        await tx.repairComment.findMany({
+          where: { repairRecordId: record.id },
+          select: { id: true },
+        })
+      ).map((row) => row.id);
+      const favoritesDeleted = await tx.repairFavorite.deleteMany({
+        where: { repairRecordId: record.id },
+      });
+      const notificationsDeleted = await tx.notification.deleteMany({
+        where: { OR: [{ repairRecordId: record.id }, { commentId: { in: commentIds } }] },
+      });
+      await tx.commentMention.deleteMany({ where: { commentId: { in: commentIds } } });
+      // 评论自引用 RESTRICT：先删回复，再删顶层。
+      const repliesDeleted = await tx.repairComment.deleteMany({
+        where: { repairRecordId: record.id, parentCommentId: { not: null } },
+      });
+      const topCommentsDeleted = await tx.repairComment.deleteMany({
+        where: { repairRecordId: record.id },
+      });
+      const commentsDeleted = repliesDeleted.count + topCommentsDeleted.count;
+
+      // 草稿及子表按外键顺序硬删：参与行、照片、时间线都是 RESTRICT。
+      await tx.repairRecordParticipant.deleteMany({ where: { repairRecordId: record.id } });
+      await tx.repairPhoto.deleteMany({ where: { repairRecordId: record.id } });
+      await tx.repairTimelineEvent.deleteMany({ where: { repairRecordId: record.id } });
+      await tx.repairRecord.delete({ where: { id: record.id } });
+
+      await appendAuditLog(tx, {
+        actor,
+        actorType: "USER",
+        actorUserId: actor.userId,
+        action: "repair_activity.registration_serve_reverted",
+        targetType: "RepairActivityRegistration",
+        targetId: reg.id,
+        result: "SUCCESS",
+        before: { status: "SERVED", repairRecordId: record.id },
+        after: {
+          status: restoredStatus,
+          deletedRecordId: record.id,
+          photosDeleted: photos.length,
+          commentsDeleted,
+          favoritesDeleted: favoritesDeleted.count,
+          notificationsDeleted: notificationsDeleted.count,
+        },
+      });
+
+      photoKeys.push(...photos.map((photo) => photo.storageKey));
+      return {
+        registration: toStaffReg(updated),
+        deletedRecordId: record.id,
+        photosDeleted: photos.length,
+      };
+    });
+    // 事务提交后再删磁盘文件：回滚时不会删掉仍被引用的照片。
+    await Promise.all(
+      photoKeys.map((key) => localRepairPhotoStorage.delete(key).catch(() => undefined)),
+    );
+    return result;
   },
 
   async serve(

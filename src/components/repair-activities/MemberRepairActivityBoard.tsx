@@ -32,6 +32,7 @@ import {
 import type {
   StaffBoardView,
   StaffRegistrationView,
+  StaffServedRow,
   StaffServeDraft,
 } from "@/features/repair-activities/repair-activity-staff-service";
 
@@ -71,6 +72,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<StaffRegistrationView | null>(null);
+  /** 撤销接待（issue #166）：确认弹层目标与在途标记。 */
+  const [revertTarget, setRevertTarget] = useState<StaffServedRow | null>(null);
+  const [revertBusy, setRevertBusy] = useState(false);
   const [checkInConfirmOpen, setCheckInConfirmOpen] = useState(false);
   const [checkInRows, setCheckInRows] = useState<StaffRegistrationView[]>([]);
   const [issueTypeDrafts, setIssueTypeDrafts] = useState<Record<string, RepairActivityIssueType>>(
@@ -96,6 +100,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     busy !== null ||
     checkInConfirmOpen ||
     withdrawTarget !== null ||
+    revertTarget !== null ||
     pendingNotice !== null ||
     attendanceOpen;
   const pausedRef = useRef(paused);
@@ -367,6 +372,25 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       return;
     }
     setToast({ text: copy.serveSuccess, tone: "success" });
+    await load();
+  }
+
+  /** 撤销接待（issue #166）：仅接待者本人 / 活动管理员可见按钮，服务端再校一遍。 */
+  async function confirmRevertServe() {
+    if (!revertTarget || revertBusy) return;
+    setRevertBusy(true);
+    setToast(null);
+    const result = await postJson<{ deletedRecordId: string }>(
+      `/api/v1/member/repair-activities/${activityId}/revert-serve`,
+      { registrationId: revertTarget.id },
+    );
+    setRevertBusy(false);
+    setRevertTarget(null);
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    setToast({ text: copy.revertServeSuccess, tone: "neutral" });
     await load();
   }
 
@@ -717,6 +741,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                       </div>
                     </div>
                     <div className="activity-board__row-actions">
+                      {row.canRevert ? (
+                        <Button variant="ghost" onClick={() => setRevertTarget(row)}>
+                          {copy.revertServe}
+                        </Button>
+                      ) : null}
                       {/* 记录缺失或已软删除：占位文案，不出链接。 */}
                       {!recordId || !row.recordStatus ? (
                         <span className="muted">{copy.recordMissing}</span>
@@ -816,6 +845,26 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         </ConfirmDialog>
       ) : null}
 
+      {revertTarget ? (
+        <ConfirmDialog
+          title={copy.revertServeConfirmTitle}
+          cancelLabel={copy.revertServeCancel}
+          confirmLabel={revertBusy ? copy.revertingServe : copy.revertServeConfirm}
+          busy={revertBusy}
+          onClose={() => {
+            if (!revertBusy) setRevertTarget(null);
+          }}
+          onConfirm={() => void confirmRevertServe()}
+        >
+          <p>{copy.revertServeConfirmHint}</p>
+          <p>
+            <strong>
+              {revertTarget.name} · {revertTarget.phoneMasked}
+            </strong>
+          </p>
+        </ConfirmDialog>
+      ) : null}
+
       {pendingNotice ? (
         <ConfirmDialog
           title={copy.pendingServeTitle}
@@ -833,6 +882,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
               .replace("{owner}", pendingNotice.ownerName)
               .replace("{activity}", pendingNotice.activityTitle)}
           </p>
+          <p className="admin-note">{copy.pendingServeUndoHint}</p>
         </ConfirmDialog>
       ) : null}
 

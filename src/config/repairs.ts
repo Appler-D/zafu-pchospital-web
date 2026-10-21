@@ -135,6 +135,11 @@ export const repairEditorCopy = {
   attachmentsTitle: "备注与附件",
   /** 照片上限来自服务端（随详情下发），所以文案留占位符而不是写死数字。 */
   photoHint: "支持 JPEG、PNG、WebP；单张不超过 {size}、最多 {count} 张。选填，可稍后补充。",
+  /** 新建页尚未建档：上限由服务端校验；首次选图会把当前内容存成草稿并进入编辑页（issue #162）。 */
+  photoHintCreate:
+    "支持 JPEG、PNG、WebP；首次选择照片会先把当前内容存为草稿并进入编辑页，大小与数量上限由服务端校验。",
+  /** 新建页从 sessionStorage 恢复未提交内容时的提示（issue #162）。 */
+  createDraftRestored: "已恢复上次未提交的内容；提交成功后会清除这份本地暂存。",
   photoTooLarge: "「{name}」有 {size}，超过单张 {limit} 的上限，请压缩或换一张。",
   photoTooMany: "已上传 {count} 张，最多只能再传 {remain} 张。",
 };

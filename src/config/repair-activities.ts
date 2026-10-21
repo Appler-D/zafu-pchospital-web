@@ -159,6 +159,16 @@ export const memberRepairActivitiesCopy = {
     servedTag: "Served",
     servedEmpty: "本场还没有已接待的客户。",
     fillRepair: "填写维修记录",
+    /** 撤销接待（issue #166）：仅接待者本人 / 活动管理员，且草稿未提交。 */
+    revertServe: "撤销接待",
+    revertingServe: "撤销中…",
+    revertServeConfirmTitle: "确认撤销接待？",
+    revertServeConfirmHint:
+      "撤销后该客户回到接待前的位置；这次接待自动创建的未提交维修草稿及其照片会被删除。已提交的维修记录不能撤销，操作会记录审计。",
+    revertServeConfirm: "确认撤销",
+    revertServeCancel: "取消",
+    revertServeSuccess: "已撤销接待，客户回到接待前的位置。",
+    pendingServeUndoHint: "若接错了客户，可先关掉本窗，在「已接待」区块点「撤销接待」。",
     recordMissing: "维修单状态未知，请刷新后再看。",
     /** 「出勤成员」入口与弹层（issue #107）：仅活动管理员可见的只读名单。 */
     attendanceEntry: "出勤成员 {count} 人",
