@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 
 import {
   formatShanghaiDateTime,
-  formatSignupCountdown,
+  signupCountdownParts,
 } from "@/components/repair-activities/activity-format";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
@@ -252,6 +252,10 @@ export function RepairActivityDetail({ activityId }: Props) {
   }
 
   const open = canAcceptNewRegistration(activity.status);
+  const countdown = signupCountdownParts(countdownMs);
+  const countdownWindow = copy.countdownWindowHint
+    .replace("{open}", formatShanghaiDateTime(activity.signupOpensAt))
+    .replace("{close}", formatShanghaiDateTime(activity.signupClosesAt));
   const signupDisabledReason =
     activity.status === "UPCOMING"
       ? copy.upcomingDisabled
@@ -309,11 +313,55 @@ export function RepairActivityDetail({ activityId }: Props) {
           <h2 className="admin-panel__title">{copy.signupTitle}</h2>
           {!open ? <p className="muted">{signupDisabledReason}</p> : null}
           {activity.status === "UPCOMING" ? (
-            <p className="muted tabular-nums" role="timer">
-              {waitingForOpen
-                ? copy.countdownOpeningSoon
-                : `${copy.countdownPrefix} ${formatSignupCountdown(countdownMs)}`}
-            </p>
+            <div className="activity-countdown" role="timer">
+              <p className="activity-countdown__label">{copy.countdownPrefix}</p>
+              {waitingForOpen ? (
+                <p className="activity-countdown__opening">{copy.countdownOpeningSoon}</p>
+              ) : (
+                <>
+                  <div className="activity-countdown__blocks">
+                    {countdown.days > 0 ? (
+                      <>
+                        <span className="activity-countdown__block">
+                          <span className="activity-countdown__num">
+                            {String(countdown.days).padStart(2, "0")}
+                          </span>
+                          <span className="activity-countdown__unit">
+                            {copy.countdownUnits.days}
+                          </span>
+                        </span>
+                        <span className="activity-countdown__colon" aria-hidden="true">
+                          :
+                        </span>
+                      </>
+                    ) : null}
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.hours}</span>
+                      <span className="activity-countdown__unit">{copy.countdownUnits.hours}</span>
+                    </span>
+                    <span className="activity-countdown__colon" aria-hidden="true">
+                      :
+                    </span>
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.minutes}</span>
+                      <span className="activity-countdown__unit">
+                        {copy.countdownUnits.minutes}
+                      </span>
+                    </span>
+                    <span className="activity-countdown__colon" aria-hidden="true">
+                      :
+                    </span>
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.seconds}</span>
+                      <span className="activity-countdown__unit">
+                        {copy.countdownUnits.seconds}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="activity-countdown__hint">{countdownWindow}</p>
+                </>
+              )}
+            </div>
           ) : null}
           <form
             className="admin-form"

@@ -45,6 +45,8 @@ export const repairActivitiesPage = {
     /** 报名开始倒计时（issue #187）：以服务器时间为准，归零后自动刷新状态。 */
     countdownPrefix: "距报名开始",
     countdownOpeningSoon: "即将开放，请稍候",
+    countdownUnits: { days: "天", hours: "时", minutes: "分", seconds: "秒" },
+    countdownWindowHint: "{open} 开始报名 · {close} 截止",
     closedDisabled: "报名已截止",
     fullDisabled: "名额已满",
     notEditable: "当前状态不可修改故障类型（可能已签到或已接待）。",
