@@ -4,7 +4,13 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { loginCopy } from "@/config/auth";
+import { authRequestCopy, loginCopy } from "@/config/auth";
+
+type LoginPayload = {
+  success: boolean;
+  data?: { destination?: string };
+  error?: { message?: string };
+};
 
 /**
  * 落点一律由服务端给出（`resolveAccountAccess`：改密 → 邮箱 → 原目标 / 角色默认页）。
@@ -19,29 +25,39 @@ export function LoginForm({ returnTo }: { returnTo?: string | null }) {
     event.preventDefault();
     setBusy(true);
     setProblem("");
-    const data = new FormData(event.currentTarget);
-    const response = await fetch("/api/v1/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        qq: data.get("qq"),
-        password: data.get("password"),
-        rememberMe: data.get("rememberMe") === "on",
-        ...(returnTo ? { returnTo } : {}),
-      }),
-    });
-    const payload = (await response.json()) as {
-      success: boolean;
-      data?: { destination?: string };
-      error?: { message?: string };
-    };
-    if (!response.ok || !payload.success || !payload.data?.destination) {
-      setProblem(payload.error?.message ?? loginCopy.failed);
+    try {
+      const data = new FormData(event.currentTarget);
+      const response = await fetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          qq: data.get("qq"),
+          password: data.get("password"),
+          rememberMe: data.get("rememberMe") === "on",
+          ...(returnTo ? { returnTo } : {}),
+        }),
+      });
+      let payload: LoginPayload | null = null;
+      try {
+        payload = (await response.json()) as LoginPayload;
+      } catch {
+        payload = null;
+      }
+      if (payload === null) {
+        setProblem(authRequestCopy.invalidResponse(response.status));
+        return;
+      }
+      if (!response.ok || !payload.success || !payload.data?.destination) {
+        setProblem(payload.error?.message ?? loginCopy.failed);
+        return;
+      }
+      router.replace(payload.data.destination);
+      router.refresh();
+    } catch {
+      setProblem(authRequestCopy.networkError);
+    } finally {
       setBusy(false);
-      return;
     }
-    router.replace(payload.data.destination);
-    router.refresh();
   }
   return (
     // method="post"：JS 未 hydrate 时浏览器会退化成原生提交。没有它默认是 GET，
