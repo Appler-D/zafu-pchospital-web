@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test, { type TestContext } from "node:test";
-import type { FormEvent, ReactElement } from "react";
+import type { FormEvent, ReactElement, ReactNode } from "react";
 
 import { loginCopy, registerCopy } from "../../src/config/auth";
 
@@ -10,12 +10,30 @@ const React = require("react") as typeof import("react");
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type FormKind = "login" | "register";
-type FormProps = {
-  children: ReactElement<{ type?: string; disabled?: boolean; children?: string }>[];
+type ViewProps = {
+  type?: string;
+  role?: string;
+  disabled?: boolean;
+  children?: ReactNode;
+};
+type FormProps = ViewProps & {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 };
 
+function findElement(
+  node: ReactNode,
+  matches: (props: ViewProps) => boolean,
+): ReactElement<ViewProps> | undefined {
+  for (const child of React.Children.toArray(node)) {
+    if (!React.isValidElement<ViewProps>(child)) continue;
+    if (matches(child.props)) return child;
+    const nested = findElement(child.props.children, matches);
+    if (nested) return nested;
+  }
+}
+
 // 与 SessionMonitor 的测试一样，调用真实组件，只替换 hooks 的存储和外部请求。
+// 断言只读取组件输出的按钮与 alert，不假定某个 state 索引对应哪项业务状态。
 async function mount(t: TestContext, kind: FormKind) {
   const state: unknown[] = [];
   let cursor = 0;
@@ -81,7 +99,7 @@ async function mount(t: TestContext, kind: FormKind) {
     return Component({ returnTo: "/member/repairs" }) as ReactElement<FormProps>;
   }
   function button() {
-    const child = render().props.children.find((item) => item?.props?.type === "submit");
+    const child = findElement(render(), (props) => props.type === "submit");
     assert.ok(child, "表单应保留提交按钮");
     return child.props;
   }
@@ -89,7 +107,7 @@ async function mount(t: TestContext, kind: FormKind) {
     fields,
     destinations,
     button,
-    problem: () => state[0],
+    problem: () => findElement(render(), (props) => props.role === "alert")?.props.children ?? "",
     refreshes: () => refreshes,
     resets: () => resets,
     submit: () =>
@@ -179,14 +197,32 @@ for (const kind of ["login", "register"] as const) {
   ]) {
     test(`${kind}: HTTP ${reply.status} / ${JSON.stringify(reply.payload)} 时可纠正并重试`, async (t) => {
       const ui = await mount(t, kind);
-      t.mock.method(globalThis, "fetch", async () =>
-        Response.json(reply.payload, { status: reply.status }),
+      const requests: string[] = [];
+      const fetchMock = t.mock.method(
+        globalThis,
+        "fetch",
+        async (_url: unknown, options: RequestInit) => {
+          requests.push(String(options.body));
+          return requests.length === 1
+            ? Response.json(reply.payload, { status: reply.status })
+            : Response.json({ success: true, data: { destination: "/member/repairs" } });
+        },
       );
       await ui.submit();
       assert.equal(ui.button().disabled, false);
       assert.equal(ui.problem(), reply.message);
       assert.deepEqual(ui.destinations, []);
       assert.equal(ui.resets(), 0);
+      assert.equal(ui.refreshes(), 0);
+
+      await ui.submit();
+      assert.equal(ui.problem(), "");
+      assert.equal(ui.button().disabled, false);
+      assert.equal(ui.button().children, copy.submit);
+      assert.deepEqual(ui.destinations, ["/member/repairs"]);
+      assert.equal(ui.refreshes(), 1);
+      assert.equal(fetchMock.mock.callCount(), 2);
+      assert.equal(requests[0], requests[1], "业务失败重试保留输入与注册幂等键");
     });
   }
 }
