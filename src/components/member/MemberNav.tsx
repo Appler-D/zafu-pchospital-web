@@ -5,19 +5,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/layout/AccountMenu";
+import { ShellHomeLink } from "@/components/layout/ShellHomeLink";
 import { ShellTabBar, type ShellTab } from "@/components/layout/ShellTabBar";
 import { Icon } from "@/components/ui/Icon";
-import {
-  MEMBER_NOTIFICATIONS_CHANGED_EVENT,
-  memberCopy,
-  memberNav,
-} from "@/config/member";
+import { MEMBER_NOTIFICATIONS_CHANGED_EVENT, memberCopy, memberNav } from "@/config/member";
 
 /**
  * 成员端导航（工作台重构版）
  *
  * 桌面（≥1100px）：左侧栏，9 个入口按「概览 / 维修 / 互动 / 账户」平铺，
- * 足部只有账号菜单。窄屏：侧栏收成顶部一条（品牌 + 账号菜单），
+ * 足部保留返回官网与账号菜单。窄屏：侧栏收成顶部一条（品牌 + 返回官网 + 账号），
  * 导航交给底部固定的标签栏（工作台 / 维修 / 新增 / 消息 / 我的），
  * 活动 / 案例库 / 收藏 / 排行从工作台首页的快捷入口进。
  *
@@ -119,7 +116,8 @@ export function MemberNav({ displayName = null }: MemberNavProps) {
           ))}
         </div>
 
-        <div className="member-nav__foot">
+        <div className="member-nav__foot shell-nav-actions">
+          <ShellHomeLink />
           <AccountMenu variant="nav" initialDisplayName={displayName ?? null} />
         </div>
       </nav>

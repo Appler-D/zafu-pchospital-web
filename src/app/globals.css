@@ -5186,6 +5186,56 @@ html[data-theme="black-yellow"] {
     color: var(--ink-3);
   }
 
+  /* 两种工作区共用的官网入口，桌面位于非滚动的账号区。 */
+  .shell-home-link {
+    inline-size: 100%;
+    gap: var(--s-2);
+    padding-inline: var(--s-3);
+    font-size: var(--t-xs);
+    white-space: nowrap;
+  }
+  @media (max-width: 1099px) {
+    .admin-nav__foot.shell-nav-actions,
+    .member-nav__foot.shell-nav-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--s-2);
+      min-inline-size: 0;
+      flex: 1;
+    }
+    .shell-nav-actions .shell-home-link {
+      inline-size: auto;
+      flex: none;
+      gap: var(--s-1);
+      padding-inline: var(--s-2);
+    }
+    .shell-nav-actions .account-menu {
+      min-inline-size: 0;
+      flex: 0 1 10rem;
+    }
+    .admin-nav__brand,
+    .member-nav__brand {
+      min-inline-size: 0;
+    }
+    .admin-nav__brand span,
+    .member-nav__brand span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  @media (max-width: 759px) {
+    /* 手机保留可点的头像与账号菜单，把空间留给常驻的返回文字。 */
+    .shell-nav-actions .account-menu {
+      flex: none;
+      inline-size: auto;
+    }
+    .shell-nav-actions .account-menu__identity {
+      display: none;
+    }
+  }
+
   /* ---------------------------------------------------------- 账号菜单（T-P0-2）
      挂在成员 hero 行动区，以及成员 / 管理两侧侧栏足部。
      无投影；面板用描边 + surface 底色。 */
