@@ -231,7 +231,7 @@ export const memberCopy = {
     quickActivities: "维修活动",
     quickActivitiesDesc: "报名与接待活动",
     quickNotifications: "消息通知",
-    quickNotificationsDesc: "回复与审核动态",
+    quickNotificationsDesc: "维修审核动态",
     quickFavorites: "我的收藏",
     quickFavoritesDesc: "收藏的案例记录",
     quickRankings: "排行榜",

@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AdminModal } from "@/components/admin/AdminModal";
-import { RepairRecordComments } from "@/components/admin/RepairRecordComments";
 import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage, AdminToastTone } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
@@ -282,10 +281,6 @@ export function RepairAdminActions({
           </ul>
         )}
       </section>
-
-      {/* 评论：管理端「评论管理」点「所属记录」就是打开这个窗口，
-          这里必须能看到该记录的评论，否则「评论挂在哪」永远对不上。 */}
-      <RepairRecordComments recordId={record.id} onChanged={onChanged} />
 
       <div className="admin-actions">
         <Button

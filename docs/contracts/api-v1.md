@@ -298,15 +298,11 @@ GET   /api/v1/skills                               # 启用中的技能标签（
   恒为真实数字，不再有「未配置」态。排行范围取值 `MONTH | ACADEMIC_YEAR | ALL_TIME`，
   缺省 `ACADEMIC_YEAR`。
 
-## M4 内部交流与通知
+## M4 收藏与审核通知（评论已退役，issue #198）
 
-成员端（均需有效 Session + 有效成员身份；`runtime = "nodejs"` + `dynamic = "force-dynamic"`，
-响应头固定 `Cache-Control: private, no-store`；写接口执行 `assertSameOrigin()`）：
+以下成员入口继续要求有效 Session / 有效成员身份，使用统一信封、requestId 与 `private, no-store`，写请求检查同源：
 
 ```text
-GET    /api/v1/repairs/:id/comments
-POST   /api/v1/repairs/:id/comments
-DELETE /api/v1/repairs/:id/comments/:commentId
 GET    /api/v1/member/favorites
 POST   /api/v1/member/favorites
 DELETE /api/v1/member/favorites/:repairId
@@ -316,37 +312,22 @@ POST   /api/v1/member/notifications/read-all
 DELETE /api/v1/member/notifications/:id
 ```
 
-评论：
+收藏唯一约束、取消后恢复同一行及维修记录可见性不变。通知 `data` 为 `{items, unreadCount}`，分页位于 `meta.pagination`，可选 `status=UNREAD|READ`。
 
-- 列表分页的是**根评论**；每条根评论附带其全部未删除回复。回复深度固定两层：若
-  `parentCommentId` 已是回复，服务端拍平到该回复的根。
-- `POST` 请求体只接受 `body`、可选 `parentCommentId`、可选 `mentionedMemberProfileIds`；
-  出现其他字段返回 `VALIDATION_FAILED` 400。
-- 提及取请求 ID 与正文 `@姓名` 的并集，对照有效成员的昵称 / 实名 / 账号展示名做最长匹配；
-  未知、停用、自己跳过；未知显式 ID 返回 `VALIDATION_FAILED`；超过 `COMMENT_MENTION_LIMIT`
-  （10）返回 `MENTION_LIMIT_EXCEEDED`，**拒绝整条、不截断**。正文上限 2000 码点。
-- 作者可删除自己的评论（需 `comment:create`）；删除他人评论需 `comment:delete`（仅管理员）。
-  删除走 `deleted_at` 软删除并写审计。
-- 评论可见性继承维修记录：他人草稿 / 待审 / 退回统一 `REPAIR_NOT_FOUND`。
+通知只开放 `REPAIR_APPROVED` / `REPAIR_REJECTED`。列表、分页 total、未读数、工作台摘要在数据库查询前使用同一类型条件；历史评论 / 提及消息保留但不可达。单条已读 / 删除对隐藏类型与他人消息一律 `NOTIFICATION_NOT_FOUND`，全读不修改隐藏历史行。删除仍不改变状态 / readAt。`NotificationView.commentId` 保留为废弃字段，始终返回 null；维修记录不可读时的空引用 / 空摘要规则不变。
 
-收藏：
+审核通知仍在原审核事务内创建，向全部参与者去重发送、跳过审核人自己，兼容无成员档案的管理员。案例标记、收藏、维修备注、照片、审核意见和时间线继续开放；`/api/v1/repair-members` 仍供维修编辑 / 筛选使用。
 
-- 唯一约束 `(memberProfileId, repairRecordId)`。取消写 `deleted_at`；再次收藏恢复同一行，
-  并刷新 `createdAt` / `updatedAt` 以反映最近收藏时间。
-- 只能收藏当前成员可见的记录。
+下列五个旧 HTTP 方法已退役：
 
-通知：
+```text
+GET / POST /api/v1/repairs/:id/comments
+DELETE     /api/v1/repairs/:id/comments/:commentId
+GET        /api/v1/admin/comments
+DELETE     /api/v1/admin/comments/:id
+```
 
-- `GET` 的 `data` 为 `{ items, unreadCount }`，分页在 `meta.pagination`。
-- 可选 `status=UNREAD|READ`。标已读幂等；全部已读只更新未读行。
-- 删除走软删除，**不改** `status` / `readAt`。只能操作本人收件箱，他人 ID 一律
-  `NOTIFICATION_NOT_FOUND`。
-- 类型：`MENTIONED`、`REPAIR_COMMENTED`、`REPAIR_APPROVED`、`REPAIR_REJECTED`。
-  不通知自己；同一评论对记录主人若同时被 @，只发 `MENTIONED`。审核通知在审核事务内写入，
-  审核员没有成员档案时 `actorMemberProfileId` 可为 null，仍通知记录主人。
-
-案例标记仍走 M2 的 `PATCH /api/v1/admin/repairs/:id/flags`（需 `repair:flag`）；
-成员详情只展示徽章，管理员在详情页可改标记。
+最小 Handler 保留认证 / 统一账号访问检查，写方法保留同源检查；正常可访问请求返回统一 `404 RESOURCE_NOT_FOUND`、requestId、`private, no-store`。不解析正文、不查询评论或目标维修、不写评论和访问审计；认证 / 门禁 / 同源先行拒绝仍沿用既有错误。不提供 410 或成功空数组。旧 `/admin/comments` 页面返回 404，成员与后台不再有评论入口。
 
 ## M6 管理后台
 
@@ -428,8 +409,8 @@ DELETE /api/v1/member/notifications/:id
 | `POST /api/v1/admin/skills/:id/move`                        | `skill:manage`           | 拖动排序：`{beforeId: string\|null}`（`null` = 拖到末尾）；落点没变时幂等成功                              |
 | `POST /api/v1/admin/repair-categories/:id/reorder`          | `repair:category:manage` | 同上，上移 / 下移一格                                                                                      |
 | `POST /api/v1/admin/repair-categories/:id/move`             | `repair:category:manage` | 同上，拖动排序（`{beforeId}`）                                                                             |
-| `GET /api/v1/admin/comments`                                | `comment:moderate`       | 跨记录评论列表：`query`（正文 / 作者 / 记录 ID）、`recordId`、`authorMemberProfileId`、`deleted`、日期区间 |
-| `DELETE /api/v1/admin/comments/:id`                         | `comment:moderate`       | 删除违规评论（软删除，写 `repair.comment.moderated`）；不存在或已删除 404 `COMMENT_NOT_FOUND`              |
+| `GET /api/v1/admin/comments` | —（已退役） | 认证 / 账号访问检查后统一 404 `RESOURCE_NOT_FOUND`，不查询评论。 |
+| `DELETE /api/v1/admin/comments/:id` | —（已退役） | 同源 / 认证 / 账号访问检查后统一 404，不删除历史行。 |
 | `GET /api/v1/admin/invite-codes`                            | `invite:read`            | 分页 + `status`（**生效状态**）+ `query`（明文前缀 / 绑定 QQ / 手机号，精确匹配）；绑定信息只给脱敏值      |
 | `GET /api/v1/admin/audit-logs`                              | `audit:read`             | 审计查询：`action`、`result`、`actorUserId`、`targetType`、`targetId`、`requestId`、日期区间               |
 | `GET /api/v1/admin/audit-logs/actions`                      | `audit:read`             | 动作清单（带出现次数，降序），供筛选下拉使用                                                               |
@@ -443,9 +424,7 @@ DELETE /api/v1/member/notifications/:id
   **查看审计不写审计** —— 摘要写入时已脱敏，读取不产生新的 PII 暴露，
   而「读一次写一行」会让审计表自我增殖。
 - **技能标签不删除**：与故障分类同一策略，只停用 / 启用。
-- **评论管理**跨记录，使用独立的 `comment:moderate`；不复用成员也持有的 `comment:read`。
-  软删除复用成员端同一张表与同一套语义；同时 `repairCommentService.softDelete` 的成员档案
-  解析改为可空，**纯管理员（无成员档案）删除违规评论不再被 `MEMBER_REQUIRED` 挡住**。
+- **评论管理**已统一退役；历史评论审计保留可读展示，旧接口按上节返回 404。
 - **邀请码**：`status` 是生效状态（派生值），筛选下推到 SQL；完整明文邀请码只在
   `POST` 的响应里出现一次。
 - **报名导出**带 QQ 与手机号**明文**（需求 §4.4），与维修导出的口径不同，
@@ -460,7 +439,7 @@ DELETE /api/v1/member/notifications/:id
   落点用 `beforeId`（放到谁的前面）而不是序号：序号是系统的内部表示，
   让界面传序号等于把「插一个中间项要改后面所有数字」推给调用方。
 
-新增权限码：`comment:moderate`、`skill:manage`、`settings:manage`（均只授予 `ADMIN`）。
+当前权限码：`skill:manage`、`settings:manage`（均只授予 `ADMIN`）。
 
 新增错误码：`SKILL_CODE_CONFLICT`(409)、`AUDIT_FILTER_INVALID`(400)、
 `PUBLIC_SETTINGS_INVALID`(400)。

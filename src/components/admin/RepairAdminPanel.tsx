@@ -354,7 +354,7 @@ export function RepairAdminPanel() {
             wrapClassName="admin-table-wrap admin-table-wrap--resizable"
             className="admin-table admin-table--resizable admin-table--repairs"
             rowProps={(record) => ({
-              // 悬停即预取记录详情（窗口里的照片与评论都要靠它）。
+              // 悬停即预取记录详情（窗口里的照片要靠它）。
               onMouseEnter: () => prefetchAdmin(`/api/v1/repairs/${record.id}`),
             })}
             overlay={

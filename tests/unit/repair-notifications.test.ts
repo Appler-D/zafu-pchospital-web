@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { Prisma } from "../../src/generated/prisma/client";
+import { createReviewNotification } from "../../src/features/community/notification-service";
 
 import { toNotificationView } from "../../src/features/community/community-view";
 import { assertCanReadRepair } from "../../src/features/repairs/repair-policy";
@@ -34,6 +36,55 @@ const row: Parameters<typeof toNotificationView>[0] = {
   },
 };
 
+test("迁移后的审核通知：参与者去重、跳过审核人、兼容无成员档案管理员", async () => {
+  const batches: Prisma.NotificationCreateManyInput[][] = [];
+  const tx = {
+    notification: {
+      async createMany({ data }: { data: Prisma.NotificationCreateManyInput[] }) {
+        batches.push(data);
+      },
+    },
+  } as unknown as Prisma.TransactionClient;
+  const now = new Date("2026-10-21T00:00:00Z");
+  const input = {
+    recordId: "record",
+    recipientMemberProfileIds: ["owner", "owner", "reviewer"],
+    now,
+  };
+  await createReviewNotification(tx, {
+    ...input,
+    decision: "APPROVED",
+    actorMemberProfileId: "reviewer",
+  });
+  assert.deepEqual(
+    batches[0].map((item) => item.recipientMemberProfileId),
+    ["owner"],
+  );
+  assert.equal(batches[0][0].type, "REPAIR_APPROVED");
+  assert.equal(batches[0][0].createdAt, now);
+  await createReviewNotification(tx, {
+    ...input,
+    decision: "REJECTED",
+    actorMemberProfileId: null,
+  });
+  assert.deepEqual(
+    batches[1].map((item) => item.recipientMemberProfileId),
+    ["owner", "reviewer"],
+  );
+  assert.ok(
+    batches[1].every(
+      (item) => item.type === "REPAIR_REJECTED" && item.actorMemberProfileId === null,
+    ),
+  );
+  await createReviewNotification(tx, {
+    ...input,
+    recipientMemberProfileIds: ["reviewer"],
+    decision: "APPROVED",
+    actorMemberProfileId: "reviewer",
+  });
+  assert.equal(batches.length, 2);
+});
+
 test("退回通知不扩大读取权限：保留事件但隐藏不可见记录的引用与摘要", () => {
   for (const status of ["DRAFT", "PENDING", "REJECTED"]) {
     const notification = { ...row, record: { ...row.record!, status } };
@@ -51,6 +102,7 @@ test("退回通知不扩大读取权限：保留事件但隐藏不可见记录�
       assertCanReadRepair(actor, notification.record);
       assert.equal(toNotificationView(notification, actor).repairRecordId, "record");
       assert.equal(toNotificationView(notification, actor).repairExcerpt, "退回备注");
+      assert.equal(toNotificationView(notification, actor).commentId, null);
     }
   }
 });

@@ -1,7 +1,6 @@
 import type { NavItem } from "@/config/navigation";
 import {
   EXPORT_MAX_ROWS,
-  type CommentModerationFilter,
   type InviteCodeEffectiveStatus,
   type JoinApplicationStatus,
   type MemberStatus,
@@ -37,7 +36,6 @@ export const ADMIN_SECTION_INDEX = {
   categories: "06",
   export: "07",
   skills: "08",
-  comments: "09",
   audit: "10",
   settings: "11",
 } as const;
@@ -137,14 +135,6 @@ export const adminNavGroups: readonly AdminNavGroup[] = [
         href: "/admin/skills",
         icon: "tag",
       },
-      {
-        index: ADMIN_SECTION_INDEX.comments,
-        label: "评论管理",
-        shortLabel: "评论",
-        labelEn: "Comments",
-        href: "/admin/comments",
-        icon: "message",
-      },
     ],
   },
   {
@@ -223,12 +213,6 @@ export const rankingDisplayNameLabels: Record<RankingDisplayNameMode, string> = 
   REAL_NAME: "真实姓名",
   NICKNAME: "仅昵称",
   HIDDEN: "隐藏",
-};
-
-export const commentDeletedLabels: Record<CommentModerationFilter, string> = {
-  ACTIVE: "未删除",
-  DELETED: "已删除",
-  ALL: "全部",
 };
 
 /** 共享措辞：所有后台页面用同一套加载/失败/空态文案，避免每个页面各写一遍。 */
@@ -349,7 +333,6 @@ export const adminCopy = {
       "/admin/invite-codes": "创建与撤销成员注册邀请码。",
       "/admin/categories": "维护维修记录的故障分类与排序。",
       "/admin/skills": "维护成员可选择的技能标签库。",
-      "/admin/comments": "查看与删除维修记录的内部评论。",
       "/admin/export": "按筛选条件导出维修记录。",
       "/admin/audit": "检索重要操作的留痕（只读）。",
       "/admin/settings": "决定官网首页对外展示的统计。",
@@ -779,54 +762,6 @@ export const adminCopy = {
     reordered: "顺序已调整。",
     usageNote: "停用后成员不能再新选该标签，已经选过的成员仍会看到它；标签不做物理删除。",
     orderNote: "列表顺序就是成员端技能标签的展示顺序：拖动行首的手柄即可调整，键盘用每行的 ↑ ↓。",
-  },
-  comments: {
-    label: "Comments",
-    title: "评论管理",
-    lead: "查看全部维修记录的内部评论，确认评论挂在哪条记录上，并删除违规内容。删除为软删除，正文保留供审计。",
-    filter: {
-      query: "评论正文 / 作者 / 记录 ID",
-      deleted: "删除状态",
-      dateFrom: "起始日期",
-      dateTo: "结束日期",
-      submit: "筛选",
-      reset: "清除筛选",
-      hint: `关键字在评论正文、作者姓名 / 昵称 / 账号名与所属记录 ID 里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}`,
-    },
-    table: {
-      body: "评论内容",
-      author: "作者",
-      record: "所属记录",
-      meta: "回复 / 提及",
-      createdAt: "发表时间",
-      state: "状态",
-      actions: "操作",
-    },
-    meta: { replies: "回复 {count}", mentions: "@ {count}" },
-    action: { record: "所属记录", remove: "删除" },
-    /** 列表工具栏左侧的状态文字；`{state}` 换成当前删除态标签，前面的标签取 `filter.deleted`。 */
-    toolbar: { status: "{label}：{state}" },
-    recordWindow: {
-      title: "所属维修记录",
-      loading: "正在读取记录…",
-      failed: "记录读取失败，可能已被软删除。",
-      /** 记录详情窗口里的评论区标题，`{count}` 是根评论 + 回复的总数。 */
-      comments: "评论（{count}）",
-      empty: "这条记录还没有评论。",
-      reply: "回复",
-    },
-    removePanel: {
-      title: "删除评论",
-      hint: "软删除不会物理删除正文：正文保留在库里供审计追溯，成员端立即不可见。",
-      submit: "确认删除",
-      done: "评论已删除。",
-      cancel: "取消",
-    },
-    deletedTag: "已删除",
-    /** 未删除评论的状态标签（与 `deletedTag` 成对，两个都在状态列里）。 */
-    activeTag: "正常",
-    /** 列表顶栏右侧的总数（`{count}` 由组件替换）。 */
-    count: "共 {count} 条评论",
   },
   inviteCodes: {
     label: "Invite",

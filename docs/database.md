@@ -104,10 +104,10 @@ Route、调用方、Contract、测试与文档；不能留下字段、Enum、错
   乐观锁失败重试至多 3 次；审计与业务行同事务提交或一同回滚。
 - `user_skills` 的取消选择只写 `deleted_at`，不删行；恢复时清空 `deleted_at`。
   唯一约束 `(member_profile_id, skill_id)` 保证并发下不会产生重复关联。
-- 评论删除、通知删除、收藏取消一律写 `deleted_at`，默认查询排除已删除行。
+- 通知删除、收藏取消写 `deleted_at`，默认查询排除已删除行；评论已统一退役，历史删除标记保留。
 - `repair_favorites` 再次收藏恢复同一行并刷新 `created_at` / `updated_at`；
   唯一约束 `(member_profile_id, repair_record_id)` 保证并发下不会产生重复关联。
-- 通知软删除不改 `status` / `read_at`。评论创建、删除与收藏增减与 `AuditLog` 同事务。
+- 通知软删除不改 `status` / `read_at`。收藏增减与 `AuditLog` 同事务；审核通知仍与审核同事务写入。
 - 公开内容与展示策略是**单行配置**（`public_content_settings`，主键固定为 `public-content`），
   写入走 upsert 而不是 insert；表里没有行时按契约默认值（全部关闭 + 仅昵称）处理，
   读不到配置**不等于**可以公开。
@@ -134,7 +134,7 @@ M6 批次 2 引入 `public_content_settings`
 `REAL_NAME` / `NICKNAME` / `HIDDEN`；`updated_by_user_id` 指向 `users`，`ON DELETE RESTRICT`，
 用于回答「这份对外策略是谁在什么时候改的」。该表**不含**任何成员联系方式，
 也不挂 `member_profiles` / `repair_records` 外键 —— 它是全局策略，不属于任何成员或记录。
-M6 批次 2 的其余能力（技能标签库 CRUD、评论管理、邀请码列表、审计查询、报名导出）
+M6 批次 2 的其余能力（技能标签库 CRUD、原评论管理、邀请码列表、审计查询、报名导出）
 全部建立在既有表上，没有新增表或列。
 
 活动模块引入 `repair_activities` / `repair_activity_registrations` /
@@ -224,3 +224,9 @@ Phase 2 完整部署必须运行 `pnpm build && pnpm start`，浏览器不能直
 ## 邮箱协助与临时豁免（任务 4）
 
 `20261016150000_email_binding_support` 追加 email_assistances / email_exemptions；仅新增表与 userId / 有效性索引、User RESTRICT 外键，不触碰历史身份 / 凭据 / 验证时间，不需要回填。字段与事务见 [数据契约](contracts/data-contract.md#邮箱管理状态refs-146--refs-113)。部署沿用版本化 migrate deploy；运行时不需要调度系统。绑定成功原子作废既有豁免；单独管理豁免不改任何 Session、密码或邮箱，且不依赖 SMTP。本阶段不接全员邮箱门禁。
+
+## 评论退役与历史兼容（issue #198）
+
+评论 / 回复 / 提及及后台管理已下线；通知所有查询和单条 / 全部已读 / 删除操作仅开放 `REPAIR_APPROVED`、`REPAIR_REJECTED`。历史 `MENTIONED` / `REPAIR_COMMENTED` 行保留，不计入分页、未读数或工作台摘要，也不被全读改写。
+
+本轮不修改 Schema / Migration，不清理历史数据。`repair_comments`、`comment_mentions`、`notifications.comment_id` 及 RESTRICT 关联继续存在；#195 的目标接待草稿撤销仍按通知 → 提及 → 回复 → 根评论等原顺序处理历史关联，不扩大清理范围。历史评论审计照常可读。

@@ -9,13 +9,10 @@ import {
 } from "../../src/features/admin/public-content-settings-service";
 import { auditLogService } from "../../src/features/admin/audit-log-service";
 import { joinApplicationExportService } from "../../src/features/admin/join-application-export-service";
-import { repairCommentService } from "../../src/features/community/comment-service";
-import { commentAdminService } from "../../src/features/community/comment-admin-service";
 import { inviteCodeService } from "../../src/features/invitations/invite-code-service";
 import { memberService } from "../../src/features/members/member-service";
 import { joinApplicationService } from "../../src/features/recruitment/join-application-service";
 import { repairCategoryService } from "../../src/features/repairs/repair-category-service";
-import { repairService } from "../../src/features/repairs/repair-service";
 import { skillAdminService } from "../../src/features/skills/skill-admin-service";
 import { AppError, type ApiErrorCode } from "../../src/lib/api/errors";
 import { authService } from "../../src/features/auth/auth-service";
@@ -215,8 +212,6 @@ dbTest("批次 2 的管理端 Service 对普通成员一律 FORBIDDEN", async ()
     ["skill.setActive", () => skillAdminService.setActive("any", false, member)],
     ["skill.move", () => skillAdminService.move("any", null, member)],
     ["member.move", () => memberService.move(["any"], null, member)],
-    ["comment.list", () => commentAdminService.list({ page: 1, pageSize: 20 }, member)],
-    ["comment.softDelete", () => commentAdminService.softDelete("any", member)],
     ["invite.list", () => inviteCodeService.list({ page: 1, pageSize: 20 }, member)],
     ["audit.list", () => auditLogService.list({ page: 1, pageSize: 20 }, member)],
     ["audit.listActions", () => auditLogService.listActions(member)],
@@ -550,53 +545,6 @@ async function isMemberVisible(skillId: string): Promise<boolean> {
   return row?.isActive ?? false;
 }
 
-/* ------------------------------------------------------------------- 评论 */
-
-dbTest("评论管理：跨记录列表、软删除，且纯管理员不再被 MEMBER_REQUIRED 挡住", async () => {
-  const owner = await createMember("评论");
-  const record = await draftRepair(owner.actor);
-  const comment = await repairCommentService.create(
-    record.id,
-    { body: "M6B 集成测试评论正文" },
-    owner.actor,
-  );
-
-  const listed = await commentAdminService.list(
-    { page: 1, pageSize: 20, query: "M6B 集成测试评论" },
-    ADMIN_ACTOR,
-  );
-  assert.equal(listed.items.length, 1);
-  const entry = listed.items[0];
-  assert.equal(entry.id, comment.id);
-  assert.equal(entry.record.id, record.id);
-  assert.equal(entry.author.name, "M6-B 评论");
-  // 所属记录的成员名也要能直接看到（需求 §37「查看评论所属维修记录」）。
-  assert.equal(entry.record.memberName, "M6-B 评论");
-  assert.equal(entry.deletedAt, null);
-
-  // 回归：修复前 `repairCommentService.softDelete` 会先要求操作者有 ACTIVE 成员档案，
-  // 纯管理员在这一步就被 MEMBER_REQUIRED 拒掉，管理端删除违规评论根本走不通。
-  await repairCommentService.softDelete(record.id, comment.id, ADMIN_ACTOR);
-
-  const deleted = await commentAdminService.list(
-    { page: 1, pageSize: 20, query: "M6B 集成测试评论", deleted: "DELETED" },
-    ADMIN_ACTOR,
-  );
-  assert.equal(deleted.items.length, 1);
-  assert.ok(deleted.items[0].deletedAt);
-  // 默认视角（只看未删除）必须看不到它。
-  const active = await commentAdminService.list(
-    { page: 1, pageSize: 20, query: "M6B 集成测试评论" },
-    ADMIN_ACTOR,
-  );
-  assert.equal(active.items.length, 0);
-
-  await assert.rejects(
-    () => commentAdminService.softDelete(comment.id, ADMIN_ACTOR),
-    (error) => hasCode(error, "COMMENT_NOT_FOUND"),
-  );
-});
-
 /* --------------------------------------------------------------- 邀请码 */
 
 dbTest("邀请码列表：分页、生效状态筛选（含派生的已用尽）", async () => {
@@ -876,29 +824,6 @@ async function createMember(label: string) {
     ADMIN_ACTOR,
   );
   return { ...result, actor: memberActor(result.member.userId) };
-}
-
-/**
- * 建一条**草稿**维修记录。
- *
- * 刻意不提交：M2 要求提交时至少一张照片，而评论可见性对记录主人不看状态
- * （`assertCanReadRepair` 先判归属），所以草稿足够覆盖评论管理，还省掉一整套上传夹具。
- */
-async function draftRepair(owner: AuthorizedActor) {
-  const draft = await repairService.createDraft({ idempotencyKey: randomUUID() }, owner);
-  return repairService.update(
-    draft.id,
-    {
-      version: draft.version,
-      repairDate: new Date().toISOString().slice(0, 10),
-      durationMinutes: 30,
-      categoryId: CATEGORY_ID,
-      content: "M6-B 集成测试维修记录正文，用于覆盖评论管理。",
-      result: "COMPLETED",
-      remark: null,
-    },
-    owner,
-  );
 }
 
 function hasCode(error: unknown, code: ApiErrorCode): boolean {

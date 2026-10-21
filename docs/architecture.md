@@ -76,7 +76,7 @@
 │   │   ├── repairs/           # 维修列表 / 详情 / 表单
 │   │   ├── repair-activities/ # 活动列表 / 详情 / 接待台看板
 │   │   ├── cases/             # 成员案例库（/member/cases，只读翻阅已通过记录）
-│   │   └── community/         # 评论、通知、收藏、案例标记
+│   │   └── community/         # 审核通知、收藏、案例标记
 │   │
 │   ├── config/                # 站点配置与页面文案数据
 │   │   ├── site.ts            # 站点信息、外链、联系方式、文档仓库、二维码
@@ -90,7 +90,7 @@
 │   │   ├── repairs.ts         # 维修记录文案
 │   │   ├── repair-activities.ts # 活动文案、状态/故障类型标签、免责声明版本
 │   │   ├── cases.ts           # 案例库文案（筛选、空态、卡片字段）
-│   │   └── community.ts       # 评论 / 通知 / 收藏文案
+│   │   └── community.ts       # 审核通知 / 收藏文案
 │   │
 │   ├── lib/                   # 无 UI 的纯逻辑
 │   │   ├── db/                # Prisma client、事务和隔离级别
@@ -111,7 +111,7 @@
 │   │   ├── member-profile/    # 个人主页
 │   │   ├── skills/            # 技能标签（读取 + 成员自建，issue #68）
 │   │   ├── repair-activities/ # 活动、公开报名、接待台（签到 / 落单 / 撤回）
-│   │   └── community/         # 评论、提及、收藏、通知
+│   │   └── community/         # 收藏、审核通知（评论已退役）
 │   ├── types/                 # 公共 Enum / API / Service Contract 唯一事实来源
 │   │
 │   └── data/
@@ -413,3 +413,7 @@ pnpm db:health           # GreatSQL / UTC / 字符集健康检查
 ```
 
 数据库的启动、权限、迁移、备份和故障处理见 `docs/database.md`。
+
+## 评论退役（issue #198）
+
+所有维修评论、回复、@提及及后台评论管理统一下线。审核消息由 `community/notification-service.ts` 在原审核事务内创建；通知查询与操作只开放通过 / 退回类型。`community` 中的收藏、视图与解析继续复用；`repair_comments` / `comment_mentions` 及历史通知关系保留，接待草稿撤销沿用 #195 的外键清理。旧评论 API 只保留认证 / 同源 / 404 信封，不提供评论读取或写入。

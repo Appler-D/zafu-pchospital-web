@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { Prisma } from "@/generated/prisma/client";
 import { paginationMeta } from "@/lib/api/pagination";
 import { AppError } from "@/lib/api/errors";
 import { requirePermission } from "@/lib/auth/permissions";
@@ -11,7 +13,10 @@ import type {
   NotificationServiceContract,
   NotificationView,
 } from "@/types/contracts";
-import { MEMBER_DASHBOARD_NOTIFICATION_LIMIT } from "@/types/contracts";
+import { MEMBER_DASHBOARD_NOTIFICATION_LIMIT, NotificationType } from "@/types/contracts";
+
+/** 历史评论 / 提及通知保留在库中，所有对外查询与操作共用这份可见范围。 */
+const visibleNotificationWhere = { type: { in: [...NotificationType] } };
 
 const notificationInclude = {
   actor: { include: { user: { select: { displayName: true } } } },
@@ -35,6 +40,7 @@ export const notificationService: NotificationServiceContract = {
     requirePermission(actor, "notification:read");
     const self = await repairRepository.activeMemberForUser(actor.userId);
     const where = {
+      ...visibleNotificationWhere,
       recipientMemberProfileId: self.id,
       deletedAt: null,
       status: input.status,
@@ -42,7 +48,12 @@ export const notificationService: NotificationServiceContract = {
     const [total, unreadCount, rows] = await Promise.all([
       getDb().notification.count({ where }),
       getDb().notification.count({
-        where: { recipientMemberProfileId: self.id, deletedAt: null, status: "UNREAD" },
+        where: {
+          ...visibleNotificationWhere,
+          recipientMemberProfileId: self.id,
+          deletedAt: null,
+          status: "UNREAD",
+        },
       }),
       getDb().notification.findMany({
         where,
@@ -65,7 +76,12 @@ export const notificationService: NotificationServiceContract = {
     const now = new Date();
     const row = await inSerializableTransaction(async (tx) => {
       const current = await tx.notification.findFirst({
-        where: { id: notificationId, recipientMemberProfileId: self.id, deletedAt: null },
+        where: {
+          ...visibleNotificationWhere,
+          id: notificationId,
+          recipientMemberProfileId: self.id,
+          deletedAt: null,
+        },
       });
       if (!current) notFound();
       if (current.status === "READ") {
@@ -88,7 +104,12 @@ export const notificationService: NotificationServiceContract = {
     const self = await repairRepository.activeMemberForUser(actor.userId);
     const now = new Date();
     const updated = await getDb().notification.updateMany({
-      where: { recipientMemberProfileId: self.id, deletedAt: null, status: "UNREAD" },
+      where: {
+        ...visibleNotificationWhere,
+        recipientMemberProfileId: self.id,
+        deletedAt: null,
+        status: "UNREAD",
+      },
       data: { status: "READ", readAt: now },
     });
     return { updatedCount: updated.count };
@@ -99,7 +120,12 @@ export const notificationService: NotificationServiceContract = {
     const self = await repairRepository.activeMemberForUser(actor.userId);
     const now = new Date();
     const updated = await getDb().notification.updateMany({
-      where: { id: notificationId, recipientMemberProfileId: self.id, deletedAt: null },
+      where: {
+        ...visibleNotificationWhere,
+        id: notificationId,
+        recipientMemberProfileId: self.id,
+        deletedAt: null,
+      },
       data: { deletedAt: now },
     });
     if (updated.count !== 1) notFound();
@@ -107,7 +133,11 @@ export const notificationService: NotificationServiceContract = {
 };
 
 export async function summarizeNotifications(memberProfileId: string, actor: AuthorizedActor) {
-  const where = { recipientMemberProfileId: memberProfileId, deletedAt: null };
+  const where = {
+    ...visibleNotificationWhere,
+    recipientMemberProfileId: memberProfileId,
+    deletedAt: null,
+  };
   const [unreadCount, latest] = await Promise.all([
     getDb().notification.count({ where: { ...where, status: "UNREAD" } }),
     getDb().notification.findMany({
@@ -118,4 +148,32 @@ export async function summarizeNotifications(memberProfileId: string, actor: Aut
     }),
   ]);
   return { unreadCount, latest: latest.map((row) => toNotificationView(row, actor)) };
+}
+
+/** 审核事务内通知全部参与者；去重并跳过审核人本人，兼容无成员档案管理员。 */
+export async function createReviewNotification(
+  tx: Prisma.TransactionClient,
+  input: {
+    recordId: string;
+    recipientMemberProfileIds: readonly string[];
+    actorMemberProfileId: string | null;
+    decision: "APPROVED" | "REJECTED";
+    now: Date;
+  },
+): Promise<void> {
+  const recipients = [
+    ...new Set(input.recipientMemberProfileIds.filter((id) => id !== input.actorMemberProfileId)),
+  ];
+  if (recipients.length === 0) return;
+  await tx.notification.createMany({
+    data: recipients.map((recipientMemberProfileId) => ({
+      id: randomUUID(),
+      recipientMemberProfileId,
+      type: input.decision === "APPROVED" ? "REPAIR_APPROVED" : "REPAIR_REJECTED",
+      status: "UNREAD",
+      repairRecordId: input.recordId,
+      actorMemberProfileId: input.actorMemberProfileId,
+      createdAt: input.now,
+    })),
+  });
 }

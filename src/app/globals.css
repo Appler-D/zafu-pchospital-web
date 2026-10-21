@@ -4129,9 +4129,8 @@ html[data-theme="black-yellow"] {
     color: var(--ink-4);
   }
 
-  /* M4 内部交流：评论、通知、收藏。分层靠描边与底色，圆角只用 2/4/999。 */
-  .community-page,
-  .community-block {
+  /* 收藏、通知与案例标记。分层靠描边与底色，圆角只用 2/4/999。 */
+  .community-page {
     display: grid;
     gap: var(--s-4);
   }
@@ -4153,49 +4152,11 @@ html[data-theme="black-yellow"] {
     line-height: 1.7;
     color: var(--ink-3);
   }
-  .community-block__head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.35rem 0.75rem;
-  }
   .community-block__meta {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--ink-3);
   }
-  .community-thread {
-    display: grid;
-    gap: var(--s-4);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .community-thread--replies {
-    margin-top: var(--s-3);
-    padding-left: var(--s-4);
-    border-left: 2px solid var(--accent-line);
-    gap: var(--s-3);
-  }
-  .community-comment__body {
-    display: grid;
-    gap: var(--s-2);
-  }
-  .community-comment__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem 0.75rem;
-    align-items: baseline;
-    font-size: 0.8125rem;
-    color: var(--ink-3);
-  }
-  .community-comment__text {
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    line-height: 1.7;
-  }
-  .community-comment__actions,
   .community-actions,
   .community-flags,
   .community-flags-inline,
@@ -4206,74 +4167,6 @@ html[data-theme="black-yellow"] {
     flex-wrap: wrap;
     align-items: center;
     gap: var(--s-2);
-  }
-  .community-composer {
-    display: grid;
-    gap: var(--s-3);
-    justify-items: start;
-  }
-  .community-composer__input {
-    min-height: 6.5rem;
-    resize: vertical;
-  }
-  .community-composer__hint,
-  .community-composer__reply {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.7;
-    color: var(--ink-3);
-  }
-  .community-composer__error {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.6;
-    color: var(--ink);
-    border-left: 2px solid var(--accent);
-    padding-left: var(--s-2);
-  }
-  /* @提及候选：绝对定位浮层，打字时出现/消失都不推动下面的提示与提交按钮。 */
-  .community-composer__field {
-    position: relative;
-    inline-size: 100%;
-  }
-  .mention-menu {
-    position: absolute;
-    inset-inline: 0;
-    inset-block-start: calc(100% + 0.25rem);
-    z-index: 20; /* 盖住同区块的提示与按钮，低于索引栏（80）与各类浮层 */
-    max-height: min(16rem, 40vh);
-    margin: 0;
-    padding: var(--s-1) 0;
-    list-style: none;
-    overflow-y: auto;
-    border: 1px solid var(--line-strong);
-    border-radius: var(--r-base);
-    background: var(--surface-1);
-  }
-  .mention-menu--empty {
-    padding: var(--s-3) 0.85rem;
-    font-size: 0.8125rem;
-    color: var(--ink-3);
-  }
-  .mention-menu__item {
-    display: block;
-    inline-size: 100%;
-    padding: 0.5rem 0.85rem;
-    border: 0;
-    background: none;
-    color: var(--ink);
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-  }
-  .mention-menu__item--active {
-    background: var(--accent-wash);
-    color: var(--accent-deep);
-  }
-  /* 已被提及的名字：用设计系统里「标记文字」的令牌，不新造颜色。 */
-  .community-mention {
-    color: var(--accent-deep);
-    font-weight: 700;
   }
   .community-list {
     display: grid;
@@ -5958,7 +5851,7 @@ html[data-theme="black-yellow"] {
     color: var(--ink);
   }
   /* 面板 / 窗口内的一段：小标题 + 正文。段内的小标题（`.admin-panel__title`）与正文
-     （`.admin-status` / `.admin-note` / `.admin-json` / `.admin-comments`）都是
+     （`.admin-status` / `.admin-note` / `.admin-json`）都是
      `margin: 0`，所以裸 `<div>` 里这两者会上下紧贴 —— 一段就是一格间距（issue #62 前端1）。 */
   .admin-section {
     display: grid;
@@ -6187,17 +6080,6 @@ html[data-theme="black-yellow"] {
   }
 
   /* ---------------------------------------------------------- 批 2 构件 */
-  /* 评论正文：表格里只给一个可读的块，长评论按行截断到 4 行。
-     正文上限 2000 码点，整段铺开会把这一行撑到十几行高，把整张表拽散。 */
-  .admin-comment__body {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
-    line-clamp: 4;
-    overflow: hidden;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
   /* 审计的变更摘要：JSON 原样展示，保留缩进与换行。
      底色用 `--surface-2` + 细描边（与 `.card` 同一套取值），不引入代码高亮或新色板。 */
   .admin-json {
@@ -6329,49 +6211,6 @@ html[data-theme="black-yellow"] {
   }
   .tagpicker__option:disabled {
     opacity: 0.45;
-  }
-
-  /* 记录详情窗口里的评论列表：一行一条评论（作者 + 时间 + 正文 + 删除），
-     回复再缩进一层。不给每条套卡片 —— 窗口里已经分了段，再套会碎成一片方块。 */
-  .admin-comments {
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--s-3);
-    list-style: none;
-  }
-  .admin-comments--replies {
-    margin-block-start: var(--s-3);
-    padding-inline-start: var(--s-5);
-    border-inline-start: 1px solid var(--line-soft);
-  }
-  .admin-comments__row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.25rem var(--s-3);
-    align-items: start;
-  }
-  .admin-comments__meta {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--s-2);
-    margin: 0;
-    font-size: var(--t-xs);
-    color: var(--ink-3);
-  }
-  .admin-comments__author {
-    font-weight: 700;
-    color: var(--ink-2);
-  }
-  .admin-comments__body {
-    margin: 0;
-    font-size: var(--t-sm);
-    line-height: 1.6;
-    color: var(--ink-2);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
   }
 
   /* 设置页的「首页预览」：一块**模拟官网渲染结果**的小面板。
@@ -7082,7 +6921,7 @@ html[data-theme="black-yellow"] {
       justify-self: end;
     }
     /* 筛选控件按页面数量不同（成员 3 个、审计 7 个），写死列数总有一页对不上：
-       原先 1100px 以上固定 5 列，评论/审计页的 7 个控件就得折行。
+       原先 1100px 以上固定 5 列，审计页的 7 个控件就得折行。
        改成 `auto-fit`：在可用宽度里塞进尽量多的控件，能一行就一行。 */
     .admin-filters__row {
       grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
