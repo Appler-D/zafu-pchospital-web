@@ -292,6 +292,9 @@ const CONTROLLED_NOW = new Date("2020-10-15T12:00:00.000Z");
 const CONTROLLED_YEAR_START = "2020-09-01";
 const CONTROLLED_YEAR_END = "2021-08-31";
 const CONTROLLED_MONTH = "2020-10";
+/** 本文件自己的分类：不再依赖 m0 创建的 `M2_TEST`（issue #184）。 */
+const M5_CATEGORY_ID = "91000000-0000-4000-8000-000000000005";
+const M5_CATEGORY_CODE = "M5_TEST";
 /** 受控窗口内的一天，用于聚合测试。 */
 const CONTROLLED_DAY = `${CONTROLLED_MONTH}-15`;
 
@@ -313,7 +316,7 @@ function monthKeys() {
  * - `skills` 是共享 seed、刻意不删，但它有可空的 `created_by → users`，
  *   因此删除 users 前只需**解绑引用**（本文件不创建技能，仅为防御性处理）。
  */
-async function prepareFixtures(): Promise<void> {
+async function cleanupFixtures(): Promise<void> {
   const db = getDb();
 
   const mine = await db.memberProfile.findMany({
@@ -358,6 +361,23 @@ async function prepareFixtures(): Promise<void> {
     await db.skill.updateMany({ where: { createdBy: inUsers }, data: { createdBy: null } });
     await db.user.deleteMany({ where: { id: inUsers } });
   }
+
+  // 分类只被本文件的记录引用（上面已按成员删完记录）。
+  await db.repairCategory.deleteMany({ where: { code: M5_CATEGORY_CODE } });
+}
+
+/** 每个用例前：清掉本文件上一轮的数据，并确保自己的测试分类存在（不依赖 m0，issue #184）。 */
+async function prepareFixtures(): Promise<void> {
+  await cleanupFixtures();
+  await getDb().repairCategory.create({
+    data: {
+      id: M5_CATEGORY_ID,
+      code: M5_CATEGORY_CODE,
+      name: "M5 测试分类",
+      sortOrder: 90,
+      createdAt: new Date(),
+    },
+  });
 }
 
 before(async () => {
@@ -372,7 +392,7 @@ beforeEach(async () => {
 
 after(async () => {
   if (!enabled) return;
-  await prepareFixtures();
+  await cleanupFixtures();
   await disconnectDb();
 });
 
@@ -702,7 +722,7 @@ dbTest("M5 分类分布与摘要口径一致，无分类归入「未分类」", 
   const a = await createMember("分类");
   const { current } = monthKeys();
   const category = await getDb().repairCategory.findFirstOrThrow({
-    where: { code: "M2_TEST" },
+    where: { code: M5_CATEGORY_CODE },
   });
 
   await seedRepair(a.memberProfileId, {

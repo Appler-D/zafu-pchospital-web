@@ -80,12 +80,8 @@ export type NotificationStatus = ValueOf<typeof NotificationStatus>;
 export const AnalyticsScope = ["MONTH", "ACADEMIC_YEAR", "ALL_TIME"] as const;
 /** 排行主指标。时长始终以整数分钟入库与比较，小时只在 UI 层格式化。 */
 export const RankingMetric = ["REPAIR_COUNT", "DURATION_MINUTES"] as const;
-/** 聚合可用性。`UNAVAILABLE` 表示**本次聚合失败**（区块降级），**不得**解释为 0 或空榜。 */
-export const AnalyticsStatus = ["AVAILABLE", "UNAVAILABLE"] as const;
-
 export type AnalyticsScope = ValueOf<typeof AnalyticsScope>;
 export type RankingMetric = ValueOf<typeof RankingMetric>;
-export type AnalyticsStatus = ValueOf<typeof AnalyticsStatus>;
 
 /* ------------------------------------------------------------------ M6 管理后台 */
 
