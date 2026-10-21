@@ -25,6 +25,7 @@ import { Icon } from "@/components/ui/Icon";
 import { repairStatusLabels } from "@/config/repairs";
 import { memberRepairActivitiesCopy, repairActivitiesPage } from "@/config/repair-activities";
 import {
+  activityEndExclusive,
   canOperateActivityStaff,
   sortQueueByCheckedInAt,
   type RepairActivityIssueType,
@@ -67,6 +68,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const copy = memberRepairActivitiesCopy.board;
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [board, setBoard] = useState<StaffBoardView | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  const [serverEnded, setServerEnded] = useState(false);
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -137,6 +140,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         }
         const next = json.data;
         setBoard(next);
+        setClock(Date.now());
+        setServerEnded(next.activity.status === "ENDED");
         hasBoard.current = true;
         // 首次加载落定手机端默认分区；已有选择（用户点过）保持不变。
         setMobilePane(
@@ -180,16 +185,14 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   // 换一场活动 = 重新落定默认分区（同一组件实例被复用时旧选择不跨活动保留）。
   useEffect(() => {
     setMobilePane(null);
+    setServerEnded(false);
   }, [activityId]);
 
   useEffect(() => {
-    if (paused) {
-      if (request.current?.background) {
-        request.current = null;
-      }
-      return;
-    }
+    if (paused && request.current?.background) request.current = null;
     const refresh = () => {
+      // 弹层内暂停取数，但仍用原有节拍更新操作窗口，不能让旧确认窗越过结束时间。
+      setClock(Date.now());
       if (document.visibilityState === "visible") void load(true);
     };
     refresh();
@@ -229,9 +232,16 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         error?: { message?: string; code?: string };
       };
       if (!json.success || json.data === undefined) {
+        if (json.error?.code === "ACTIVITY_ENDED") {
+          setServerEnded(true);
+          setClock(Date.now());
+        }
         return {
           ok: false,
-          message: json.error?.message ?? copy.loadFailed,
+          message:
+            json.error?.code === "ACTIVITY_ENDED"
+              ? copy.activityEnded
+              : (json.error?.message ?? copy.loadFailed),
           code: json.error?.code,
         };
       }
@@ -241,7 +251,29 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     }
   }
 
+  function blockedStaffMessage(): string | null {
+    if (!board) return copy.loadFailed;
+    const now = new Date();
+    if (
+      serverEnded ||
+      board.activity.status === "ENDED" ||
+      now.getTime() >= activityEndExclusive(new Date(board.activity.activityAt)).getTime()
+    ) {
+      return copy.activityEnded;
+    }
+    return canOperateActivityStaff(board.activity, now) ? null : copy.signupNotClosed;
+  }
+
+  function allowStaffAction(): boolean {
+    const blocked = blockedStaffMessage();
+    if (!blocked) return true;
+    setClock(Date.now());
+    setMessage(blocked);
+    return false;
+  }
+
   async function attend() {
+    if (busy !== null || !allowStaffAction()) return;
     setBusy("attend");
     setToast(null);
     const result = await postJson<{ attended: boolean }>(
@@ -258,7 +290,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   }
 
   function openCheckInConfirm() {
-    if (busy !== null || checkInPending.current) return;
+    if (busy !== null || checkInPending.current || !allowStaffAction()) return;
     const rows = board?.eligible.filter((row) => selected.has(row.id)) ?? [];
     if (rows.length === 0) {
       setMessage(copy.selectNone);
@@ -282,6 +314,12 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
   async function confirmCheckIn() {
     if (checkInPending.current || busy !== null || checkInRows.length === 0) return;
+    const blocked = blockedStaffMessage();
+    if (blocked) {
+      setClock(Date.now());
+      setCheckInError(blocked);
+      return;
+    }
     checkInPending.current = true;
     setBusy("check-in");
     setToast(null);
@@ -351,6 +389,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   }
 
   async function serve(registrationId: string) {
+    if (busy !== null || !allowStaffAction()) return;
     setBusy(`serve:${registrationId}`);
     setToast(null);
     setMessage("");
@@ -396,6 +435,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
   /** 点击「接待」：先看客户端已加载的 pendingServeDraft，非空则弹层且**不发请求**。 */
   function requestServe(registrationId: string) {
+    if (!allowStaffAction()) return;
     if (board?.pendingServeDraft) {
       setPendingNotice(board.pendingServeDraft);
       return;
@@ -452,7 +492,15 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     );
   }
 
-  const staffOpen = canOperateActivityStaff(board.activity.signupClosesAt);
+  const ended =
+    serverEnded ||
+    board.activity.status === "ENDED" ||
+    clock >= activityEndExclusive(new Date(board.activity.activityAt)).getTime();
+  const staffOpen = !ended && canOperateActivityStaff(board.activity, new Date(clock));
+  // 结束时只更新原提示；已出勤且无提示卡的看板用浮层，不能把整板向下挤。
+  const showAttendBanner =
+    clock < new Date(board.activity.signupClosesAt).getTime() || !board.attended;
+  const floatingMessage = message || (ended && !showAttendBanner ? copy.activityEnded : "");
   const opsDisabled = !staffOpen || !board.attended || busy !== null;
   const withdrawBusy = withdrawTarget ? busy === `withdraw:${withdrawTarget.id}` : false;
   const checkInBusy = busy === "check-in";
@@ -506,20 +554,22 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         ) : null}
       </div>
 
-      {!staffOpen || !board.attended ? (
+      {showAttendBanner ? (
         <Card className="activity-board__attend-banner" variant="notice">
           <p role="status">
-            {staffOpen
-              ? board.canAdmin
-                ? copy.attendPrompt
-                : copy.attendPromptMember
-              : copy.signupNotClosed}
+            {ended
+              ? copy.activityEnded
+              : staffOpen
+                ? board.canAdmin
+                  ? copy.attendPrompt
+                  : copy.attendPromptMember
+                : copy.signupNotClosed}
           </p>
         </Card>
       ) : null}
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
       {/* 页面级错误 = 浮动提示（方案 A）：不占布局，工具行与卡片之间只剩网格间距。 */}
-      {message ? <BoardAlert message={message} /> : null}
+      {floatingMessage ? <BoardAlert message={floatingMessage} /> : null}
 
       {/* 手机端分区切换（issue #108 审查稿·分段滑块）：窄屏一次只显示一个分区、切换行吸顶；
           宽屏由 CSS 隐藏，恢复并排栏。计数实时来自看板数据、放在段内（等宽段不因数字变化位移）。 */}
@@ -778,6 +828,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           cancelLabel={copy.checkInCancel}
           confirmLabel={checkInBusy ? copy.checkingIn : copy.checkInConfirm}
           busy={checkInBusy}
+          confirmDisabled={!staffOpen}
           onClose={closeCheckInConfirm}
           onConfirm={() => void confirmCheckIn()}
         >
@@ -802,7 +853,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     id={`check-in-issue-${row.id}`}
                     className="field__input"
                     value={issueTypeDrafts[row.id]}
-                    disabled={checkInBusy}
+                    disabled={checkInBusy || !staffOpen}
                     onChange={(event) => {
                       if (checkInPending.current) return;
                       const issueType = event.target.value as RepairActivityIssueType;

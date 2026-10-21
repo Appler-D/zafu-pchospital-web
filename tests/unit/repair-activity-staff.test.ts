@@ -77,15 +77,40 @@ test("签到类型更新：拒绝非法形状、类型、重复、夹带与超�
 
 test("报名截止闸门：截止前禁止出勤、签到与接待，截止时刻起开放", () => {
   const deadline = new Date("2026-10-08T02:00:00.000Z");
+  const activity = { signupClosesAt: deadline, activityAt: deadline };
   const before = new Date(deadline.getTime() - 1);
-  assert.equal(canOperateActivityStaff(deadline, before), false);
-  assert.throws(() => assertActivityStaffOpen(deadline, before), {
+  assert.equal(canOperateActivityStaff(activity, before), false);
+  assert.throws(() => assertActivityStaffOpen(activity, before), {
     code: "ACTIVITY_NOT_OPEN",
     status: 409,
   });
-  assert.equal(canOperateActivityStaff(deadline.toISOString(), deadline), true);
-  assert.doesNotThrow(() => assertActivityStaffOpen(deadline, deadline));
-  assert.equal(canOperateActivityStaff(deadline, new Date(deadline.getTime() + 1)), true);
+  assert.equal(
+    canOperateActivityStaff(
+      { signupClosesAt: deadline.toISOString(), activityAt: deadline },
+      deadline,
+    ),
+    true,
+  );
+  assert.doesNotThrow(() => assertActivityStaffOpen(activity, deadline));
+  assert.equal(canOperateActivityStaff(activity, new Date(deadline.getTime() + 1)), true);
+});
+
+test("活动结束上界：上海次日零点起关闭，包括已有出勤的请求重放", () => {
+  const activity = {
+    activityAt: new Date("2026-10-23T10:30:00.000Z"),
+    signupClosesAt: new Date("2026-10-23T04:00:00.000Z"),
+  };
+  const end = new Date("2026-10-23T16:00:00.000Z");
+  // 报名截止后、活动尚未开始也仍可操作。
+  assert.equal(canOperateActivityStaff(activity, activity.signupClosesAt), true);
+  assert.equal(canOperateActivityStaff(activity, new Date(end.getTime() - 1)), true);
+  for (const now of [end, new Date(end.getTime() + 1)]) {
+    assert.equal(canOperateActivityStaff(activity, now), false);
+    assert.throws(() => assertActivityStaffOpen(activity, now), {
+      code: "ACTIVITY_ENDED",
+      status: 404,
+    });
+  }
 });
 
 test("签到矩阵：仅 REGISTERED 可签到", () => {

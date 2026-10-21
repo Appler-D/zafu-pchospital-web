@@ -251,9 +251,9 @@ async function prepareFixtures(): Promise<void> {
   const db = getDb();
   const now = new Date();
   const hour = 60 * 60 * 1000;
-  // 活动放在昨天：接待发生在活动当天之后，`repairDate`（活动日历日）不晚于今天，
-  // 后续「补齐字段并提交」才走得通（提交校验不允许未来日期）。
-  activityAt = new Date(now.getTime() - 24 * hour);
+  // 活动放在今天且报名已截止：现场操作仍开放，repairDate 也不晚于今天，
+  // 后续「补齐字段并提交」可沿用提交校验（不允许未来日期）。
+  activityAt = new Date(now);
   await db.user.create({
     data: {
       id: STAFF_USER_ID,
@@ -762,7 +762,7 @@ dbTest("撤销接待：非接待者且非管理员被拒；已提交记录不能
   await discardServeDrafts();
 });
 
-dbTest("撤销接待：草稿带评论、收藏与通知时一并清理，不撞外键（审查 #195）", async () => {
+dbTest("活动结束仍可撤销接待：清理历史评论、收藏与通知，不撞外键（审查 #195）", async () => {
   await discardServeDrafts();
   const registration = await createCheckedInRegistration("撤己", "13900002014");
   const served = await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
@@ -800,11 +800,37 @@ dbTest("撤销接待：草稿带评论、收藏与通知时一并清理，不撞
     },
   });
 
-  const reverted = await repairActivityStaffService.revertServe(
-    ACTIVITY_ID,
-    registration.id,
-    staffActor,
-  );
+  const activity = await db.repairActivity.findUniqueOrThrow({ where: { id: ACTIVITY_ID } });
+  let reverted;
+  try {
+    const yesterday = new Date(Date.now() - 86_400_000);
+    await db.repairActivity.update({
+      where: { id: ACTIVITY_ID },
+      data: {
+        activityAt: yesterday,
+        signupClosesAt: new Date(yesterday.getTime() - 3_600_000),
+        signupOpensAt: new Date(yesterday.getTime() - 7_200_000),
+      },
+    });
+    assert.equal(
+      (await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor)).activity.status,
+      "ENDED",
+    );
+    reverted = await repairActivityStaffService.revertServe(
+      ACTIVITY_ID,
+      registration.id,
+      staffActor,
+    );
+  } finally {
+    await db.repairActivity.update({
+      where: { id: ACTIVITY_ID },
+      data: {
+        activityAt: activity.activityAt,
+        signupClosesAt: activity.signupClosesAt,
+        signupOpensAt: activity.signupOpensAt,
+      },
+    });
+  }
   assert.equal(reverted.deletedRecordId, served.repairRecordId);
   assert.equal(await db.repairRecord.findUnique({ where: { id: served.repairRecordId } }), null);
   assert.equal(
