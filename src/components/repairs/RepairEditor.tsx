@@ -15,7 +15,19 @@ import {
 } from "@/config/repairs";
 import { shanghaiToday } from "@/lib/shanghai-date";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
-import type { RepairCategoryView, RepairDetailView, RepairMemberOption } from "@/types/contracts";
+import type {
+  RepairCategoryView,
+  RepairDetailView,
+  RepairMemberOption,
+  RepairParticipantView,
+} from "@/types/contracts";
+import {
+  clearCreateDraft,
+  hasCreateDraftContent,
+  readCreateDraft,
+  writeCreateDraft,
+  type CreateDraftSnapshot,
+} from "./create-draft-storage";
 
 /** 点击整块日期输入框都弹出原生日历（默认只有右侧小图标会弹）。 */
 function openDatePicker(event: ReactMouseEvent<HTMLInputElement>) {
@@ -26,18 +38,84 @@ function openDatePicker(event: ReactMouseEvent<HTMLInputElement>) {
   }
 }
 
+/**
+ * 新建页的本地初始记录（issue #162）：没有服务端 ID / 版本，照片为空。
+ * 照片上限在首次建档后由服务端详情补齐，因此这里用 Infinity 占位（提示文案同步改为通用口径）。
+ */
+function localDraftRecord(input: {
+  creator: { id: string; name: string };
+  categories: RepairCategoryView[];
+  participants: RepairParticipantView[];
+  stored: CreateDraftSnapshot | null;
+}): RepairDetailView {
+  const now = new Date().toISOString();
+  const categoryId = input.stored?.categoryId ?? null;
+  return {
+    id: "",
+    member: input.creator,
+    participants: [input.creator, ...input.participants],
+    repairDate: input.stored?.repairDate ?? shanghaiToday(),
+    durationMinutes: input.stored?.durationMinutes ?? null,
+    category: categoryId ? (input.categories.find((item) => item.id === categoryId) ?? null) : null,
+    deviceModel: null,
+    ownerName: input.stored?.ownerName ?? null,
+    ownerPhone: input.stored?.ownerPhone ?? null,
+    content: null,
+    result: defaultRepairResult,
+    remark: input.stored?.remark ?? null,
+    status: "DRAFT",
+    isDifficult: false,
+    isTypical: false,
+    version: 0,
+    submittedAt: null,
+    reviewedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    photos: [],
+    reviews: [],
+    timeline: [],
+    canEdit: true,
+    canReview: false,
+    canFlag: false,
+    isFavorited: false,
+    photoLimits: { maxBytes: Number.POSITIVE_INFINITY, maxFiles: Number.POSITIVE_INFINITY },
+  };
+}
+
+/** 只把非图片字段写进暂存；参与人排除创建人本人。 */
+function snapshotOf(record: RepairDetailView): CreateDraftSnapshot {
+  return {
+    repairDate: record.repairDate,
+    durationMinutes: record.durationMinutes,
+    categoryId: record.category?.id ?? null,
+    ownerName: record.ownerName,
+    ownerPhone: record.ownerPhone,
+    remark: record.remark,
+    participantIds: record.participants
+      .filter((participant) => participant.id !== record.member.id)
+      .map((participant) => participant.id),
+  };
+}
+
 export function RepairEditor({
   recordId,
   allowSaveDraft = true,
   returnActivityId,
 }: {
-  recordId: string;
+  /**
+   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，首次传图或提交时才建档（issue #162）。
+   */
+  recordId?: string;
   /** 新建流程不再暴露「草稿」（issue #72）：只留提交审核；编辑存量草稿与退回记录仍可保存。 */
   allowSaveDraft?: boolean;
   /** 从活动看板进入时，提交成功后返回该看板继续接待。 */
   returnActivityId?: string;
 }) {
   const router = useRouter();
+  const createMode = !recordId;
+  const [serverId, setServerId] = useState(recordId ?? "");
+  /** 新建会话的幂等键：重复点提交 / 上传重试都不会多建草稿。 */
+  const [createRequestKey] = useState(createIdempotencyKey);
   const [record, setRecord] = useState<RepairDetailView>();
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
   /** 参与维修人员（issue #114）的候选名单：全部活跃成员，从中挑选添加。 */
@@ -57,8 +135,40 @@ export function RepairEditor({
   const load = useCallback(async () => {
     setState("loading");
     try {
+      if (!serverId) {
+        const [catsResponse, membersResponse, meResponse] = await Promise.all([
+          fetch("/api/v1/repair-categories", { cache: "no-store" }),
+          fetch("/api/v1/repair-members", { cache: "no-store" }),
+          fetch("/api/v1/me", { cache: "no-store" }),
+        ]);
+        const cats = await catsResponse.json();
+        const members = await membersResponse.json();
+        const me = await meResponse.json();
+        if (!me.success || typeof me.data?.memberProfileId !== "string") {
+          setState("error");
+          return;
+        }
+        const options: RepairMemberOption[] = members.success ? members.data : [];
+        const categories: RepairCategoryView[] = cats.success ? cats.data : [];
+        setMemberOptions(options);
+        setCategories(categories);
+        const stored = readCreateDraft();
+        const wanted = new Set(stored?.participantIds ?? []);
+        const creator = {
+          id: me.data.memberProfileId as string,
+          name: (me.data.displayName as string | null) ?? "我",
+        };
+        const participants = options
+          .filter((option) => wanted.has(option.id) && option.id !== creator.id)
+          .map((option) => ({ id: option.id, name: option.name }));
+        setRecord(localDraftRecord({ creator, categories, participants, stored }));
+        if (stored && hasCreateDraftContent(stored))
+          setMessage(repairEditorCopy.createDraftRestored);
+        setState("ready");
+        return;
+      }
       const [a, b, c] = await Promise.all([
-        fetch(`/api/v1/repairs/${recordId}`, { cache: "no-store" }),
+        fetch(`/api/v1/repairs/${serverId}`, { cache: "no-store" }),
         fetch("/api/v1/repair-categories", { cache: "no-store" }),
         fetch("/api/v1/repair-members", { cache: "no-store" }),
       ]);
@@ -90,35 +200,66 @@ export function RepairEditor({
     } catch {
       setState("error");
     }
-  }, [recordId]);
+  }, [serverId]);
   useEffect(() => {
     void load();
   }, [load]);
+  // 新建页：非图片字段随时写进 sessionStorage；有内容时关闭 / 刷新给出浏览器提醒。
+  useEffect(() => {
+    if (!createMode || serverId || !record) return;
+    const snapshot = snapshotOf(record);
+    if (hasCreateDraftContent(snapshot)) writeCreateDraft(snapshot);
+    else clearCreateDraft();
+  }, [createMode, serverId, record]);
+  useEffect(() => {
+    if (!createMode || serverId || !record) return;
+    if (!hasCreateDraftContent(snapshotOf(record))) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [createMode, serverId, record]);
   function field<K extends keyof RepairDetailView>(key: K, value: RepairDetailView[K]) {
     setRecord((current) => (current ? { ...current, [key]: value } : current));
   }
   /** 保存当前表单，返回服务端视图 —— `PATCH` 返回的是列表视图（无 `reviews` / `timeline`），故用合并。 */
   async function persist(): Promise<RepairDetailView> {
     if (!record) throw new Error("记录尚未加载");
-    const response = await fetch(`/api/v1/repairs/${recordId}`, {
+    const fields = {
+      repairDate: record.repairDate,
+      durationMinutes: record.durationMinutes ?? null,
+      categoryId: record.category?.id ?? null,
+      ownerName: record.ownerName,
+      ownerPhone: record.ownerPhone,
+      // 不再发送 `content`：字段已从表单退场，`undefined` 即「不动」——
+      // 老记录的正文不会被这里清空（issue #79 第 6 项）。
+      remark: record.remark,
+      result: record.result ?? defaultRepairResult,
+      // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
+      participantIds: record.participants
+        .filter((participant) => participant.id !== record.member.id)
+        .map((participant) => participant.id),
+    };
+    if (!serverId) {
+      // 新建页首次落库：把当前全部内容一次性带上（不再先建空草稿）。
+      const response = await fetch("/api/v1/repairs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": createRequestKey },
+        body: JSON.stringify(fields),
+      });
+      const json = await response.json();
+      if (!json.success) throw new Error(json.error.message);
+      clearCreateDraft();
+      setServerId(json.data.id);
+      setRecord((current) => (current ? { ...current, ...json.data } : json.data));
+      return { ...record, ...json.data } as RepairDetailView;
+    }
+    const response = await fetch(`/api/v1/repairs/${serverId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        version: record.version,
-        repairDate: record.repairDate,
-        durationMinutes: record.durationMinutes ?? null,
-        categoryId: record.category?.id ?? null,
-        ownerName: record.ownerName,
-        ownerPhone: record.ownerPhone,
-        // 不再发送 `content`：字段已从表单退场，`undefined` 即「不动」——
-        // 老记录的正文不会被这里清空（issue #79 第 6 项）。
-        remark: record.remark,
-        result: record.result ?? defaultRepairResult,
-        // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
-        participantIds: record.participants
-          .filter((participant) => participant.id !== record.member.id)
-          .map((participant) => participant.id),
-      }),
+      body: JSON.stringify({ version: record.version, ...fields }),
     });
     const json = await response.json();
     if (!json.success) throw new Error(json.error.message);
@@ -146,7 +287,7 @@ export function RepairEditor({
       // 先把当前表单存一次再提交：否则「填了但没保存」会被服务端的完整性校验拦下。
       const idempotencyKey = createIdempotencyKey();
       const saved = await persist();
-      const response = await fetch(`/api/v1/repairs/${recordId}/submit`, {
+      const response = await fetch(`/api/v1/repairs/${saved.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
         body: JSON.stringify({ version: saved.version }),
@@ -158,11 +299,12 @@ export function RepairEditor({
           : "";
         throw new Error(fields || json.error.message);
       }
+      clearCreateDraft();
       if (returnActivityId) {
         setToast({ text: repairEditorCopy.activitySubmitSuccess, tone: "success" });
         setSubmitted(true);
       } else {
-        router.replace(`/member/repairs/${recordId}`);
+        router.replace(`/member/repairs/${saved.id}`);
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "提交失败");
@@ -195,8 +337,8 @@ export function RepairEditor({
     );
   }
   /** 照片是即时保存的，只合并照片 —— 整块重载会丢掉表单里还没保存的改动。 */
-  async function refreshPhotos() {
-    const response = await fetch(`/api/v1/repairs/${recordId}`, { cache: "no-store" });
+  async function refreshPhotos(targetId: string) {
+    const response = await fetch(`/api/v1/repairs/${targetId}`, { cache: "no-store" });
     const json = await response.json();
     if (!json.success) return;
     setRecord((current) => (current ? { ...current, photos: json.data.photos } : current));
@@ -204,39 +346,53 @@ export function RepairEditor({
   async function upload(files: File[]) {
     if (!files.length || !record) return;
     const selected = files;
-    const { maxBytes, maxFiles } = record.photoLimits;
-    // 先按服务端下发的上限拦一遍：超限的文件根本传不上去，不必等 multipart 走完再说。
-    const oversized = selected.find((file) => file.size > maxBytes);
-    if (oversized) {
-      setMessage(
-        repairEditorCopy.photoTooLarge
-          .replace("{name}", oversized.name)
-          .replace("{size}", formatBytes(oversized.size))
-          .replace("{limit}", formatBytes(maxBytes)),
-      );
-      return;
-    }
-    if (record.photos.length + selected.length > maxFiles) {
-      setMessage(
-        repairEditorCopy.photoTooMany
-          .replace("{count}", String(record.photos.length))
-          .replace("{remain}", String(Math.max(maxFiles - record.photos.length, 0))),
-      );
-      return;
-    }
     setBusy(true);
     setMessage("");
     try {
+      // 新建页首次传图：先把全部内容一次性落成服务端草稿（照片接口挂在记录 ID 上）。
+      let targetId = serverId;
+      let current = record;
+      if (!targetId) {
+        current = await persist();
+        targetId = current.id;
+        const detail = await fetch(`/api/v1/repairs/${targetId}`, { cache: "no-store" });
+        const detailJson = await detail.json();
+        if (!detailJson.success) throw new Error(detailJson.error.message);
+        current = detailJson.data as RepairDetailView;
+        setRecord(current);
+      }
+      const { maxBytes, maxFiles } = current.photoLimits;
+      // 按服务端下发的上限拦一遍：超限的文件根本传不上去，不必等 multipart 走完再说。
+      const oversized = selected.find((file) => file.size > maxBytes);
+      if (oversized) {
+        setMessage(
+          repairEditorCopy.photoTooLarge
+            .replace("{name}", oversized.name)
+            .replace("{size}", formatBytes(oversized.size))
+            .replace("{limit}", formatBytes(maxBytes)),
+        );
+        return;
+      }
+      if (current.photos.length + selected.length > maxFiles) {
+        setMessage(
+          repairEditorCopy.photoTooMany
+            .replace("{count}", String(current.photos.length))
+            .replace("{remain}", String(Math.max(maxFiles - current.photos.length, 0))),
+        );
+        return;
+      }
       const form = new FormData();
       selected.forEach((file) => form.append("photos", file));
-      const response = await fetch(`/api/v1/repairs/${recordId}/photos`, {
+      const response = await fetch(`/api/v1/repairs/${targetId}/photos`, {
         method: "POST",
         body: form,
       });
       const json = await response.json();
       if (!json.success) throw new Error(json.error.message);
-      await refreshPhotos();
+      await refreshPhotos(targetId);
       setMessage("照片已上传。");
+      // 建档后离开新建页：地址里带记录 ID，刷新不会丢关联，活动看板的「填写维修记录」也指向它。
+      if (createMode) router.replace(`/member/repairs/${targetId}/edit`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "上传失败");
     } finally {
@@ -251,7 +407,7 @@ export function RepairEditor({
       });
       const json = await response.json();
       if (!json.success) throw new Error(json.error.message);
-      await refreshPhotos();
+      await refreshPhotos(serverId);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "移除失败");
     } finally {
@@ -264,7 +420,7 @@ export function RepairEditor({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sortOrder }),
     });
-    await refreshPhotos();
+    await refreshPhotos(serverId);
   }
   if (state === "loading") return <p role="status">正在加载表单…</p>;
   if (state === "error")
@@ -283,9 +439,12 @@ export function RepairEditor({
     );
   if (!record) return null;
   const rejection = [...record.reviews].reverse().find((item) => item.decision === "REJECTED");
-  const photoHint = repairEditorCopy.photoHint
-    .replace("{size}", formatBytes(record.photoLimits.maxBytes))
-    .replace("{count}", String(record.photoLimits.maxFiles));
+  const photoHint =
+    createMode && !serverId
+      ? repairEditorCopy.photoHintCreate
+      : repairEditorCopy.photoHint
+          .replace("{size}", formatBytes(record.photoLimits.maxBytes))
+          .replace("{count}", String(record.photoLimits.maxFiles));
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
@@ -416,7 +575,7 @@ export function RepairEditor({
           <p className="field__hint">
             维修结果默认为「{repairResultLabels[defaultRepairResult]}」，保存与提交都会按此记录。
           </p>
-          <p className="field__hint">当前版本：{record.version}</p>
+          {serverId ? <p className="field__hint">当前版本：{record.version}</p> : null}
           <div className="signup__actions">
             {allowSaveDraft ? (
               <Button type="submit" disabled={busy}>
