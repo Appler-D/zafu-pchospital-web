@@ -7996,6 +7996,73 @@ html[data-theme="black-yellow"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* 报名倒计时（issue #187）：抢票式数字块，只用语义令牌。 */
+.activity-countdown {
+  margin: var(--s-3) 0 var(--s-4);
+}
+.activity-countdown__label {
+  margin: 0 0 var(--s-2);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+.activity-countdown__blocks {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-1);
+  font-variant-numeric: tabular-nums;
+}
+.activity-countdown__block {
+  min-inline-size: 3.25rem;
+  text-align: center;
+}
+.activity-countdown__num {
+  display: block;
+  padding: 0.45rem 0.125rem 0.4rem;
+  border-radius: var(--r-mid);
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.activity-countdown__unit {
+  display: block;
+  margin-block-start: 0.3rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+.activity-countdown__colon {
+  padding-block-start: 0.4rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-line);
+}
+.activity-countdown__hint {
+  margin: var(--s-2) 0 0;
+  font-size: 0.75rem;
+  color: var(--ink-3);
+}
+.activity-countdown__opening {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+@media (max-width: 759px) {
+  .activity-countdown__block {
+    min-inline-size: 2.75rem;
+  }
+  .activity-countdown__num {
+    font-size: 1.375rem;
+  }
+  .activity-countdown__colon {
+    font-size: 1.25rem;
+  }
+}
 .admin-capacity {
   font-weight: 700;
   font-variant-numeric: tabular-nums;

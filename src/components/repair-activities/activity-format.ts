@@ -20,3 +20,27 @@ export function formatShanghaiTime(iso: string): string {
     hour12: false,
   }).format(new Date(iso));
 }
+
+/**
+ * 报名开始倒计时（issue #187）：拆成天/时/分/秒，供抢票式数字块渲染。
+ *
+ * 向上取整到秒：还剩不到 1 秒时不会先显示 00:00:00；负数按 0 处理。
+ */
+export function signupCountdownParts(remainingMs: number): {
+  days: number;
+  hours: string;
+  minutes: string;
+  seconds: string;
+} {
+  // 防御：解析失败 / 非有限值一律归零，绝不把 Infinity / NaN 渲染进数字块。
+  if (!Number.isFinite(remainingMs)) {
+    return { days: 0, hours: "00", minutes: "00", seconds: "00" };
+  }
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return { days, hours: pad(hours), minutes: pad(minutes), seconds: pad(seconds) };
+}

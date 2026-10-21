@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
-import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
+import {
+  formatShanghaiDateTime,
+  signupCountdownParts,
+} from "@/components/repair-activities/activity-format";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +31,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const copy = repairActivitiesPage.detail;
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [activity, setActivity] = useState<RepairActivityPublicView | null>(null);
+  /** 服务器时间与本机时间之差：倒计时以服务器为准，避免本机时钟偏差（issue #187）。 */
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,36 +48,90 @@ export function RepairActivityDetail({ activityId }: Props) {
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
 
-  const load = useCallback(async () => {
-    setProblem("");
-    try {
-      const response = await fetch(`/api/v1/repair-activities/${activityId}`);
-      const json = (await response.json()) as {
-        success: boolean;
-        data?: RepairActivityPublicView;
-        error?: { code?: string; message?: string };
-      };
-      if (!json.success || !json.data) {
-        if (json.error?.code === "ACTIVITY_ENDED" || response.status === 404) {
-          setState("missing");
-          setProblem(json.error?.message ?? "活动已结束");
+  /**
+   * `background` = 倒计时驱动的自动重取：传输 / 服务端瞬时失败时保留已渲染内容，
+   * 不把整块切成错误态；活动确实结束（ENDED / 404）仍照常切换。
+   */
+  const load = useCallback(
+    async (background = false) => {
+      if (!background) setProblem("");
+      try {
+        const response = await fetch(`/api/v1/repair-activities/${activityId}`);
+        // HTTP Date 头就是服务器此刻的时间（秒级）：用它校正倒计时基准。
+        const serverDate = Date.parse(response.headers.get("Date") ?? "");
+        if (Number.isFinite(serverDate)) setServerOffsetMs(serverDate - Date.now());
+        const json = (await response.json()) as {
+          success: boolean;
+          data?: RepairActivityPublicView;
+          error?: { code?: string; message?: string };
+        };
+        if (!json.success || !json.data) {
+          const ended = json.error?.code === "ACTIVITY_ENDED" || response.status === 404;
+          if (background && !ended) return;
+          if (ended) {
+            setState("missing");
+            setProblem(json.error?.message ?? "活动已结束");
+            return;
+          }
+          setState("error");
+          setProblem(json.error?.message ?? "加载失败");
           return;
         }
+        setActivity(json.data);
+        setState("ready");
+      } catch {
+        if (background) return;
         setState("error");
-        setProblem(json.error?.message ?? "加载失败");
-        return;
+        setProblem("加载失败，请稍后重试");
       }
-      setActivity(json.data);
-      setState("ready");
-    } catch {
-      setState("error");
-      setProblem("加载失败，请稍后重试");
-    }
-  }, [activityId]);
+    },
+    [activityId],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
+  useEffect(() => {
+    if (activity?.status !== "UPCOMING") return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activity?.status]);
+
+  const signupOpensAtMs = activity ? Date.parse(activity.signupOpensAt) : Number.NaN;
+  const countdownMs = Number.isFinite(signupOpensAtMs)
+    ? signupOpensAtMs - (nowMs + serverOffsetMs)
+    : Number.POSITIVE_INFINITY;
+  const waitingForOpen = activity?.status === "UPCOMING" && countdownMs <= 0;
+
+  /**
+   * 倒计时归零：立刻重取活动状态（服务端按自己的时钟判定 OPEN / FULL / CLOSED）。
+   * 仍显示未开始就每 30 秒重试，满足「无需手动刷新」—— 可能是本机与服务器时钟略有偏差。
+   */
+  useEffect(() => {
+    if (!waitingForOpen) return;
+    void load(true);
+    const timer = window.setInterval(() => void load(true), 30_000);
+    return () => window.clearInterval(timer);
+  }, [waitingForOpen, load]);
+
+  /** 倒计时归零转为可报名时，给读屏一次性播报（数字块本身不进入 live region）。 */
+  const prevStatusRef = useRef<RepairActivityStatus | null>(null);
+  const [openedNotice, setOpenedNotice] = useState(false);
+  useEffect(() => {
+    const current = activity?.status ?? null;
+    if (
+      prevStatusRef.current === "UPCOMING" &&
+      current !== null &&
+      current !== "UPCOMING" &&
+      canAcceptNewRegistration(current)
+    ) {
+      setOpenedNotice(true);
+    }
+    prevStatusRef.current = current;
+  }, [activity?.status]);
 
   /** 填好表单 → 先弹免责声明，不直接提交。 */
   function requestSignup(event: FormEvent<HTMLFormElement>) {
@@ -218,6 +278,11 @@ export function RepairActivityDetail({ activityId }: Props) {
   }
 
   const open = canAcceptNewRegistration(activity.status);
+  const countdown = signupCountdownParts(countdownMs);
+  const countdownOpens = copy.countdownOpensHint.replace(
+    "{open}",
+    formatShanghaiDateTime(activity.signupOpensAt),
+  );
   const signupDisabledReason =
     activity.status === "UPCOMING"
       ? copy.upcomingDisabled
@@ -274,6 +339,63 @@ export function RepairActivityDetail({ activityId }: Props) {
         <Card className="repair-panel activity-detail__signup">
           <h2 className="admin-panel__title">{copy.signupTitle}</h2>
           {!open ? <p className="muted">{signupDisabledReason}</p> : null}
+          {/* 开始时间解析不出（契约保证不会）时整块不渲染，避免数字块出现 Infinity。 */}
+          {activity.status === "UPCOMING" && Number.isFinite(countdownMs) ? (
+            <div className="activity-countdown" role="timer">
+              <p className="activity-countdown__label">{copy.countdownPrefix}</p>
+              {waitingForOpen ? (
+                <p className="activity-countdown__opening">{copy.countdownOpeningSoon}</p>
+              ) : (
+                <>
+                  <div className="activity-countdown__blocks">
+                    {countdown.days > 0 ? (
+                      <>
+                        <span className="activity-countdown__block">
+                          <span className="activity-countdown__num">
+                            {String(countdown.days).padStart(2, "0")}
+                          </span>
+                          <span className="activity-countdown__unit">
+                            {copy.countdownUnits.days}
+                          </span>
+                        </span>
+                        <span className="activity-countdown__colon" aria-hidden="true">
+                          :
+                        </span>
+                      </>
+                    ) : null}
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.hours}</span>
+                      <span className="activity-countdown__unit">{copy.countdownUnits.hours}</span>
+                    </span>
+                    <span className="activity-countdown__colon" aria-hidden="true">
+                      :
+                    </span>
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.minutes}</span>
+                      <span className="activity-countdown__unit">
+                        {copy.countdownUnits.minutes}
+                      </span>
+                    </span>
+                    <span className="activity-countdown__colon" aria-hidden="true">
+                      :
+                    </span>
+                    <span className="activity-countdown__block">
+                      <span className="activity-countdown__num">{countdown.seconds}</span>
+                      <span className="activity-countdown__unit">
+                        {copy.countdownUnits.seconds}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="activity-countdown__hint">{countdownOpens}</p>
+                </>
+              )}
+            </div>
+          ) : null}
+          {openedNotice ? (
+            <p className="sr-only" role="status">
+              {copy.countdownOpened}
+            </p>
+          ) : null}
           <form
             className="admin-form"
             ref={signupFormRef}
