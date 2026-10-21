@@ -42,6 +42,9 @@ export const repairActivitiesPage = {
     updateSuccess: "故障类型已更新。",
     signupDisabled: "当前不可报名",
     upcomingDisabled: "报名尚未开始",
+    /** 报名开始倒计时（issue #187）：以服务器时间为准，归零后自动刷新状态。 */
+    countdownPrefix: "距报名开始",
+    countdownOpeningSoon: "即将开放，请稍候",
     closedDisabled: "报名已截止",
     fullDisabled: "名额已满",
     notEditable: "当前状态不可修改故障类型（可能已签到或已接待）。",

@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
-import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
+import {
+  formatShanghaiDateTime,
+  formatSignupCountdown,
+} from "@/components/repair-activities/activity-format";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 import { Button } from "@/components/ui/Button";
@@ -28,6 +31,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const copy = repairActivitiesPage.detail;
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [activity, setActivity] = useState<RepairActivityPublicView | null>(null);
+  /** 服务器时间与本机时间之差：倒计时以服务器为准，避免本机时钟偏差（issue #187）。 */
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,6 +52,9 @@ export function RepairActivityDetail({ activityId }: Props) {
     setProblem("");
     try {
       const response = await fetch(`/api/v1/repair-activities/${activityId}`);
+      // HTTP Date 头就是服务器此刻的时间（秒级）：用它校正倒计时基准。
+      const serverDate = Date.parse(response.headers.get("Date") ?? "");
+      if (Number.isFinite(serverDate)) setServerOffsetMs(serverDate - Date.now());
       const json = (await response.json()) as {
         success: boolean;
         data?: RepairActivityPublicView;
@@ -72,6 +81,31 @@ export function RepairActivityDetail({ activityId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
+  useEffect(() => {
+    if (activity?.status !== "UPCOMING") return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activity?.status]);
+
+  const signupOpensAtMs = activity ? Date.parse(activity.signupOpensAt) : Number.NaN;
+  const countdownMs = Number.isFinite(signupOpensAtMs)
+    ? signupOpensAtMs - (nowMs + serverOffsetMs)
+    : Number.POSITIVE_INFINITY;
+  const waitingForOpen = activity?.status === "UPCOMING" && countdownMs <= 0;
+
+  /**
+   * 倒计时归零：立刻重取活动状态（服务端按自己的时钟判定 OPEN / FULL / CLOSED）。
+   * 仍显示未开始就每 30 秒重试，满足「无需手动刷新」—— 可能是本机与服务器时钟略有偏差。
+   */
+  useEffect(() => {
+    if (!waitingForOpen) return;
+    void load();
+    const timer = window.setInterval(() => void load(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [waitingForOpen, load]);
 
   /** 填好表单 → 先弹免责声明，不直接提交。 */
   function requestSignup(event: FormEvent<HTMLFormElement>) {
@@ -274,6 +308,13 @@ export function RepairActivityDetail({ activityId }: Props) {
         <Card className="repair-panel activity-detail__signup">
           <h2 className="admin-panel__title">{copy.signupTitle}</h2>
           {!open ? <p className="muted">{signupDisabledReason}</p> : null}
+          {activity.status === "UPCOMING" ? (
+            <p className="muted tabular-nums" role="timer">
+              {waitingForOpen
+                ? copy.countdownOpeningSoon
+                : `${copy.countdownPrefix} ${formatSignupCountdown(countdownMs)}`}
+            </p>
+          ) : null}
           <form
             className="admin-form"
             ref={signupFormRef}
