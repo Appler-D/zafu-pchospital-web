@@ -327,6 +327,18 @@ export type JoinApplicationDetail = JoinApplicationView & {
   }>;
 };
 
+/** 更正报名通知邮箱（issue #161）：邮箱只作通知用，账号邮箱仍由登录后验证绑定。 */
+export type CorrectJoinNotificationEmailInput = { email: string };
+
+/**
+ * 更正结果。`notification` 为更正后的通知任务状态（没有任务时为 null）——
+ * 发送中会被拒绝；已交发信服务 / 结果未知只更新报名记录，任务本身不动。
+ */
+export type JoinNotificationEmailCorrection = {
+  email: string;
+  notification: AccountNotificationView | null;
+};
+
 export type CreateInviteCodeInput = {
   activeFrom?: string | null;
   expiresAt?: string | null;
@@ -1417,6 +1429,12 @@ export interface JoinApplicationServiceContract {
     actor: AuthorizedActor,
   ): Promise<{ items: JoinApplicationSummary[]; pagination: PaginationMeta }>;
   get(applicationId: string, actor: AuthorizedActor): Promise<JoinApplicationDetail>;
+  /** 更正通知邮箱（issue #161）：按通知任务状态决定是否同步任务收件地址。 */
+  correctNotificationEmail(
+    applicationId: string,
+    input: CorrectJoinNotificationEmailInput,
+    actor: AuthorizedActor,
+  ): Promise<JoinNotificationEmailCorrection>;
   softDelete(applicationId: string, actor: AuthorizedActor): Promise<void>;
   submit(input: SubmitJoinApplicationInput, context: PublicRequestContext): Promise<JoinReceipt>;
   review(input: ReviewJoinApplicationInput, actor: AuthorizedActor): Promise<JoinApplicationView>;

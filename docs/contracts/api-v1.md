@@ -112,6 +112,7 @@ Cookie 的 `Expires` 与数据库 Session 的 `expiresAt` 一致。改密轮换 
 - `POST /api/v1/admin/join-applications/:id/reviews`
 - `POST /api/v1/admin/join-applications/:id/provision`
 - `POST /api/v1/admin/join-applications/:id/provision/retry`
+- `PATCH /api/v1/admin/join-applications/:id/notification/email`（`join:review`，更正通知邮箱）
 - `POST /api/v1/admin/invite-codes`
 - `GET /api/v1/admin/invite-codes`
 - `PATCH /api/v1/admin/invite-codes/:id`
@@ -145,6 +146,22 @@ Issue #176 的报名管理约定：
 - 任一重复返回 409 `ACCOUNT_IDENTITY_CONFLICT`，只指出冲突字段并提示管理员联系处理，不能强行通过。
   查重、首次审核、录取部门、发放和通知入队在同一 Serializable 事务；失败全部回滚。
   已成功通过的幂等重放不再次查重；历史已通过的失败任务继续沿用原发放冲突保护及重试流程。
+
+通知邮箱更正（issue #161）：报名邮箱是**未验证**的通知地址，更正不改变账号邮箱 / 邮箱身份、
+门禁或找回资格。`PATCH /api/v1/admin/join-applications/:id/notification/email` 请求体
+`{ email }`，要求登录、同源与 `join:review`；按 `normalizeEmail` 归一，非法值 400
+`VALIDATION_FAILED`。按通知任务状态分级：
+
+| 任务状态                 | 报名记录 | 任务收件地址 | 保存后                                 |
+| ------------------------ | -------- | ------------ | -------------------------------------- |
+| 无任务                   | 更新     | —            | 后续建档入队自然使用新地址             |
+| `PENDING`                | 更新     | 同步更新     | 待发送任务按新地址发出                 |
+| `FAILED`                 | 更新     | 同步更新     | 保持失败，由管理员手动「重试通知」     |
+| `SENDING`                | 不变     | 不变         | 409 `STATE_TRANSITION_INVALID`，等结果 |
+| `ACCEPTED` / `UNCERTAIN` | 更新     | 不变         | 只更新报名记录，不重发；核查后人工恢复 |
+
+成功写 `join.application.notification_email.updated` 审计（摘要中邮箱键按既有规则脱敏）；
+同一地址重复保存为幂等空操作，不追加审计。不存在或已删除报名返回 404 `RESOURCE_NOT_FOUND`。
 
 这些端点的输入/输出 Service 契约位于 `src/types/contracts.ts`。管理员路径不是权限边界；
 Route Handler 必须从数据库 Session、账号状态和有效 UserRole 构造 actor，Service 再
@@ -399,24 +416,24 @@ DELETE     /api/v1/admin/comments/:id
 同样要求 `ADMIN` 角色对应的权限码，未登录 401、普通成员 403。列表型端点一律返回标准分页信封
 （条目在 `data`，分页在 `meta.pagination`）。
 
-| 端点                                                        | 权限                     | 说明                                                                                                       |
-| ----------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/admin/skills`                                  | `skill:manage`           | 技能标签列表：**含已停用**，并带当前生效的成员关联计数 `usedByMemberCount`                                 |
-| `POST /api/v1/admin/skills`                                 | `skill:manage`           | 新增：`{code,name,description?,sortOrder?}`；重复 code 409 `SKILL_CODE_CONFLICT`                           |
-| `PATCH /api/v1/admin/skills/:id`                            | `skill:manage`           | 修改 `name` / `description` / `sortOrder`；`code` 不可改                                                   |
-| `POST /api/v1/admin/skills/:id/deactivate`（或 `activate`） | `skill:manage`           | 停用 / 重新启用。**不提供删除**：标签被 `user_skills` 引用                                                 |
-| `POST /api/v1/admin/skills/:id/reorder`                     | `skill:manage`           | 上移 / 下移一格：`{direction:"UP"\|"DOWN"}`；已在首末位时**幂等成功**，不报错、不写审计                    |
-| `POST /api/v1/admin/skills/:id/move`                        | `skill:manage`           | 拖动排序：`{beforeId: string\|null}`（`null` = 拖到末尾）；落点没变时幂等成功                              |
-| `POST /api/v1/admin/repair-categories/:id/reorder`          | `repair:category:manage` | 同上，上移 / 下移一格                                                                                      |
-| `POST /api/v1/admin/repair-categories/:id/move`             | `repair:category:manage` | 同上，拖动排序（`{beforeId}`）                                                                             |
-| `GET /api/v1/admin/comments` | —（已退役） | 认证 / 账号访问检查后统一 404 `RESOURCE_NOT_FOUND`，不查询评论。 |
-| `DELETE /api/v1/admin/comments/:id` | —（已退役） | 同源 / 认证 / 账号访问检查后统一 404，不删除历史行。 |
-| `GET /api/v1/admin/invite-codes`                            | `invite:read`            | 分页 + `status`（**生效状态**）+ `query`（明文前缀 / 绑定 QQ / 手机号，精确匹配）；绑定信息只给脱敏值      |
-| `GET /api/v1/admin/audit-logs`                              | `audit:read`             | 审计查询：`action`、`result`、`actorUserId`、`targetType`、`targetId`、`requestId`、日期区间               |
-| `GET /api/v1/admin/audit-logs/actions`                      | `audit:read`             | 动作清单（带出现次数，降序），供筛选下拉使用                                                               |
-| `GET /api/v1/admin/settings/public-content`                 | `settings:manage`        | 读取公开内容与展示策略（单行配置，缺行时返回契约默认值）                                                   |
-| `PUT /api/v1/admin/settings/public-content`                 | `settings:manage`        | 整体替换四个字段；缺字段 400 `VALIDATION_FAILED`，非法展示名 400 `PUBLIC_SETTINGS_INVALID`                 |
-| `GET /api/v1/admin/join-applications/export`                | `data:export`            | 报名导出：`format=csv\|xlsx` + 与报名列表同源的筛选参数；返回附件流                                        |
+| 端点                                                        | 权限                     | 说明                                                                                                  |
+| ----------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/admin/skills`                                  | `skill:manage`           | 技能标签列表：**含已停用**，并带当前生效的成员关联计数 `usedByMemberCount`                            |
+| `POST /api/v1/admin/skills`                                 | `skill:manage`           | 新增：`{code,name,description?,sortOrder?}`；重复 code 409 `SKILL_CODE_CONFLICT`                      |
+| `PATCH /api/v1/admin/skills/:id`                            | `skill:manage`           | 修改 `name` / `description` / `sortOrder`；`code` 不可改                                              |
+| `POST /api/v1/admin/skills/:id/deactivate`（或 `activate`） | `skill:manage`           | 停用 / 重新启用。**不提供删除**：标签被 `user_skills` 引用                                            |
+| `POST /api/v1/admin/skills/:id/reorder`                     | `skill:manage`           | 上移 / 下移一格：`{direction:"UP"\|"DOWN"}`；已在首末位时**幂等成功**，不报错、不写审计               |
+| `POST /api/v1/admin/skills/:id/move`                        | `skill:manage`           | 拖动排序：`{beforeId: string\|null}`（`null` = 拖到末尾）；落点没变时幂等成功                         |
+| `POST /api/v1/admin/repair-categories/:id/reorder`          | `repair:category:manage` | 同上，上移 / 下移一格                                                                                 |
+| `POST /api/v1/admin/repair-categories/:id/move`             | `repair:category:manage` | 同上，拖动排序（`{beforeId}`）                                                                        |
+| `GET /api/v1/admin/comments`                                | —（已退役）              | 认证 / 账号访问检查后统一 404 `RESOURCE_NOT_FOUND`，不查询评论。                                      |
+| `DELETE /api/v1/admin/comments/:id`                         | —（已退役）              | 同源 / 认证 / 账号访问检查后统一 404，不删除历史行。                                                  |
+| `GET /api/v1/admin/invite-codes`                            | `invite:read`            | 分页 + `status`（**生效状态**）+ `query`（明文前缀 / 绑定 QQ / 手机号，精确匹配）；绑定信息只给脱敏值 |
+| `GET /api/v1/admin/audit-logs`                              | `audit:read`             | 审计查询：`action`、`result`、`actorUserId`、`targetType`、`targetId`、`requestId`、日期区间          |
+| `GET /api/v1/admin/audit-logs/actions`                      | `audit:read`             | 动作清单（带出现次数，降序），供筛选下拉使用                                                          |
+| `GET /api/v1/admin/settings/public-content`                 | `settings:manage`        | 读取公开内容与展示策略（单行配置，缺行时返回契约默认值）                                              |
+| `PUT /api/v1/admin/settings/public-content`                 | `settings:manage`        | 整体替换四个字段；缺字段 400 `VALIDATION_FAILED`，非法展示名 400 `PUBLIC_SETTINGS_INVALID`            |
+| `GET /api/v1/admin/join-applications/export`                | `data:export`            | 报名导出：`format=csv\|xlsx` + 与报名列表同源的筛选参数；返回附件流                                   |
 
 批次 2 的约定：
 
