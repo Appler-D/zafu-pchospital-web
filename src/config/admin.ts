@@ -865,6 +865,11 @@ export const adminCopy = {
       contacts: "联系方式",
       contactsNote: "查看报名明文联系方式会写入审计记录。",
       notificationEmail: "通知邮箱",
+      editNotificationEmail: "更正",
+      /** 通知在途时不允许改地址：等结果出来再更正，避免「改完还以为发到了新地址」。 */
+      emailSendingNote: "通知正在发送，请等待结果后再更正。",
+      /** 已交发信服务 / 结果未知：记录可改，但已发通知不会改发。 */
+      emailSentNote: "通知已发出，更正只更新报名记录，不会改发已发通知。",
       /** 学号 / 班级（issue #147）：历史报名未填写时显示 adminShared.none。 */
       student: "学号与班级",
       studentId: "学号",
@@ -877,6 +882,27 @@ export const adminCopy = {
       reviewsEmpty: "还没有登记过面试结果。",
       interviewedAt: "面试时间",
       internalNote: "内部备注",
+    },
+    /** 更正通知邮箱（issue #161）：按通知任务状态说明保存后的效果。 */
+    emailCorrection: {
+      title: "更正通知邮箱",
+      current: "当前通知邮箱",
+      newEmail: "新通知邮箱",
+      submit: "保存更正",
+      back: "返回详情",
+      saved: "通知邮箱已更正。",
+      auditNote: "更正会写入审计记录。",
+      sendingBlocked: "通知正在发送，请等待结果后再更正。",
+      hints: {
+        NONE: "保存后仅更新报名记录；这条报名还没有安排账号通知。",
+        PENDING: "保存后，尚未发送的通知会改用新邮箱，无需其他操作。",
+        SENDING: "通知正在发送，请等待结果后再更正。",
+        FAILED: "保存后，请在「账号通知」中点「重试通知」；系统不会自动重发。",
+        ACCEPTED:
+          "该通知已提交发信服务，无法撤回或改发。保存只更新报名记录；如本人未收到，请核对身份后使用临时密码恢复。",
+        UNCERTAIN:
+          "上次发送结果未知，不能直接重发。保存只更新报名记录；请先核查，必要时使用临时密码恢复。",
+      },
     },
     review: {
       title: "登记面试结果",

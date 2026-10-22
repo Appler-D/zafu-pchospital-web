@@ -35,9 +35,11 @@ import {
   type JoinApplicationDetail,
   type JoinApplicationSummary,
   type JoinApplicationView,
+  type JoinNotificationEmailCorrection,
   type ProvisionView,
   type MemberDepartment,
 } from "@/types/contracts";
+import { EMAIL_MAX_LENGTH } from "@/lib/security/normalization";
 
 const EMPTY_FILTERS = {
   recruitmentCycle: "",
@@ -448,6 +450,10 @@ function ApplicationDetailPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteProblem, setDeleteProblem] = useState("");
+  /** 更正通知邮箱（issue #161）：与详情同一窗口，切换内容而不是叠第二层弹层。 */
+  const [correcting, setCorrecting] = useState(false);
+  /** 更正表单保存中：阻止关闭整个窗口，避免请求完成后结果落到已卸载的界面。 */
+  const [correctingBusy, setCorrectingBusy] = useState(false);
   /** 登记面试结果返回的初始密码：响应里的值只出现一次，留在窗口里展示（规则见下方说明）。 */
   const [secret, setSecret] = useState("");
   const [provision, setProvision] = useState<ProvisionView | null>(null);
@@ -594,6 +600,39 @@ function ApplicationDetailPanel({
     );
   }
 
+  // 更正与删除一样是「同一时刻只挂一个弹层」：直接切换到独立窗口，避免叠第二层遮罩，
+  // 也避免把整块详情 JSX 包进三元里重排缩进。
+  if (correcting && detail) {
+    return (
+      <AdminModal
+        title={copy.emailCorrection.title}
+        subtitle={`${detail.ticketNo} · ${detail.realName}`}
+        onClose={() => {
+          if (!busy && !correctingBusy) onClose();
+        }}
+      >
+        <AdminToast toast={toast} onDismiss={() => setToast(null)} />
+        <EmailCorrectionForm
+          applicationId={applicationId}
+          detail={detail}
+          onBack={() => setCorrecting(false)}
+          onBusyChange={setCorrectingBusy}
+          onProblem={(text) => setToast({ text, tone: "neutral" })}
+          onSaved={(result) => {
+            setDetail((current) =>
+              current
+                ? { ...current, email: result.email, notification: result.notification }
+                : current,
+            );
+            setCorrecting(false);
+            setToast({ text: copy.emailCorrection.saved, tone: "success" });
+            onChanged();
+          }}
+        />
+      </AdminModal>
+    );
+  }
+
   return (
     <AdminModal
       title={copy.detail.title}
@@ -646,9 +685,32 @@ function ApplicationDetailPanel({
             <p className="admin-status">
               QQ {detail.qq} · {detail.phone}
             </p>
-            <p className="admin-status">
-              {copy.detail.notificationEmail} {detail.email ?? adminShared.none}
-            </p>
+            <div className="admin-email-row">
+              <p className="admin-status">
+                {copy.detail.notificationEmail} {detail.email ?? adminShared.none}
+              </p>
+              {detail.notification?.status === "SENDING" ? (
+                <span className="admin-note">{copy.detail.emailSendingNote}</span>
+              ) : (
+                <>
+                  {detail.notification?.status === "ACCEPTED" ||
+                  detail.notification?.status === "UNCERTAIN" ? (
+                    <span className="admin-note">{copy.detail.emailSentNote}</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="admin-email-edit"
+                    disabled={busy}
+                    onClick={() => {
+                      setProblem("");
+                      setCorrecting(true);
+                    }}
+                  >
+                    {copy.detail.editNotificationEmail}
+                  </button>
+                </>
+              )}
+            </div>
             <p className="admin-note">{copy.detail.contactsNote}</p>
           </div>
 
@@ -835,6 +897,110 @@ function provisionHint(status: ProvisionStatus | string): string {
   if (status === "SUCCEEDED") return copy.succeeded;
   if (status === "PENDING") return copy.pending;
   return copy.succeeded;
+}
+
+/**
+ * 更正通知邮箱（issue #161）。
+ *
+ * 与详情共用同一个 `AdminModal`（切换内容，不叠第二层）—— 和成员详情
+ * 「详情 → 重置弹层 → 返回」的处理一致。保存后由父组件把新邮箱与任务状态写回详情，
+ * 不再整窗重载。
+ */
+function EmailCorrectionForm({
+  applicationId,
+  detail,
+  onBack,
+  onBusyChange,
+  onSaved,
+  onProblem,
+}: {
+  applicationId: string;
+  detail: JoinApplicationDetail;
+  onBack: () => void;
+  onBusyChange: (busy: boolean) => void;
+  onSaved: (result: JoinNotificationEmailCorrection) => void;
+  onProblem: (text: string) => void;
+}) {
+  const copy = adminCopy.recruitment.emailCorrection;
+  const status = detail.notification?.status ?? null;
+  const hint = copy.hints[status ?? "NONE"];
+  const blocked = status === "SENDING";
+  const [email, setEmail] = useState(detail.email ?? "");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    onBusyChange(true);
+    setProblem("");
+    try {
+      const result = await adminFetch<JoinNotificationEmailCorrection>(
+        `/api/v1/admin/join-applications/${applicationId}/notification/email`,
+        { method: "PATCH", body: { email } },
+      );
+      if (!result.ok) {
+        const text =
+          result.code === "STATE_TRANSITION_INVALID" ? copy.sendingBlocked : result.message;
+        setProblem(text);
+        onProblem(text);
+        return;
+      }
+      onSaved(result.data);
+    } finally {
+      setBusy(false);
+      onBusyChange(false);
+    }
+  }
+
+  return (
+    <form method="post" className="admin-form" onSubmit={submit} aria-label={copy.title}>
+      <p className="admin-status">
+        {copy.current} {detail.email ?? adminShared.none}
+      </p>
+      <div className="admin-form__grid">
+        <label className="field">
+          <span className="field__label">{copy.newEmail}</span>
+          <input
+            className="field__input"
+            type="email"
+            name="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            maxLength={EMAIL_MAX_LENGTH}
+            autoComplete="off"
+            autoFocus
+            required
+            disabled={busy || blocked}
+          />
+        </label>
+      </div>
+      {/* 已交发信服务 / 结果未知是风险提示，用错误态让管理员先停下来核查。 */}
+      <p
+        className={
+          status === "ACCEPTED" || status === "UNCERTAIN"
+            ? "admin-status admin-status--error"
+            : "admin-note"
+        }
+      >
+        {hint}
+      </p>
+      <p className="admin-note">{copy.auditNote}</p>
+      {problem ? (
+        <p className="admin-status admin-status--error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      <div className="signup__actions">
+        <Button type="submit" variant="solid" disabled={busy || blocked}>
+          {busy ? adminShared.submitting : copy.submit}
+        </Button>
+        <Button type="button" variant="ghost" disabled={busy} onClick={onBack}>
+          {copy.back}
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 /**

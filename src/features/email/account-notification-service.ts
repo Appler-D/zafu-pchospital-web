@@ -63,7 +63,8 @@ export async function enqueueAccountNotification(
   });
   await audit(tx, row, "queued");
 }
-function view(row: AccountNotification): AccountNotificationView {
+/** 通知任务 → 详情视图。报名邮箱更正（issue #161）复用它返回同一口径的状态。 */
+export function toAccountNotificationView(row: AccountNotification): AccountNotificationView {
   return {
     status: row.status as AccountNotificationView["status"],
     attemptCount: row.attemptCount,
@@ -112,7 +113,7 @@ export class AccountNotificationService implements AccountNotificationServiceCon
     const row = await getDb().accountNotification.findFirst({
       where: { applicationId, kind: ACCOUNT_NOTIFICATION_KIND, application: { deletedAt: null } },
     });
-    return row ? view(row) : null;
+    return row ? toAccountNotificationView(row) : null;
   }
   async retry(applicationId: string, actor: AuthorizedActor) {
     requirePermission(actor, "join:review");
@@ -122,7 +123,8 @@ export class AccountNotificationService implements AccountNotificationServiceCon
       });
       if (!candidate) throw new AppError("RESOURCE_NOT_FOUND", "没有可重试的通知任务");
       const row = await locked(tx, candidate.id);
-      if (row.status === "PENDING" || row.status === "SENDING") return view(row);
+      if (row.status === "PENDING" || row.status === "SENDING")
+        return toAccountNotificationView(row);
       if (row.status !== "FAILED")
         throw new AppError("STATE_TRANSITION_INVALID", "该通知不能重新发送");
       const updated = await tx.accountNotification.update({
@@ -131,7 +133,7 @@ export class AccountNotificationService implements AccountNotificationServiceCon
       });
       // 上次受控失败原因和累计次数保留，审计保留操作者 / 时间；后续实际尝试再替换原因。
       await audit(tx, updated, "retry_requested", actor);
-      return view(updated);
+      return toAccountNotificationView(updated);
     });
   }
   private async recoverExpired(limit: number) {

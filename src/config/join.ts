@@ -105,7 +105,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "email",
     label: "邮箱",
     placeholder: "例如 name@example.com",
-    hint: "用于报名与账号通知，请填写常用邮箱。",
+    hint: "邮箱仅用于面试结果等消息提醒，请正确填写，避免无法收到通知。",
     maxLength: EMAIL_MAX_LENGTH,
     type: "email",
     inputMode: "email",

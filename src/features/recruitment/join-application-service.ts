@@ -1,10 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { accountNotificationService } from "@/features/email/account-notification-service";
+import {
+  accountNotificationService,
+  toAccountNotificationView,
+} from "@/features/email/account-notification-service";
 import { accountProvisionService } from "@/features/accounts/account-provision-service";
 import { parseMemberDepartment } from "@/features/members/member-department";
 import { assertNoActiveMemberConflict } from "@/features/recruitment/member-conflicts";
-import type { JoinApplication, Prisma } from "@/generated/prisma/client";
+import { ACCOUNT_NOTIFICATION_KIND } from "@/config/account-notification";
+import type { AccountNotification, JoinApplication, Prisma } from "@/generated/prisma/client";
 import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
 import { AppError } from "@/lib/api/errors";
 import { appendAuditLog } from "@/lib/audit/audit-service";
@@ -26,11 +30,13 @@ import {
 } from "@/lib/security/normalization";
 import type {
   AuthorizedActor,
+  CorrectJoinNotificationEmailInput,
   JoinApplicationDetail,
   JoinApplicationListInput,
   JoinApplicationServiceContract,
   JoinApplicationSummary,
   JoinApplicationView,
+  JoinNotificationEmailCorrection,
   JoinReceipt,
   ProvisionView,
   PublicRequestContext,
@@ -115,6 +121,82 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
         internalNote: review.internalNote,
       })),
     };
+  }
+
+  /**
+   * 更正报名通知邮箱（issue #161）。
+   *
+   * 报名邮箱只作通知用（账号邮箱仍由登录后验证绑定），但填错会让面试 / 账号通知
+   * 发错地址。按通知任务状态分级：
+   * - 无任务：只改报名记录，后续建档入队自然用新地址；
+   * - 待发送 / 明确失败：报名记录与任务收件地址一起改（失败任务仍由管理员手动重试）；
+   * - 发送中：在途任务无法改地址，直接 409，等结果出来再处理；
+   * - 已交发信服务 / 结果未知：只改报名记录，**不改任务、不重发** —— 已发出或无法
+   *   确认的通知不能伪装成「发给了新地址」，由管理员核查后走人工恢复。
+   */
+  async correctNotificationEmail(
+    applicationId: string,
+    input: CorrectJoinNotificationEmailInput,
+    actor: AuthorizedActor,
+  ): Promise<JoinNotificationEmailCorrection> {
+    requirePermission(actor, "join:review");
+    const email = normalizeEmail(input.email);
+    return inSerializableTransaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM join_applications WHERE id = ${applicationId} FOR UPDATE`;
+      const application = await tx.joinApplication.findUnique({ where: { id: applicationId } });
+      if (!application || application.deletedAt) {
+        throw new AppError("RESOURCE_NOT_FOUND", "报名记录不存在");
+      }
+      const candidate = await tx.accountNotification.findFirst({
+        where: { applicationId, kind: ACCOUNT_NOTIFICATION_KIND },
+        select: { id: true },
+      });
+      let notification: AccountNotification | null = null;
+      if (candidate) {
+        await tx.$queryRaw`SELECT id FROM account_notifications WHERE id = ${candidate.id} FOR UPDATE`;
+        notification = await tx.accountNotification.findUniqueOrThrow({
+          where: { id: candidate.id },
+        });
+      }
+      if (notification?.status === "SENDING") {
+        throw new AppError("STATE_TRANSITION_INVALID", "通知正在发送，请等待结果后再更正");
+      }
+      const recipientUpdatable = Boolean(
+        notification && (notification.status === "PENDING" || notification.status === "FAILED"),
+      );
+      const changed =
+        application.email !== email ||
+        Boolean(notification && recipientUpdatable && notification.recipientEmail !== email);
+      if (changed) {
+        if (recipientUpdatable && notification) {
+          notification = await tx.accountNotification.update({
+            where: { id: notification.id },
+            data: { recipientEmail: email },
+          });
+        }
+        await tx.joinApplication.update({ where: { id: applicationId }, data: { email } });
+        // 审计摘要在写入时统一脱敏（`redactAuditSummary` 对 email 键打码）。
+        await appendAuditLog(tx, {
+          actor,
+          actorType: actor.actorType,
+          actorUserId: actor.userId,
+          action: "join.application.notification_email.updated",
+          targetType: "JoinApplication",
+          targetId: applicationId,
+          result: "SUCCESS",
+          before: { email: application.email },
+          after: {
+            email,
+            notificationStatus: notification?.status ?? null,
+            recipientUpdated: recipientUpdatable,
+          },
+        });
+      }
+      return {
+        email,
+        notification: notification ? toAccountNotificationView(notification) : null,
+      };
+    });
   }
 
   async submit(

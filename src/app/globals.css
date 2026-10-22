@@ -5782,6 +5782,38 @@ html[data-theme="black-yellow"] {
     line-height: 1;
   }
 
+  /* 报名详情「通知邮箱 + 更正」：文字与紧凑按钮同排，窄屏自动换行。
+     详情窗口里的常规按钮是 46px 高，放在一行 13px 文字旁会把这一行撑得很重。 */
+  .admin-email-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2) var(--s-3);
+  }
+  .admin-email-edit {
+    padding: 2px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-base);
+    background: transparent;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: var(--t-xs);
+    cursor: pointer;
+  }
+  .admin-email-edit:hover {
+    border-color: var(--ink-3);
+    color: var(--ink);
+  }
+  .admin-email-edit:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .admin-email-edit:disabled {
+    border-color: var(--line);
+    color: var(--ink-4);
+    cursor: not-allowed;
+  }
+
   /* ------------------------------------------------ 拖动排序（技能 / 分类） */
   /* 手柄：只有它是 draggable，行本身不可拖（否则表格里的文字选不中）。 */
   .admin-drag {

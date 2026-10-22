@@ -6,6 +6,7 @@ import ExcelJS from "exceljs";
 import { GET as listRoute } from "../../src/app/api/v1/admin/join-applications/route";
 import { DELETE as deleteRoute } from "../../src/app/api/v1/admin/join-applications/[id]/route";
 import { POST as reviewRoute } from "../../src/app/api/v1/admin/join-applications/[id]/reviews/route";
+import { PATCH as emailRoute } from "../../src/app/api/v1/admin/join-applications/[id]/notification/email/route";
 import { GET as exportRoute } from "../../src/app/api/v1/admin/join-applications/export/route";
 import { accountProvisionService } from "../../src/features/accounts/account-provision-service";
 import { joinApplicationExportService } from "../../src/features/admin/join-application-export-service";
@@ -529,4 +530,163 @@ dbTest("删除与审核 / 发放并发：删除提交后不能再建档或补记
     code("RESOURCE_NOT_FOUND"),
   );
   assert.equal(await getDb().accountProvision.count({ where: { sourceId: receipt.id } }), count);
+});
+
+dbTest("通知邮箱更正（issue #161）：按任务状态同步地址，审计脱敏", async () => {
+  const pending = await application();
+  await joinApplicationService.review(reviewInput(pending.id), actor);
+  const task = await getDb().accountNotification.findFirstOrThrow({
+    where: { applicationId: pending.id },
+  });
+  assert.equal(task.status, "PENDING");
+
+  // 待发送：报名记录与任务收件地址一起改；输入按 normalizeEmail 归一。
+  const result = await joinApplicationService.correctNotificationEmail(
+    pending.id,
+    { email: " I176-CORRECTED@Example.com " },
+    actor,
+  );
+  assert.equal(result.email, "i176-corrected@example.com");
+  assert.equal(result.notification?.status, "PENDING");
+  assert.equal(
+    (await getDb().joinApplication.findUniqueOrThrow({ where: { id: pending.id } })).email,
+    "i176-corrected@example.com",
+  );
+  assert.equal(
+    (await getDb().accountNotification.findUniqueOrThrow({ where: { id: task.id } }))
+      .recipientEmail,
+    "i176-corrected@example.com",
+  );
+  const audit = await getDb().auditLog.findFirstOrThrow({
+    where: { targetId: pending.id, action: "join.application.notification_email.updated" },
+  });
+  const summary = JSON.stringify(audit.afterSummary);
+  assert.ok(summary.includes("i***@example.com"), summary);
+  assert.ok(!summary.includes("i176-corrected@example.com"), "审计摘要不得写完整邮箱");
+
+  // 同一地址重复保存是幂等空操作，不再写审计。
+  await joinApplicationService.correctNotificationEmail(
+    pending.id,
+    { email: "i176-corrected@example.com" },
+    actor,
+  );
+  assert.equal(
+    await getDb().auditLog.count({
+      where: { targetId: pending.id, action: "join.application.notification_email.updated" },
+    }),
+    1,
+  );
+
+  // 明确失败：同步地址但保持 FAILED —— 由管理员手动「重试通知」。
+  await getDb().accountNotification.update({
+    where: { id: task.id },
+    data: { status: "FAILED", lastErrorCode: "INVALID_RECIPIENT" },
+  });
+  const failed = await joinApplicationService.correctNotificationEmail(
+    pending.id,
+    { email: "i176-failed@example.com" },
+    actor,
+  );
+  assert.equal(failed.notification?.status, "FAILED");
+  assert.equal(failed.notification?.canRetry, true);
+  assert.equal(
+    (await getDb().accountNotification.findUniqueOrThrow({ where: { id: task.id } }))
+      .recipientEmail,
+    "i176-failed@example.com",
+  );
+
+  // 发送中：在途任务无法改地址，拒绝且报名记录 / 任务都不变。
+  await getDb().accountNotification.update({ where: { id: task.id }, data: { status: "SENDING" } });
+  await assert.rejects(
+    joinApplicationService.correctNotificationEmail(
+      pending.id,
+      { email: "i176-sending@example.com" },
+      actor,
+    ),
+    code("STATE_TRANSITION_INVALID"),
+  );
+  assert.equal(
+    (await getDb().joinApplication.findUniqueOrThrow({ where: { id: pending.id } })).email,
+    "i176-failed@example.com",
+  );
+  assert.equal(
+    (await getDb().accountNotification.findUniqueOrThrow({ where: { id: task.id } }))
+      .recipientEmail,
+    "i176-failed@example.com",
+  );
+
+  // 已交发信服务 / 结果未知：只更新报名记录，任务地址与状态保持原样（不重发）。
+  for (const status of ["ACCEPTED", "UNCERTAIN"] as const) {
+    await getDb().accountNotification.update({ where: { id: task.id }, data: { status } });
+    const correctedEmail = `i176-${status.toLowerCase()}@example.com`;
+    const next = await joinApplicationService.correctNotificationEmail(
+      pending.id,
+      { email: correctedEmail },
+      actor,
+    );
+    assert.equal(next.notification?.status, status);
+    assert.equal(
+      (await getDb().joinApplication.findUniqueOrThrow({ where: { id: pending.id } })).email,
+      correctedEmail,
+    );
+    assert.equal(
+      (await getDb().accountNotification.findUniqueOrThrow({ where: { id: task.id } }))
+        .recipientEmail,
+      "i176-failed@example.com",
+      `${status} 的任务不得改地址`,
+    );
+  }
+});
+
+dbTest("通知邮箱更正的边界：HTTP 校验 / 权限 / 无任务 / 删除后", async () => {
+  const base = `http://localhost/api/v1/admin/join-applications`;
+  const receipt = await application();
+  const invalid = await callRoute(emailRoute, `${base}/${receipt.id}/notification/email`, {
+    method: "PATCH",
+    headers: { cookie },
+    params: { id: receipt.id },
+    body: { email: "not-an-email" },
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((invalid.json.error as { code: string }).code, "VALIDATION_FAILED");
+  await assert.rejects(
+    joinApplicationService.correctNotificationEmail(
+      receipt.id,
+      { email: "i176-reader@example.com" },
+      reader,
+    ),
+    code("FORBIDDEN"),
+  );
+  const crossOrigin = await callRoute(emailRoute, `${base}/${receipt.id}/notification/email`, {
+    method: "PATCH",
+    headers: { cookie, origin: "https://other.invalid" },
+    params: { id: receipt.id },
+    body: { email: "i176-cross@example.com" },
+  });
+  assert.equal(crossOrigin.status, 403);
+  // 尚未通过 / 建档：没有通知任务，只更新报名记录。
+  const saved = await joinApplicationService.correctNotificationEmail(
+    receipt.id,
+    { email: "i176-notask@example.com" },
+    actor,
+  );
+  assert.equal(saved.notification, null);
+  // HTTP happy path：返回归一化后的邮箱。
+  const http = await callRoute(emailRoute, `${base}/${receipt.id}/notification/email`, {
+    method: "PATCH",
+    headers: { cookie },
+    params: { id: receipt.id },
+    body: { email: "I176-HTTP@Example.com" },
+  });
+  assert.equal(http.status, 200);
+  assert.equal((http.json.data as { email: string }).email, "i176-http@example.com");
+  await joinApplicationService.softDelete(receipt.id, actor);
+  await assert.rejects(
+    joinApplicationService.correctNotificationEmail(
+      receipt.id,
+      { email: "i176-late@example.com" },
+      actor,
+    ),
+    code("RESOURCE_NOT_FOUND"),
+  );
 });
