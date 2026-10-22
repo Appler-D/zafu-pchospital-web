@@ -1040,7 +1040,9 @@ html[data-theme="black-yellow"] {
   }
 
   .rail,
-  .rail > nav {
+  .rail > nav,
+  .member-nav__groups,
+  .admin-nav__groups {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;
   }
@@ -1048,29 +1050,41 @@ html[data-theme="black-yellow"] {
   /* Chromium / Safari 用窄滑块替代系统轨道与箭头；其它浏览器用上面的标准属性。 */
   @supports selector(::-webkit-scrollbar) {
     .rail,
-    .rail > nav {
+    .rail > nav,
+    .member-nav__groups,
+    .admin-nav__groups {
       scrollbar-width: auto;
       scrollbar-color: auto;
     }
     .rail::-webkit-scrollbar,
-    .rail > nav::-webkit-scrollbar {
+    .rail > nav::-webkit-scrollbar,
+    .member-nav__groups::-webkit-scrollbar,
+    .admin-nav__groups::-webkit-scrollbar {
       width: var(--s-1);
     }
     .rail::-webkit-scrollbar-track,
-    .rail > nav::-webkit-scrollbar-track {
+    .rail > nav::-webkit-scrollbar-track,
+    .member-nav__groups::-webkit-scrollbar-track,
+    .admin-nav__groups::-webkit-scrollbar-track {
       background: transparent;
     }
     .rail::-webkit-scrollbar-thumb,
-    .rail > nav::-webkit-scrollbar-thumb {
+    .rail > nav::-webkit-scrollbar-thumb,
+    .member-nav__groups::-webkit-scrollbar-thumb,
+    .admin-nav__groups::-webkit-scrollbar-thumb {
       background: var(--line-strong);
       border-radius: var(--r-full);
     }
     .rail::-webkit-scrollbar-thumb:hover,
-    .rail > nav::-webkit-scrollbar-thumb:hover {
+    .rail > nav::-webkit-scrollbar-thumb:hover,
+    .member-nav__groups::-webkit-scrollbar-thumb:hover,
+    .admin-nav__groups::-webkit-scrollbar-thumb:hover {
       background: var(--ink-3);
     }
     .rail::-webkit-scrollbar-button,
-    .rail > nav::-webkit-scrollbar-button {
+    .rail > nav::-webkit-scrollbar-button,
+    .member-nav__groups::-webkit-scrollbar-button,
+    .admin-nav__groups::-webkit-scrollbar-button {
       display: none;
     }
   }

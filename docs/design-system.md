@@ -495,6 +495,9 @@ M6 管理后台（`/admin/**`）稳定视觉模式。后台是**密集型数据�
 | `.admin-form` / `__grid` / `.admin-status` / `--error` / `.admin-note` | 后台表单栅格、状态行与说明文字                                                                          |
 | `.admin-stats`                                                         | 统计区块纵向栅格（内部复用 `MemberMetrics` / `MemberCategoryDistribution`，后台不重新解释口径）         |
 
+成员与管理侧栏中间的导航滚动区（`.member-nav__groups` / `.admin-nav__groups`）共用公开索引栏的
+滚动条样式：透明轨道、中性圆角细滑块、悬停仅变色，支持 WebKit 选择器时隐藏箭头；底部官网入口与账号菜单保持可见。
+
 后台图标集扩充了 5 个：`plus` / `edit` / `trash` / `download` / `check`（仍为 24 格、stroke 2、
 round 端点）。后台需要新图标时按同样规则补 `Icon.tsx` 的 `shapes`，不要在页面里零散粘贴 SVG。
 
