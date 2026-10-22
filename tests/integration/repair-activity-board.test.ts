@@ -1057,3 +1057,94 @@ dbTest("报名未截止：出勤、签到、接待均拒绝，已有出勤也不
     });
   }
 });
+
+dbTest("活动结束：三项写入及幂等重放拒绝，历史看板与撤回误签到保留", async () => {
+  const db = getDb();
+  const registration = await checkInFixture();
+  assert.equal((await postCheckIn([registration.id])).status, 200);
+  const beforeRow = await db.repairActivityRegistration.findUniqueOrThrow({
+    where: { id: registration.id },
+  });
+  const attendance = await db.repairActivityAttendance.findMany({
+    where: { activityId: ACTIVITY_ID },
+    orderBy: { id: "asc" },
+  });
+  const auditCount = await db.auditLog.count({ where: { actorUserId: STAFF_USER_ID } });
+  const recordCount = await db.repairRecord.count({ where: { memberProfileId: STAFF_PROFILE_ID } });
+  const activity = await db.repairActivity.findUniqueOrThrow({ where: { id: ACTIVITY_ID } });
+  const repeated = await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
+  assert.equal(
+    repeated.checkedInAt,
+    attendance.find((row) => row.memberProfileId === STAFF_PROFILE_ID)!.checkedInAt.toISOString(),
+    "窗口内重复出勤保留原时间",
+  );
+  assert.equal(await db.auditLog.count({ where: { actorUserId: STAFF_USER_ID } }), auditCount);
+  try {
+    const yesterday = new Date(Date.now() - 86_400_000);
+    await db.repairActivity.update({
+      where: { id: ACTIVITY_ID },
+      data: {
+        activityAt: yesterday,
+        signupClosesAt: new Date(yesterday.getTime() - 3_600_000),
+        signupOpensAt: new Date(yesterday.getTime() - 7_200_000),
+      },
+    });
+    for (const [route, action, body, cookie] of [
+      [POST_ATTENDANCE, "attendance", {}, absentCookie],
+      [POST_ATTENDANCE, "attendance", {}, staffCookie],
+      [POST_CHECK_IN, "check-in", { registrationIds: [registration.id] }, staffCookie],
+      [POST_SERVE, "serve", { registrationId: registration.id }, staffCookie],
+    ] as const) {
+      const result = await callRoute(
+        route,
+        `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/${action}`,
+        { method: "POST", body, params: { id: ACTIVITY_ID }, headers: { cookie } },
+      );
+      assert.equal(result.status, 404, `${action}: ${JSON.stringify(result.json)}`);
+      assert.equal(errorCodeOf(result.json), "ACTIVITY_ENDED");
+    }
+    assert.deepEqual(
+      await db.repairActivityAttendance.findMany({
+        where: { activityId: ACTIVITY_ID },
+        orderBy: { id: "asc" },
+      }),
+      attendance,
+      "不得新增出勤或重写原出勤时间",
+    );
+    assert.deepEqual(
+      await db.repairActivityRegistration.findUniqueOrThrow({ where: { id: registration.id } }),
+      beforeRow,
+    );
+    assert.equal(await db.auditLog.count({ where: { actorUserId: STAFF_USER_ID } }), auditCount);
+    assert.equal(
+      await db.repairRecord.count({ where: { memberProfileId: STAFF_PROFILE_ID } }),
+      recordCount,
+    );
+    const board = await callRoute(
+      GET_BOARD,
+      `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/board`,
+      { params: { id: ACTIVITY_ID }, headers: { cookie: staffCookie } },
+    );
+    assert.equal(board.status, 200);
+    const data = board.json.data as {
+      activity: { status: string };
+      attended: boolean;
+      queue: { id: string }[];
+    };
+    assert.equal(data.activity.status, "ENDED");
+    assert.equal(data.attended, true);
+    assert.ok(data.queue.some((row) => row.id === registration.id));
+    const withdrawn = await postWithdraw(registration.id);
+    assert.equal(withdrawn.status, 200);
+    assert.equal((withdrawn.json.data as { status: string }).status, "REGISTERED");
+  } finally {
+    await db.repairActivity.update({
+      where: { id: ACTIVITY_ID },
+      data: {
+        activityAt: activity.activityAt,
+        signupOpensAt: activity.signupOpensAt,
+        signupClosesAt: activity.signupClosesAt,
+      },
+    });
+  }
+});

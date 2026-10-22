@@ -107,6 +107,7 @@ export const memberRepairActivitiesCopy = {
     /** 成员视角（issue #108 起成员无「待签到」区）：出勤后可接待排队中的客户。 */
     attendPromptMember: "你尚未参加本场。先标记出勤后，才能接待排队中的客户。",
     signupNotClosed: "报名尚未截止，暂不可出勤、签到或接待。",
+    activityEnded: "活动已结束，不能再出勤、签到或接待；仍可查看记录并按权限纠错。",
     attendedBadge: "你已出勤",
     /** 手机端分区切换行（<1100px 常显；宽屏隐藏）的无障碍名称。 */
     paneSwitcherLabel: "工作台分区切换",

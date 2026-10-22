@@ -20,6 +20,7 @@ export function ConfirmDialog({
   onConfirm,
   onClose,
   busy = false,
+  confirmDisabled = false,
   confirmVariant = "solid",
 }: {
   title: string;
@@ -31,6 +32,8 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onClose: () => void;
   busy?: boolean;
+  /** 只禁用确认，保留取消 / Esc（例如操作窗口已结束）。 */
+  confirmDisabled?: boolean;
   confirmVariant?: "solid" | "outline" | "ghost";
 }) {
   const titleId = useId();
@@ -111,7 +114,12 @@ export function ConfirmDialog({
             <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
               {cancelLabel}
             </Button>
-            <Button type="button" variant={confirmVariant} disabled={busy} onClick={onConfirm}>
+            <Button
+              type="button"
+              variant={confirmVariant}
+              disabled={busy || confirmDisabled}
+              onClick={onConfirm}
+            >
               {confirmLabel}
             </Button>
           </div>

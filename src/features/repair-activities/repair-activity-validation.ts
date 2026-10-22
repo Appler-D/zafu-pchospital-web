@@ -153,13 +153,24 @@ export function canAcceptNewRegistration(status: RepairActivityStatus): boolean 
   return status === "OPEN";
 }
 
-/** 报名截止后才开放成员出勤、客户签到与接待；报满不代表报名截止。 */
-export function canOperateActivityStaff(signupClosesAt: Date | string, now = new Date()): boolean {
-  return now.getTime() >= new Date(signupClosesAt).getTime();
+type StaffActivityWindow = {
+  signupClosesAt: Date | string;
+  activityAt: Date | string;
+};
+
+/** 现场操作窗口：报名截止起，活动上海自然日结束前；报满不代表截止。 */
+export function canOperateActivityStaff(activity: StaffActivityWindow, now = new Date()): boolean {
+  return (
+    now.getTime() >= new Date(activity.signupClosesAt).getTime() &&
+    now.getTime() < activityEndExclusive(new Date(activity.activityAt)).getTime()
+  );
 }
 
-export function assertActivityStaffOpen(signupClosesAt: Date, now = new Date()): void {
-  if (!canOperateActivityStaff(signupClosesAt, now)) {
+export function assertActivityStaffOpen(activity: StaffActivityWindow, now = new Date()): void {
+  if (now.getTime() >= activityEndExclusive(new Date(activity.activityAt)).getTime()) {
+    throw new AppError("ACTIVITY_ENDED", "活动已结束，不能再出勤、签到或接待");
+  }
+  if (!canOperateActivityStaff(activity, now)) {
     throw new AppError("ACTIVITY_NOT_OPEN", "报名尚未截止，暂不可出勤、签到或接待");
   }
 }

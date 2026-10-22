@@ -175,15 +175,16 @@ async function loadActivityOrThrow(activityId: string) {
   return activity;
 }
 
-/** 锁定活动后读取最新报名截止时间，避免管理端改期与接待台写操作竞态。 */
+/** 活动锁后读最新窗口并取时；每次事务重试重新判断，避免改期与等锁越界。 */
 async function requireStaffOpen(tx: Prisma.TransactionClient, activityId: string) {
   await tx.$queryRaw`SELECT id FROM repair_activities WHERE id = ${activityId} FOR UPDATE`;
   const activity = await tx.repairActivity.findFirst({
     where: { id: activityId, deletedAt: null },
   });
   if (!activity) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
-  assertActivityStaffOpen(activity.signupClosesAt);
-  return activity;
+  const now = new Date();
+  assertActivityStaffOpen(activity, now);
+  return { activity, now };
 }
 
 async function requireAttendance(
@@ -350,7 +351,7 @@ export const repairActivityStaffService = {
     await loadActivityOrThrow(activityId);
 
     return inSerializableTransaction(async (tx) => {
-      await requireStaffOpen(tx, activityId);
+      const { now } = await requireStaffOpen(tx, activityId);
       const existing = await tx.repairActivityAttendance.findUnique({
         where: {
           activityId_memberProfileId: { activityId, memberProfileId: member.id },
@@ -359,7 +360,6 @@ export const repairActivityStaffService = {
       if (existing) {
         return { attended: true, checkedInAt: existing.checkedInAt.toISOString() };
       }
-      const now = new Date();
       const created = await tx.repairActivityAttendance.create({
         data: {
           id: randomUUID(),
@@ -505,8 +505,7 @@ export const repairActivityStaffService = {
     );
 
     return inSerializableTransaction(async (tx) => {
-      await requireStaffOpen(tx, activityId);
-      const now = new Date();
+      const { now } = await requireStaffOpen(tx, activityId);
       const checkedIn: StaffRegistrationView[] = [];
 
       for (const registrationId of uniqueIds) {
@@ -747,7 +746,7 @@ export const repairActivityStaffService = {
     }
 
     return inSerializableTransaction(async (tx) => {
-      const activity = await requireStaffOpen(tx, activityId);
+      const { activity, now } = await requireStaffOpen(tx, activityId);
       const reg = await tx.repairActivityRegistration.findFirst({
         where: { id: registrationId, activityId, deletedAt: null },
       });
@@ -784,7 +783,6 @@ export const repairActivityStaffService = {
         select: { id: true },
       });
 
-      const now = new Date();
       const { repairRecordId } = await createServeDraftForActivity(
         tx,
         {
