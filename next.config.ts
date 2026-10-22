@@ -1,6 +1,29 @@
+import { execSync } from "node:child_process";
+
 import type { NextConfig } from "next";
 
+/**
+ * 构建期版本（issue #189）：部署脚本在目标 commit 的独立 worktree 里构建，
+ * 因此这里的 HEAD 就是产物对应的提交；CI 与本地开发同样有 `.git`。
+ * 允许用 `BUILD_COMMIT_SHA` 覆盖（无 `.git` 的打包构建）；都取不到时留空，
+ * 后台显示「未知」而不是一个猜的版本。
+ */
+function readBuildCommit(): string {
+  const fromEnv = process.env.BUILD_COMMIT_SHA?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return execSync("git rev-parse HEAD", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3_000,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_COMMIT: readBuildCommit() },
   reactStrictMode: true,
   /* 默认会发 `X-Powered-By: Next.js`，等于对外报技术栈（安全审计 F6）。
      nginx 侧也可以用 `proxy_hide_header` 抹掉，这里从源头关掉更省事。 */
