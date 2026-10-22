@@ -11,6 +11,9 @@
 #   P1  服务器侦察（只读：HEAD、工作区、服务、内存、磁盘）
 #   P2  变更评估（提交列表 / 新迁移 SQL 风险扫描 / .env.example 变化）+ 人工确认
 #   P3  本地构建与打包（git worktree，不碰当前工作区；产出 tar + BUILD_COMMIT）
+#       无 .git 的打包构建（tarball / 容器内）需显式指定版本：
+#       BUILD_COMMIT_SHA=$(git rev-parse HEAD) pnpm build
+#       不指定且取不到 git HEAD 时，后台首页版本显示「未知」（不猜版本）。
 #   P4  数据库备份（mysqldump + 闸门：表数≥27、有 INSERT、gzip 完整）
 #   P5  上传产物并暂存校验（双端 sha256 对比 + 服务器端解包断言）
 #   P6  更新服务器代码与依赖（ff-only、.docs-source、pnpm install、db:generate）
