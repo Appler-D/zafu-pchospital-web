@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { DashStat, DashStats, DashTile } from "@/components/ui/dash";
 import { adminCopy, adminNavGroups } from "@/config/admin";
 import type { AdminDashboardSummary } from "@/features/admin/admin-dashboard";
+import { buildCommitInfo } from "@/lib/build-info";
 
 /**
  * 管理后台首页（重构版）
@@ -71,6 +72,16 @@ export function AdminHome() {
           <p className="dash-hero__meta">
             {today ? <span>{today}</span> : null}
             <span>{copy.lead}</span>
+            <span
+              className="dash-hero__version"
+              title={
+                buildCommitInfo.commit
+                  ? copy.versionTitle.replace("{sha}", buildCommitInfo.commit)
+                  : undefined
+              }
+            >
+              {copy.versionLabel} <b>{buildCommitInfo.short || copy.versionUnknown}</b>
+            </span>
           </p>
         </div>
       </header>

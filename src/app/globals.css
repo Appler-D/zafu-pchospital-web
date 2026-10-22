@@ -6578,6 +6578,18 @@ html[data-theme="black-yellow"] {
     margin-inline-end: var(--s-2);
     color: var(--ink-4);
   }
+  /* 线上版本（issue #189）：等宽、虚线下划线提示可悬停看完整 SHA。 */
+  .dash-hero__version {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    white-space: nowrap;
+    color: var(--ink-2);
+    border-bottom: 1px dotted var(--line);
+    cursor: help;
+  }
+  .dash-hero__version b {
+    font-weight: 600;
+    color: var(--ink);
+  }
   .dash-hero__actions {
     display: flex;
     gap: var(--s-2);

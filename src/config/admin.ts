@@ -306,6 +306,10 @@ export const adminCopy = {
   home: {
     label: "Admin",
     lead: "所有操作在服务端鉴权，并写入审计记录。",
+    /** 线上版本（issue #189）：构建期注入的 commit；取不到时显示「未知」。 */
+    versionLabel: "线上版本",
+    versionUnknown: "未知",
+    versionTitle: "完整提交：{sha}",
     /** 待办数字带：数字来自 `/api/v1/admin/dashboard`，加载失败显示为「—」而不是 0。 */
     todoTitle: "待办",
     todoTag: "To-do",
