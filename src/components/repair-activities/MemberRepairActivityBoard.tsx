@@ -141,7 +141,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         const next = json.data;
         setBoard(next);
         setClock(Date.now());
-        setServerEnded(next.activity.status === "ENDED");
+        // 粘滞：写请求或前一次 GET 已判定结束的活动不会「复活」，避免一次旧快照
+        // 把结束态与 60 秒节拍重置回可用状态（换活动时由 effect 显式清零）。
+        setServerEnded((ended) => ended || next.activity.status === "ENDED");
         hasBoard.current = true;
         // 首次加载落定手机端默认分区；已有选择（用户点过）保持不变。
         setMobilePane(
@@ -196,7 +198,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       if (document.visibilityState === "visible") void load(true);
     };
     refresh();
-    const timer = window.setInterval(refresh, 5_000);
+    // 结束后接待台通常只剩查看/纠错：节拍降到 60 秒，减少无谓的看板 GET；
+    // `serverEnded` 变化会重建本 effect，并立即 refresh 一次完成收尾。
+    const timer = window.setInterval(refresh, serverEnded ? 60_000 : 5_000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -204,7 +208,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [load, paused]);
+  }, [load, paused, serverEnded]);
 
   useLayoutEffect(() => {
     const position = scrollPosition.current;
@@ -251,6 +255,10 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     }
   }
 
+  /**
+   * 操作窗口的即时判定：渲染态用 5 秒节拍的 `clock`，这里必须用实时时间 ——
+   * 确认窗可能在两次节拍之间跨过结束点，写操作必须按当前时刻复核（不要改成 `clock`）。
+   */
   function blockedStaffMessage(): string | null {
     if (!board) return copy.loadFailed;
     const now = new Date();

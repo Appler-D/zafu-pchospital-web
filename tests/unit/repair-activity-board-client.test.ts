@@ -113,10 +113,23 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     },
   });
   (globalThis as unknown as { React: typeof React }).React = React;
-  const slots: unknown[] = [],
-    effects: (() => void | (() => void))[] = [];
+  const slots: unknown[] = [];
+  const effectSlots: { deps?: unknown[]; cleanup?: () => void }[] = [];
+  const pendingEffects: { index: number; effect: () => void | (() => void) }[] = [];
+  const callbackSlots: { deps?: unknown[]; callback: unknown }[] = [];
   let cursor = 0,
+    effectCursor = 0,
+    callbackCursor = 0,
     mounted = false;
+  const depsChanged = (previous: unknown[] | undefined, next: unknown[] | undefined) =>
+    !previous ||
+    !next ||
+    previous.length !== next.length ||
+    previous.some((value, index) => !Object.is(value, next[index]));
+  const runEffect = (effect: () => void | (() => void)): (() => void) | undefined => {
+    const cleanup = effect();
+    return typeof cleanup === "function" ? cleanup : undefined;
+  };
   t.mock.method(React, "useState", <S>(initial: S | (() => S)) => {
     const index = cursor++;
     if (!(index in slots))
@@ -134,16 +147,31 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     if (!(index in slots)) slots[index] = { current: initial };
     return slots[index];
   });
-  t.mock.method(React, "useEffect", (effect: () => void | (() => void)) => {
-    if (!mounted) effects.push(effect);
+  t.mock.method(React, "useEffect", (effect: () => void | (() => void), deps?: unknown[]) => {
+    const index = effectCursor++;
+    if (!mounted) {
+      effectSlots[index] = { deps };
+      pendingEffects.push({ index, effect });
+      return;
+    }
+    const previous = effectSlots[index];
+    if (previous && !depsChanged(previous.deps, deps)) return;
+    previous?.cleanup?.();
+    effectSlots[index] = { deps, cleanup: runEffect(effect) };
   });
   t.mock.method(React, "useLayoutEffect", () => {});
-  t.mock.method(React, "useCallback", (callback: unknown) => callback);
+  t.mock.method(React, "useCallback", (callback: unknown, deps?: unknown[]) => {
+    const index = callbackCursor++;
+    if (!callbackSlots[index] || depsChanged(callbackSlots[index].deps, deps))
+      callbackSlots[index] = { deps, callback };
+    return callbackSlots[index].callback;
+  });
   t.mock.method(React, "useContext", (context: unknown) => {
     assert.equal(context, AppRouterContext);
     return { push() {}, refresh() {} };
   });
   const posts: string[] = [];
+  let gets = 0;
   t.mock.method(globalThis, "fetch", async (input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       posts.push(String(input));
@@ -153,19 +181,24 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
         { status: 404 },
       );
     }
+    gets += 1;
     return Response.json({ success: true, data });
   });
   const { MemberRepairActivityBoard } =
     await import("../../src/components/repair-activities/MemberRepairActivityBoard");
   const view = () => {
     cursor = 0;
+    effectCursor = 0;
+    callbackCursor = 0;
     return MemberRepairActivityBoard({ activityId: "activity" });
   };
   view();
   mounted = true;
-  const cleanups = effects.map((effect) => effect());
+  for (const { index, effect } of pendingEffects) {
+    effectSlots[index].cleanup = runEffect(effect);
+  }
   t.after(() => {
-    for (const cleanup of cleanups) cleanup?.();
+    for (const slot of effectSlots) slot.cleanup?.();
     for (const [key, descriptor] of originals) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else Reflect.deleteProperty(globalThis, key);
@@ -183,7 +216,7 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     return elements(view()).find((element) => element.props.title === copy.checkInConfirmTitle)
       ?.props;
   }
-  return { view, button, dialog, posts, elements: () => elements(view()) };
+  return { view, button, dialog, posts, gets: () => gets, elements: () => elements(view()) };
 }
 
 test("结束的看板保留历史、出勤状态和纠错，三项控件禁用且不误报尚未截止", async (t) => {
@@ -251,4 +284,24 @@ test("服务端先判定结束时保留看板并禁用操作，不伪报出勤�
   assert.equal(ui.button(copy.serve).disabled, true);
   assert.ok(text(ui.view()).includes(copy.activityEnded));
   assert.equal(text(ui.view()).includes(copy.attendedBadge), false);
+});
+
+test("结束后轮询节拍降为 60 秒，历史看板保留", async (t) => {
+  const data = board(true);
+  data.activity.status = "ENDED";
+  const ui = await mount(t, data, end);
+  // 初次加载判定结束后 effect 依赖变化会重建节拍；先让重建后的首轮刷新落定。
+  ui.view();
+  await setImmediate();
+  const baseline = ui.gets();
+  t.mock.timers.tick(5_000);
+  await setImmediate();
+  assert.equal(ui.gets(), baseline, "结束后不再按 5 秒节拍取数");
+  t.mock.timers.tick(60_000);
+  await setImmediate();
+  assert.ok(ui.gets() > baseline, "60 秒节拍恢复刷新");
+  assert.equal(
+    ui.elements().some((element) => element.props.message === copy.activityEnded),
+    true,
+  );
 });
