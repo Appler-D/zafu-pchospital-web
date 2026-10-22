@@ -904,3 +904,56 @@ dbTest("活动结束仍可撤销接待：清理历史评论、收藏与通知，
   });
   assert.equal(row.status, "CHECKED_IN", "撤销后报名回到排队");
 });
+
+/* ------------------------------------------- 撤回审核与接待（issue #165） */
+
+dbTest("已撤回的接待记录不拦截下一位、不可撤销接待；未提交草稿仍拦截", async () => {
+  await discardServeDrafts();
+  const registration = await createCheckedInRegistration("撤审甲", "13900002020");
+  const served = await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
+  const record = await getDb().repairRecord.findUniqueOrThrow({
+    where: { id: served.repairRecordId },
+  });
+  const filled = await repairService.update(
+    record.id,
+    { version: record.version, durationMinutes: 15 },
+    staffActor,
+  );
+  const submitted = await repairService.submit(
+    record.id,
+    { version: filled.version, idempotencyKey: randomUUID() },
+    staffActor,
+  );
+  assert.equal(submitted.status, "PENDING");
+  const withdrawn = await repairService.withdraw(
+    record.id,
+    { version: submitted.version, idempotencyKey: randomUUID() },
+    staffActor,
+  );
+  assert.equal(withdrawn.status, "DRAFT");
+
+  const board = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  assert.equal(board.pendingServeDraft, null, "已撤回记录不算未提交的接待草稿");
+  const row = board.served.find((item) => item.id === registration.id);
+  assert.equal(row?.recordStatus, "DRAFT");
+  assert.equal(row?.recordWithdrawn, true);
+  assert.equal(row?.canRevert, false, "已提交过的记录不能按撤销接待整条删除");
+
+  // 下一位可以正常接待（全局拦截不触发）。
+  const next = await createCheckedInRegistration("撤审乙", "13900002021");
+  const servedNext = await repairActivityStaffService.serve(ACTIVITY_ID, next.id, staffActor);
+  assert.ok(servedNext.repairRecordId);
+
+  // 服务端也拒绝撤销接待，而不是只把按钮藏起来。
+  await expectCode(
+    () => repairActivityStaffService.revertServe(ACTIVITY_ID, registration.id, staffActor),
+    "ACTIVITY_REGISTRATION_STATE_INVALID",
+  );
+
+  // 从未提交的接待草稿仍然全局拦截。
+  const third = await createCheckedInRegistration("撤审丙", "13900002022");
+  await expectCode(
+    () => repairActivityStaffService.serve(ACTIVITY_ID, third.id, staffActor),
+    "ACTIVITY_SERVE_DRAFT_PENDING",
+  );
+});

@@ -80,6 +80,22 @@ export const repairStatusLabels: Record<(typeof RepairStatus)[number], string> =
   APPROVED: "已通过",
   REJECTED: "已退回",
 };
+/** 已撤回审核的草稿（DRAFT 且曾经提交过，issue #165）：与未填完的草稿区分。 */
+export const repairWithdrawnLabel = "已撤回";
+export const repairDetailCopy = {
+  withdraw: "撤回审核",
+  withdrawing: "撤回中…",
+  withdrawConfirmTitle: "确认撤回审核？",
+  withdrawConfirmHint:
+    "撤回后记录回到草稿，可修改后重新提交；这次操作会保留在时间线与审计记录里。已通过或已退回的记录不在此处理。",
+  withdrawConfirm: "确认撤回",
+  withdrawCancel: "取消",
+  withdrawSuccess: "已撤回，记录回到草稿。",
+  withdrawFailed: "撤回失败，请稍后重试",
+  withdrawInvalidResponse: "服务返回了无法解析的响应",
+  withdrawNetworkError: "网络异常，请检查连接后重试",
+  withdrawnNotice: "这条记录已从审核中撤回，修改后可重新提交。",
+} as const;
 export const repairResultLabels: Record<(typeof RepairResult)[number], string> = {
   COMPLETED: "已完成",
   NOT_COMPLETED: "未完成",
@@ -170,6 +186,7 @@ export const repairTimelineLabels = {
   PHOTO_REMOVED: "移除照片",
   SUBMITTED: "提交审核",
   RESUBMITTED: "重新提交",
+  WITHDRAWN: "撤回审核",
   APPROVED: "审核通过",
   REJECTED: "审核退回",
   DELETED: "软删除",

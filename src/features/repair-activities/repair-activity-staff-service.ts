@@ -63,6 +63,8 @@ export type StaffRegistrationView = {
 /** 已接待行：报名视图 + 对应维修单状态（`null` = 记录缺失或已软删除）。 */
 export type StaffServedRow = StaffRegistrationView & {
   recordStatus: RepairStatus | null;
+  /** 这条记录已从审核中撤回（issue #165）：状态是 DRAFT，但曾经提交过。 */
+  recordWithdrawn: boolean;
   /** 当前操作者能否撤销这次接待：接待者本人或活动管理员，且草稿仍未提交（issue #166）。 */
   canRevert: boolean;
 };
@@ -220,6 +222,9 @@ function pendingServeDraftWhere(memberProfileId: string) {
     memberProfileId,
     status: "DRAFT" as const,
     deletedAt: null,
+    // 已撤回审核的草稿（submittedAt 非空）不算「未提交的接待草稿」（issue #165）：
+    // 它已经走过一次提交流程，不应再拦截下一位客户的接待。
+    submittedAt: null,
     activityRegistration: { isNot: null },
   };
 }
@@ -405,7 +410,11 @@ export const repairActivityStaffService = {
         }),
         getDb().repairActivityRegistration.findMany({
           where: { activityId, deletedAt: null, status: "SERVED" },
-          include: { repairRecord: { select: { id: true, status: true, deletedAt: true } } },
+          include: {
+            repairRecord: {
+              select: { id: true, status: true, submittedAt: true, deletedAt: true },
+            },
+          },
         }),
         findPendingServeDraft(member.id),
         // 出勤名单仅管理员视图需要；成员在库层就不取（issue #108）。
@@ -446,12 +455,17 @@ export const repairActivityStaffService = {
           row.repairRecord && !row.repairRecord.deletedAt
             ? (row.repairRecord.status as RepairStatus)
             : null;
+        // 已撤回的草稿仍可编辑，但不再算「未提交的接待草稿」（issue #165）。
+        const recordWithdrawn = recordStatus === "DRAFT" && Boolean(row.repairRecord?.submittedAt);
         return {
           ...toStaffReg(row),
           recordStatus,
-          // 撤销接待：仅接待者本人或活动管理员；已提交 / 已审核的记录不能撤（issue #166）。
+          recordWithdrawn,
+          // 撤销接待：仅接待者本人或活动管理员；已提交 / 已审核 / 已撤回的记录不能撤（issue #166）。
           canRevert:
-            recordStatus === "DRAFT" && (canAdmin || row.servedByMemberProfileId === member.id),
+            recordStatus === "DRAFT" &&
+            !recordWithdrawn &&
+            (canAdmin || row.servedByMemberProfileId === member.id),
         };
       });
 
@@ -645,9 +659,10 @@ export const repairActivityStaffService = {
 
       const record = await tx.repairRecord.findFirst({
         where: { id: reg.repairRecordId, deletedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, submittedAt: true },
       });
-      if (!record || record.status !== "DRAFT")
+      // 已撤回审核的草稿（submittedAt 非空）曾进入审核流程，不允许按「撤销接待」整条删除。
+      if (!record || record.status !== "DRAFT" || record.submittedAt)
         throw new AppError(
           "ACTIVITY_REGISTRATION_STATE_INVALID",
           "维修记录已提交或不存在，不能撤销接待",

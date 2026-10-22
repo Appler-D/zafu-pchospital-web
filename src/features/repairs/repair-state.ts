@@ -5,6 +5,9 @@ const allowed = new Set([
   "REJECTED:PENDING",
   "PENDING:APPROVED",
   "PENDING:REJECTED",
+  // 撤回审核（issue #165）：仅创建人，回到草稿后重新编辑并提交。
+  // 只给 withdraw 使用，不要当作通用「退回」语义（退回仍走审核的 REJECTED）。
+  "PENDING:DRAFT",
 ]);
 export function isRepairTransitionAllowed(from: RepairStatus, to: RepairStatus): boolean {
   return allowed.has(`${from}:${to}`);

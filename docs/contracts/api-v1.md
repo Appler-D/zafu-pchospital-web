@@ -214,6 +214,7 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 - `GET/POST /api/v1/repairs`
 - `GET/PATCH/DELETE /api/v1/repairs/:id`（DELETE 仅管理员）
 - `POST /api/v1/repairs/:id/submit`
+- `POST /api/v1/repairs/:id/withdraw`（issue #165：创建人撤回待审核记录，PENDING → DRAFT）
 - `POST /api/v1/repairs/:id/photos`
 - `PATCH/DELETE /api/v1/repairs/:id/photos/:photoId`
 - `GET /api/v1/repair-photos/:photoId/content`
@@ -233,7 +234,7 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 
 | 传递方式                     | 端点                                                                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`                                                                                            |
+| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`、`POST /api/v1/repairs/:id/withdraw`                                                                                            |
 | 请求体字段 `idempotencyKey`  | 管理端与后台写接口：`POST /api/v1/admin/repairs/:id/reviews`、`.../batch-reviews`、`admin/members`、`join-applications/:id/reviews`、`member-registrations/invite` |
 
 单条审核的键上限 128 位；批次键按 `${批次键}:${recordId}` 给每条记录派生一个键，`recordId` 是
@@ -246,6 +247,17 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 `REPAIR_VERSION_CONFLICT`。列表支持分页、成员、分类、状态、结果、日期、疑难、典型和关键词
 筛选；普通成员只能看到本人全部状态与他人的 `APPROVED` 记录。照片内容接口要求有效 Session，
 并返回私有缓存、`nosniff`、正确 MIME 与长度。
+
+撤回审核（issue #165）：
+
+- `POST /api/v1/repairs/:id/withdraw`，请求体 `{version}`，`Idempotency-Key` 请求头与 `submit` 同形；
+  仅**记录创建人**可调用，只允许 `PENDING → DRAFT`；管理员、参与者、其他成员返回 `REPAIR_FORBIDDEN`，
+  非 `PENDING` 状态返回 `REPAIR_STATE_INVALID` 409。
+- 撤回**保留 `submittedAt`**：它同时是「这条草稿曾经提交过」的标记，成员列表 / 详情 / 活动看板
+  据此显示「已撤回」，接待流程据此把它排除在「未提交的接待草稿」之外（不拦截下一位接待，
+  也不能按「撤销接待」整条删除）。
+- 时间线写 `WITHDRAWN`（from/to 与幂等键），审计写 `repair.withdrawn`；不产生通知。
+  相同幂等键重放直接返回当前记录，不会二次撤回。
 
 ## M3 成员工作台与个人主页
 

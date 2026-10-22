@@ -40,6 +40,7 @@ export const RepairTimelineEventType = [
   "PHOTO_REMOVED",
   "SUBMITTED",
   "RESUBMITTED",
+  "WITHDRAWN",
   "APPROVED",
   "REJECTED",
   "DELETED",
@@ -646,6 +647,8 @@ export type RepairDetailView = RepairView & {
   reviews: RepairReviewView[];
   timeline: RepairTimelineView[];
   canEdit: boolean;
+  /** 创建人且记录待审核：可撤回成草稿重新编辑（issue #165）。 */
+  canWithdraw: boolean;
   canReview: boolean;
   canFlag: boolean;
   isFavorited: boolean;
@@ -1485,6 +1488,8 @@ export interface RepairServiceContract {
   createDraft(input: CreateRepairDraftInput, actor: AuthorizedActor): Promise<RepairView>;
   update(recordId: string, input: UpdateRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   submit(recordId: string, input: SubmitRepairInput, actor: AuthorizedActor): Promise<RepairView>;
+  /** 撤回审核（issue #165）：PENDING → DRAFT，仅创建人；入参与 submit 同形。 */
+  withdraw(recordId: string, input: SubmitRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   softDelete(recordId: string, reason: string, actor: AuthorizedActor): Promise<void>;
 }
 export interface RepairReviewServiceContract {

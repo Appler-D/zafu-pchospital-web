@@ -6,7 +6,7 @@ import { AppError } from "@/lib/api/errors";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { assertCanEditRepair } from "./repair-policy";
+import { assertCanEditRepair, assertCanWithdrawRepair } from "./repair-policy";
 import { repairDetailInclude, repairRepository } from "./repair-repository";
 import {
   isBlankDraftFields,
@@ -155,6 +155,63 @@ export const repairService: RepairServiceContract = {
         { from, to: "PENDING", idempotencyKey: input.idempotencyKey },
         now,
       );
+      return tx.repairRecord.findUniqueOrThrow({
+        where: { id: recordId },
+        include: repairDetailInclude,
+      });
+    });
+    return toRepairView(updated, { canViewOwnerPhone: true });
+  },
+
+  /**
+   * 撤回审核（issue #165）：创建人把尚未审核的记录退回草稿，修改后可重新提交。
+   *
+   * 保留 `submittedAt` 作为「提交过」的标记 —— 前端据此把这条草稿标成「已撤回」，
+   * 接待流程也据此把它排除在「未提交的接待草稿」之外。审核结论、通知与统计不受影响。
+   */
+  async withdraw(recordId, input, actor) {
+    requirePermission(actor, "repair:submit");
+    const key = input.idempotencyKey.trim();
+    if (!key || key.length > 128) throw new AppError("VALIDATION_FAILED", "Idempotency-Key 无效");
+    const record = await repairRepository.getById(recordId);
+    // 撤回是低频操作，直接读完整详情（含 timeline）比对幂等键即可；
+    // 若将来调用频率上升，再改为按 (recordId, eventType, key) 的定向查询。
+    const retry = record.timeline.some((event) => {
+      if (event.eventType !== "WITHDRAWN") return false;
+      const summary = event.summary as { idempotencyKey?: unknown } | null;
+      return summary?.idempotencyKey === key;
+    });
+    assertCanWithdrawRepair(actor, record, { allowNonPending: retry });
+    if (retry) return toRepairView(record, { canViewOwnerPhone: true });
+    if (record.version !== input.version)
+      throw new AppError("REPAIR_VERSION_CONFLICT", "记录已被更新，请刷新后重试");
+    const now = new Date();
+    const updated = await inSerializableTransaction(async (tx) => {
+      const result = await tx.repairRecord.updateMany({
+        where: { id: recordId, version: input.version, status: "PENDING", deletedAt: null },
+        // 不动 submittedAt：它同时是「这条草稿曾经提交过」的标记（issue #165 的「已撤回」标签）。
+        data: { status: "DRAFT", version: { increment: 1 } },
+      });
+      if (result.count !== 1) throw new AppError("REPAIR_STATE_CONFLICT", "记录状态已变化");
+      await timeline(
+        tx,
+        recordId,
+        actor.userId,
+        "WITHDRAWN",
+        { from: "PENDING", to: "DRAFT", idempotencyKey: key },
+        now,
+      );
+      await appendAuditLog(tx, {
+        actor,
+        actorType: "USER",
+        actorUserId: actor.userId,
+        action: "repair.withdrawn",
+        targetType: "RepairRecord",
+        targetId: recordId,
+        result: "SUCCESS",
+        before: { status: "PENDING", version: record.version },
+        after: { status: "DRAFT", version: record.version + 1 },
+      });
       return tx.repairRecord.findUniqueOrThrow({
         where: { id: recordId },
         include: repairDetailInclude,

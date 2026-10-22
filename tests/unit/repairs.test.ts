@@ -18,7 +18,11 @@ import {
   RepairTimelineEventType,
   type RepairDraftFields,
 } from "../../src/types/contracts";
-import { draftInput, parseRepairListStatus, repairListInput } from "../../src/features/repairs/repair-http";
+import {
+  draftInput,
+  parseRepairListStatus,
+  repairListInput,
+} from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
 
@@ -121,8 +125,11 @@ test("维修状态机只接受任务书规定流转", () => {
   assert.equal(isRepairTransitionAllowed("REJECTED", "PENDING"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "APPROVED"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "REJECTED"), true);
+  // 撤回审核（issue #165）：待审核回到草稿，仅此一条反向流转。
+  assert.equal(isRepairTransitionAllowed("PENDING", "DRAFT"), true);
   assert.equal(isRepairTransitionAllowed("APPROVED", "DRAFT"), false);
   assert.equal(isRepairTransitionAllowed("DRAFT", "APPROVED"), false);
+  assert.equal(isRepairTransitionAllowed("REJECTED", "DRAFT"), false);
 });
 test("提交完整性：日期、时长、分类、机主姓名与电话必填；正文与照片不再是门槛", () => {
   const complete = {
