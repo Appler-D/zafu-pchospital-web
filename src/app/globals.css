@@ -5744,6 +5744,11 @@ html[data-theme="black-yellow"] {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+  .admin-email-edit:disabled {
+    border-color: var(--line);
+    color: var(--ink-4);
+    cursor: not-allowed;
+  }
 
   /* ------------------------------------------------ 拖动排序（技能 / 分类） */
   /* 手柄：只有它是 draggable，行本身不可拖（否则表格里的文字选不中）。 */

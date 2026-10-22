@@ -864,6 +864,8 @@ export const adminCopy = {
       editNotificationEmail: "更正",
       /** 通知在途时不允许改地址：等结果出来再更正，避免「改完还以为发到了新地址」。 */
       emailSendingNote: "通知正在发送，请等待结果后再更正。",
+      /** 已交发信服务 / 结果未知：记录可改，但已发通知不会改发。 */
+      emailSentNote: "通知已发出，更正只更新报名记录，不会改发已发通知。",
       /** 学号 / 班级（issue #147）：历史报名未填写时显示 adminShared.none。 */
       student: "学号与班级",
       studentId: "学号",

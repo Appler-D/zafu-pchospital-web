@@ -452,6 +452,8 @@ function ApplicationDetailPanel({
   const [deleteProblem, setDeleteProblem] = useState("");
   /** 更正通知邮箱（issue #161）：与详情同一窗口，切换内容而不是叠第二层弹层。 */
   const [correcting, setCorrecting] = useState(false);
+  /** 更正表单保存中：阻止关闭整个窗口，避免请求完成后结果落到已卸载的界面。 */
+  const [correctingBusy, setCorrectingBusy] = useState(false);
   /** 登记面试结果返回的初始密码：响应里的值只出现一次，留在窗口里展示（规则见下方说明）。 */
   const [secret, setSecret] = useState("");
   const [provision, setProvision] = useState<ProvisionView | null>(null);
@@ -606,7 +608,7 @@ function ApplicationDetailPanel({
         title={copy.emailCorrection.title}
         subtitle={`${detail.ticketNo} · ${detail.realName}`}
         onClose={() => {
-          if (!busy) onClose();
+          if (!busy && !correctingBusy) onClose();
         }}
       >
         <AdminToast toast={toast} onDismiss={() => setToast(null)} />
@@ -614,6 +616,7 @@ function ApplicationDetailPanel({
           applicationId={applicationId}
           detail={detail}
           onBack={() => setCorrecting(false)}
+          onBusyChange={setCorrectingBusy}
           onProblem={(text) => setToast({ text, tone: "neutral" })}
           onSaved={(result) => {
             setDetail((current) =>
@@ -689,17 +692,23 @@ function ApplicationDetailPanel({
               {detail.notification?.status === "SENDING" ? (
                 <span className="admin-note">{copy.detail.emailSendingNote}</span>
               ) : (
-                <button
-                  type="button"
-                  className="admin-email-edit"
-                  disabled={busy}
-                  onClick={() => {
-                    setProblem("");
-                    setCorrecting(true);
-                  }}
-                >
-                  {copy.detail.editNotificationEmail}
-                </button>
+                <>
+                  {detail.notification?.status === "ACCEPTED" ||
+                  detail.notification?.status === "UNCERTAIN" ? (
+                    <span className="admin-note">{copy.detail.emailSentNote}</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="admin-email-edit"
+                    disabled={busy}
+                    onClick={() => {
+                      setProblem("");
+                      setCorrecting(true);
+                    }}
+                  >
+                    {copy.detail.editNotificationEmail}
+                  </button>
+                </>
               )}
             </div>
             <p className="admin-note">{copy.detail.contactsNote}</p>
@@ -901,12 +910,14 @@ function EmailCorrectionForm({
   applicationId,
   detail,
   onBack,
+  onBusyChange,
   onSaved,
   onProblem,
 }: {
   applicationId: string;
   detail: JoinApplicationDetail;
   onBack: () => void;
+  onBusyChange: (busy: boolean) => void;
   onSaved: (result: JoinNotificationEmailCorrection) => void;
   onProblem: (text: string) => void;
 }) {
@@ -921,20 +932,25 @@ function EmailCorrectionForm({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
+    onBusyChange(true);
     setProblem("");
-    const result = await adminFetch<JoinNotificationEmailCorrection>(
-      `/api/v1/admin/join-applications/${applicationId}/notification/email`,
-      { method: "PATCH", body: { email } },
-    );
-    setBusy(false);
-    if (!result.ok) {
-      const text =
-        result.code === "STATE_TRANSITION_INVALID" ? copy.sendingBlocked : result.message;
-      setProblem(text);
-      onProblem(text);
-      return;
+    try {
+      const result = await adminFetch<JoinNotificationEmailCorrection>(
+        `/api/v1/admin/join-applications/${applicationId}/notification/email`,
+        { method: "PATCH", body: { email } },
+      );
+      if (!result.ok) {
+        const text =
+          result.code === "STATE_TRANSITION_INVALID" ? copy.sendingBlocked : result.message;
+        setProblem(text);
+        onProblem(text);
+        return;
+      }
+      onSaved(result.data);
+    } finally {
+      setBusy(false);
+      onBusyChange(false);
     }
-    onSaved(result.data);
   }
 
   return (
@@ -960,7 +976,13 @@ function EmailCorrectionForm({
         </label>
       </div>
       {/* 已交发信服务 / 结果未知是风险提示，用错误态让管理员先停下来核查。 */}
-      <p className={status === "ACCEPTED" ? "admin-status admin-status--error" : "admin-note"}>
+      <p
+        className={
+          status === "ACCEPTED" || status === "UNCERTAIN"
+            ? "admin-status admin-status--error"
+            : "admin-note"
+        }
+      >
         {hint}
       </p>
       <p className="admin-note">{copy.auditNote}</p>
