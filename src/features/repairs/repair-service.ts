@@ -174,6 +174,8 @@ export const repairService: RepairServiceContract = {
     const key = input.idempotencyKey.trim();
     if (!key || key.length > 128) throw new AppError("VALIDATION_FAILED", "Idempotency-Key 无效");
     const record = await repairRepository.getById(recordId);
+    // 撤回是低频操作，直接读完整详情（含 timeline）比对幂等键即可；
+    // 若将来调用频率上升，再改为按 (recordId, eventType, key) 的定向查询。
     const retry = record.timeline.some((event) => {
       if (event.eventType !== "WITHDRAWN") return false;
       const summary = event.summary as { idempotencyKey?: unknown } | null;

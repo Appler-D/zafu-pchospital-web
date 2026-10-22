@@ -91,6 +91,9 @@ export const repairDetailCopy = {
   withdrawConfirm: "确认撤回",
   withdrawCancel: "取消",
   withdrawSuccess: "已撤回，记录回到草稿。",
+  withdrawFailed: "撤回失败，请稍后重试",
+  withdrawInvalidResponse: "服务返回了无法解析的响应",
+  withdrawNetworkError: "网络异常，请检查连接后重试",
   withdrawnNotice: "这条记录已从审核中撤回，修改后可重新提交。",
 } as const;
 export const repairResultLabels: Record<(typeof RepairResult)[number], string> = {

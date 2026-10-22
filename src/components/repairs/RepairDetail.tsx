@@ -59,7 +59,10 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
     void load();
   }, [load]);
 
-  /** 撤回审核（issue #165）：失败时留在弹层里显示原因，不把整页切错误态。 */
+  /**
+   * 撤回审核（issue #165）：失败时留在弹层里显示原因，不把整页切错误态。
+   * 请求异常 / 非 JSON 响应单独兜底，不把技术错误信息展示给成员。
+   */
   async function withdraw() {
     if (!record || withdrawBusy) return;
     setWithdrawBusy(true);
@@ -70,13 +73,28 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
         headers: { "Content-Type": "application/json", "Idempotency-Key": withdrawKey },
         body: JSON.stringify({ version: record.version }),
       });
-      const json = await response.json();
-      if (!json.success) throw new Error(json.error.message);
+      let payload: { success?: boolean; error?: { message?: string } } | null = null;
+      try {
+        payload = (await response.json()) as {
+          success?: boolean;
+          error?: { message?: string };
+        };
+      } catch {
+        payload = null;
+      }
+      if (!response.ok || !payload?.success) {
+        setWithdrawError(
+          payload === null
+            ? repairDetailCopy.withdrawInvalidResponse
+            : (payload.error?.message ?? repairDetailCopy.withdrawFailed),
+        );
+        return;
+      }
       setWithdrawOpen(false);
       setToast({ text: repairDetailCopy.withdrawSuccess, tone: "success" });
       await load();
-    } catch (e) {
-      setWithdrawError(e instanceof Error ? e.message : "撤回失败，请稍后重试");
+    } catch {
+      setWithdrawError(repairDetailCopy.withdrawNetworkError);
     } finally {
       setWithdrawBusy(false);
     }
