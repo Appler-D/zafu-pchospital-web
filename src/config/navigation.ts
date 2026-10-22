@@ -9,6 +9,10 @@
 
 import type { IconName } from "@/components/ui/Icon";
 
+export const shellNavigationCopy = {
+  backHome: "返回官网",
+} as const;
+
 export type NavItem = {
   /** 章节编号，用于索引栏与浮层的 "01 / 02" 标记 */
   index: string;

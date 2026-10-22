@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/layout/AccountMenu";
+import { ShellHomeLink } from "@/components/layout/ShellHomeLink";
 import { ShellTabBar, type ShellTab } from "@/components/layout/ShellTabBar";
 import { Icon } from "@/components/ui/Icon";
 import { adminCopy, adminNavGroups } from "@/config/admin";
@@ -14,7 +15,7 @@ import type { AdminDashboardSummary } from "@/features/admin/admin-dashboard";
  * 后台导航（工作台重构版）
  *
  * 桌面（≥1100px）：左侧栏，11 个模块按「待办 / 维修业务 / 成员与账号 / 内容配置 / 数据」
- * 平铺，足部只有账号菜单。窄屏：侧栏收成顶部一条（品牌 + 账号菜单），导航交给底部
+ * 平铺，足部保留返回官网与账号菜单。窄屏：侧栏收成顶部一条（品牌 + 返回官网 + 账号），导航交给底部
  * 固定的标签栏（首页 / 审核 / 招募 / 成员 / 更多），其余 8 个模块收进「更多」抽屉。
  *
  * 「维修审核」与「招募审核」带待办角标（待审核数 / 待跟进报名数），
@@ -93,8 +94,7 @@ export function AdminNav({ displayName = null }: AdminNavProps) {
               <p className="admin-nav__group-title">{group.title}</p>
               <ul className="admin-nav__list">
                 {group.items.map((item) => {
-                  const current =
-                    pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   const raw = badges[item.href];
                   const badge = typeof raw === "number" && raw > 0 ? raw : null;
                   return (
@@ -123,7 +123,8 @@ export function AdminNav({ displayName = null }: AdminNavProps) {
           ))}
         </div>
 
-        <div className="admin-nav__foot">
+        <div className="admin-nav__foot shell-nav-actions">
+          <ShellHomeLink />
           <AccountMenu variant="nav" initialDisplayName={displayName ?? null} />
         </div>
       </nav>

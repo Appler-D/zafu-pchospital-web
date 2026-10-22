@@ -1040,7 +1040,9 @@ html[data-theme="black-yellow"] {
   }
 
   .rail,
-  .rail > nav {
+  .rail > nav,
+  .member-nav__groups,
+  .admin-nav__groups {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;
   }
@@ -1048,29 +1050,41 @@ html[data-theme="black-yellow"] {
   /* Chromium / Safari 用窄滑块替代系统轨道与箭头；其它浏览器用上面的标准属性。 */
   @supports selector(::-webkit-scrollbar) {
     .rail,
-    .rail > nav {
+    .rail > nav,
+    .member-nav__groups,
+    .admin-nav__groups {
       scrollbar-width: auto;
       scrollbar-color: auto;
     }
     .rail::-webkit-scrollbar,
-    .rail > nav::-webkit-scrollbar {
+    .rail > nav::-webkit-scrollbar,
+    .member-nav__groups::-webkit-scrollbar,
+    .admin-nav__groups::-webkit-scrollbar {
       width: var(--s-1);
     }
     .rail::-webkit-scrollbar-track,
-    .rail > nav::-webkit-scrollbar-track {
+    .rail > nav::-webkit-scrollbar-track,
+    .member-nav__groups::-webkit-scrollbar-track,
+    .admin-nav__groups::-webkit-scrollbar-track {
       background: transparent;
     }
     .rail::-webkit-scrollbar-thumb,
-    .rail > nav::-webkit-scrollbar-thumb {
+    .rail > nav::-webkit-scrollbar-thumb,
+    .member-nav__groups::-webkit-scrollbar-thumb,
+    .admin-nav__groups::-webkit-scrollbar-thumb {
       background: var(--line-strong);
       border-radius: var(--r-full);
     }
     .rail::-webkit-scrollbar-thumb:hover,
-    .rail > nav::-webkit-scrollbar-thumb:hover {
+    .rail > nav::-webkit-scrollbar-thumb:hover,
+    .member-nav__groups::-webkit-scrollbar-thumb:hover,
+    .admin-nav__groups::-webkit-scrollbar-thumb:hover {
       background: var(--ink-3);
     }
     .rail::-webkit-scrollbar-button,
-    .rail > nav::-webkit-scrollbar-button {
+    .rail > nav::-webkit-scrollbar-button,
+    .member-nav__groups::-webkit-scrollbar-button,
+    .admin-nav__groups::-webkit-scrollbar-button {
       display: none;
     }
   }
@@ -5184,6 +5198,56 @@ html[data-theme="black-yellow"] {
     margin: var(--s-3) 0 0;
     max-width: var(--measure);
     color: var(--ink-3);
+  }
+
+  /* 两种工作区共用的官网入口，桌面位于非滚动的账号区。 */
+  .shell-home-link {
+    inline-size: 100%;
+    gap: var(--s-2);
+    padding-inline: var(--s-3);
+    font-size: var(--t-xs);
+    white-space: nowrap;
+  }
+  @media (max-width: 1099px) {
+    .admin-nav__foot.shell-nav-actions,
+    .member-nav__foot.shell-nav-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: var(--s-2);
+      min-inline-size: 0;
+      flex: 1;
+    }
+    .shell-nav-actions .shell-home-link {
+      inline-size: auto;
+      flex: none;
+      gap: var(--s-1);
+      padding-inline: var(--s-2);
+    }
+    .shell-nav-actions .account-menu {
+      min-inline-size: 0;
+      flex: 0 1 10rem;
+    }
+    .admin-nav__brand,
+    .member-nav__brand {
+      min-inline-size: 0;
+    }
+    .admin-nav__brand span,
+    .member-nav__brand span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  @media (max-width: 759px) {
+    /* 手机保留可点的头像与账号菜单，把空间留给常驻的返回文字。 */
+    .shell-nav-actions .account-menu {
+      flex: none;
+      inline-size: auto;
+    }
+    .shell-nav-actions .account-menu__identity {
+      display: none;
+    }
   }
 
   /* ---------------------------------------------------------- 账号菜单（T-P0-2）
