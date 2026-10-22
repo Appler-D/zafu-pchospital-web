@@ -6,6 +6,7 @@ import type { NextConfig } from "next";
  * 构建期版本（issue #189）：部署脚本在目标 commit 的独立 worktree 里构建，
  * 因此这里的 HEAD 就是产物对应的提交；CI 与本地开发同样有 `.git`。
  * 允许用 `BUILD_COMMIT_SHA` 覆盖（无 `.git` 的打包构建）；都取不到时留空，
+ * 部署脚本 `tools/deploy/deploy-prod.sh` 的 P3 段记录了显式指定方式。
  * 后台显示「未知」而不是一个猜的版本。
  */
 function readBuildCommit(): string {
