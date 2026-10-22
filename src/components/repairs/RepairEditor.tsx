@@ -9,6 +9,7 @@ import { RepairParticipantPicker } from "@/components/ui/RepairParticipantPicker
 import {
   defaultRepairResult,
   formatBytes,
+  repairDetailCopy,
   repairEditorCopy,
   repairFieldLimits,
   repairResultLabels,
@@ -75,6 +76,7 @@ function localDraftRecord(input: {
     reviews: [],
     timeline: [],
     canEdit: true,
+    canWithdraw: false,
     canReview: false,
     canFlag: false,
     isFavorited: false,
@@ -448,6 +450,11 @@ export function RepairEditor({
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
+      {record.status === "DRAFT" && record.submittedAt ? (
+        <Card variant="notice">
+          <p>{repairDetailCopy.withdrawnNotice}</p>
+        </Card>
+      ) : null}
       {rejection ? (
         <Card variant="notice">
           <strong>最新退回原因</strong>

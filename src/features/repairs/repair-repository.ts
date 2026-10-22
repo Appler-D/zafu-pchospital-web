@@ -69,6 +69,8 @@ export const repairRepository = {
         memberProfileId,
         status: "DRAFT",
         deletedAt: null,
+        // 已撤回的草稿不算空白草稿：它带着提交痕迹（issue #165），不能被新建流程复用。
+        submittedAt: null,
         repairDate: null,
         durationMinutes: null,
         categoryId: null,

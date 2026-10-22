@@ -5,6 +5,8 @@ const allowed = new Set([
   "REJECTED:PENDING",
   "PENDING:APPROVED",
   "PENDING:REJECTED",
+  // 撤回审核（issue #165）：仅创建人，回到草稿后重新编辑并提交。
+  "PENDING:DRAFT",
 ]);
 export function isRepairTransitionAllowed(from: RepairStatus, to: RepairStatus): boolean {
   return allowed.has(`${from}:${to}`);

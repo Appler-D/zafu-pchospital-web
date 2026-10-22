@@ -5,10 +5,18 @@ import { useCallback, useEffect, useState } from "react";
 
 import { FavoriteToggle } from "@/components/community/FavoriteToggle";
 import { RepairFlagControls } from "@/components/community/RepairFlagControls";
+import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { communityCopy } from "@/config/community";
-import { formatRepairParticipants, repairCopy } from "@/config/repairs";
+import {
+  formatRepairParticipants,
+  repairCopy,
+  repairDetailCopy,
+  repairWithdrawnLabel,
+} from "@/config/repairs";
+import { createIdempotencyKey } from "@/lib/idempotency-key";
 import type { RepairDetailView } from "@/types/contracts";
 
 type Props = {
@@ -21,6 +29,11 @@ type Props = {
 export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLabels }: Props) {
   const [record, setRecord] = useState<RepairDetailView>();
   const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden">("loading");
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawError, setWithdrawError] = useState("");
+  const [withdrawKey, setWithdrawKey] = useState("");
+  const [toast, setToast] = useState<AdminToastMessage | null>(null);
 
   const load = useCallback(async () => {
     setState("loading");
@@ -46,6 +59,29 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
     void load();
   }, [load]);
 
+  /** 撤回审核（issue #165）：失败时留在弹层里显示原因，不把整页切错误态。 */
+  async function withdraw() {
+    if (!record || withdrawBusy) return;
+    setWithdrawBusy(true);
+    setWithdrawError("");
+    try {
+      const response = await fetch(`/api/v1/repairs/${recordId}/withdraw`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": withdrawKey },
+        body: JSON.stringify({ version: record.version }),
+      });
+      const json = await response.json();
+      if (!json.success) throw new Error(json.error.message);
+      setWithdrawOpen(false);
+      setToast({ text: repairDetailCopy.withdrawSuccess, tone: "success" });
+      await load();
+    } catch (e) {
+      setWithdrawError(e instanceof Error ? e.message : "撤回失败，请稍后重试");
+    } finally {
+      setWithdrawBusy(false);
+    }
+  }
+
   if (state === "loading") return <p role="status">正在加载维修详情…</p>;
   if (state === "error")
     return (
@@ -65,12 +101,23 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
 
   return (
     <div className="repair-detail">
+      <AdminToast toast={toast} onDismiss={() => setToast(null)} />
+      {record.status === "DRAFT" && record.submittedAt ? (
+        <Card variant="notice">
+          <p>{repairDetailCopy.withdrawnNotice}</p>
+        </Card>
+      ) : null}
       <Card className="repair-panel">
         <div className="gap-s-3 flex flex-wrap justify-between">
           <h2 className="text-display-3 font-bold">基础信息</h2>
-          <span className={`repair-tag repair-tag--${record.status.toLowerCase()}`}>
-            {statusLabels[record.status]}
-          </span>
+          <div className="gap-s-2 flex flex-wrap items-center">
+            <span className={`repair-tag repair-tag--${record.status.toLowerCase()}`}>
+              {statusLabels[record.status]}
+            </span>
+            {record.status === "DRAFT" && record.submittedAt ? (
+              <span className="admin-tag">{repairWithdrawnLabel}</span>
+            ) : null}
+          </div>
         </div>
         <dl className="repair-detail__facts">
           <div>
@@ -123,6 +170,18 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
           />
           {record.canEdit ? (
             <Button href={`/member/repairs/${record.id}/edit`}>继续编辑</Button>
+          ) : null}
+          {record.canWithdraw ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setWithdrawError("");
+                setWithdrawKey(createIdempotencyKey());
+                setWithdrawOpen(true);
+              }}
+            >
+              {repairDetailCopy.withdraw}
+            </Button>
           ) : null}
         </div>
         {record.canFlag ? (
@@ -199,6 +258,27 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
         </ol>
       </Card>
       <p className="sr-only">{repairCopy.detail.title}</p>
+      {withdrawOpen ? (
+        <ConfirmDialog
+          title={repairDetailCopy.withdrawConfirmTitle}
+          confirmLabel={
+            withdrawBusy ? repairDetailCopy.withdrawing : repairDetailCopy.withdrawConfirm
+          }
+          cancelLabel={repairDetailCopy.withdrawCancel}
+          busy={withdrawBusy}
+          onConfirm={() => void withdraw()}
+          onClose={() => {
+            if (!withdrawBusy) setWithdrawOpen(false);
+          }}
+        >
+          <p>{repairDetailCopy.withdrawConfirmHint}</p>
+          {withdrawError ? (
+            <p className="admin-status admin-status--error" role="alert">
+              {withdrawError}
+            </p>
+          ) : null}
+        </ConfirmDialog>
+      ) : null}
     </div>
   );
 }
