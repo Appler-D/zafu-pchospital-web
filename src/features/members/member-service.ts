@@ -206,10 +206,10 @@ export class MemberService implements MemberServiceContract {
   async getDetail(memberId: string, actor: AuthorizedActor): Promise<MemberDetail> {
     requirePermission(actor, "member:manage");
     return inSerializableTransaction(async (tx) => {
-      const entry = await memberRepository.findById(memberId);
+      const entry = await memberRepository.findById(memberId, tx);
       if (!entry) throw new AppError("RESOURCE_NOT_FOUND", "成员不存在");
-      const contacts = await memberRepository.findSensitiveContacts(memberId);
-      const skillRows = await skillRepository.listMemberSkills(memberId);
+      const contacts = await memberRepository.findSensitiveContacts(memberId, tx);
+      const skillRows = await skillRepository.listMemberSkills(memberId, tx);
       await appendAuditLog(tx, {
         actor,
         actorType: "USER",

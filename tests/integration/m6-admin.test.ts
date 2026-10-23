@@ -342,6 +342,24 @@ dbTest("成员列表脱敏，详情才返回明文，且详情读取写审计", 
   assert.equal(actions.includes("member.detail.viewed"), true, `审计缺少详情查看：${actions}`);
 });
 
+dbTest("单连接池可读取成员详情，读取与审计同事务，审计失败不返回敏感资料", async () => {
+  const created = await createMember("单连接详情");
+  const db = getDb();
+  const where = { action: "member.detail.viewed", targetId: created.member.id };
+  const before = await db.auditLog.count({ where });
+  const detail = await memberService.getDetail(created.member.id, ADMIN_ACTOR);
+  assert.equal(detail.qq, created.entry.qq);
+  assert.equal(detail.phone, created.entry.phone);
+  assert.equal(detail.approvedRepairCount, 0);
+  assert.deepEqual(detail.skills, []);
+  assert.equal(await db.auditLog.count({ where }), before + 1);
+  // 不存在的审计操作者触发 FK 失败；不 mock 读取或绕过审计。
+  await assert.rejects(
+    memberService.getDetail(created.member.id, { ...ADMIN_ACTOR, userId: randomUUID() }),
+  );
+  assert.equal(await db.auditLog.count({ where }), before + 1);
+});
+
 dbTest("成员统计在禁用后仍可查看（管理端专用路径）", async () => {
   const created = await createMember("统计");
   const pending = await pendingRepair(created.owner);

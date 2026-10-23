@@ -1,3 +1,4 @@
+import type { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db/client";
 
 /**
@@ -45,8 +46,11 @@ export const skillRepository = {
   },
 
   /** 某成员当前生效的技能关联（未软删除），按技能排序。 */
-  async listMemberSkills(memberProfileId: string): Promise<SkillRow[]> {
-    const rows = await getDb().userSkill.findMany({
+  async listMemberSkills(
+    memberProfileId: string,
+    tx: Prisma.TransactionClient = getDb(),
+  ): Promise<SkillRow[]> {
+    const rows = await tx.userSkill.findMany({
       where: { memberProfileId, deletedAt: null, skill: { deletedAt: null } },
       select: { skill: { select: skillSelect } },
     });

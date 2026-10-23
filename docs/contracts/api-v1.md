@@ -567,6 +567,13 @@ DELETE     /api/v1/admin/comments/:id
 
 新增错误码：无（`SKILL_INACTIVE` 与 `SKILL_CODE_CONFLICT` 已分别在 M3、M6 批次 2 登记）。
 
+### 管理端成员详情按需读取
+
+- 成员表格悬停不预取详情、统计或技能；显式打开详情才沿用原加载入口（issue #209）。
+- `GET /api/v1/admin/members/:id` 的资料、维修统计、联系方式和技能读取与
+  `member.detail.viewed` 审计共用同一事务客户端，不在已占用事务连接时从全局池额外取连接。
+  审计失败整笔回滚，不返回敏感详情；原权限、响应字段和脱敏规则不变。
+
 ### 成员出勤、签到与接待的操作窗口
 
 - `attendance`、`check-in`、`serve` 仅在 `signupClosesAt <= now < activityEndExclusive(activityAt)`
