@@ -7,7 +7,7 @@ import { MAX_FILTER_RULES, type FilterRule } from "../../src/lib/api/list-filter
 import { listQueryParams } from "../../src/lib/api/list-query";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
-import type { AuthorizedActor, MemberListEntry } from "../../src/types/contracts";
+import type { AuthorizedActor, MemberDepartment, MemberListEntry } from "../../src/types/contracts";
 
 import { callRoute, sessionCookie } from "./http-harness";
 import { integrationTestsEnabled } from "./db-guard";
@@ -27,12 +27,12 @@ import { integrationTestsEnabled } from "./db-guard";
  * 数据是**专门构造**的，每个条件都有「该命中」与「不该命中」两边（只断言命中数会把
  * 「筛选没生效」也判成通过的部分情况漏过去）：
  *
- * | 成员 | 学号     | 班级          | 昵称 | 状态   |
- * | ---- | -------- | ------------- | ---- | ------ |
- * | 甲A  | M10A2023 | M10 计科:2101 | 小甲 | ACTIVE |
- * | 乙B  | M10B2023 | M10 计科:2101 | 小乙 | ACTIVE |
- * | 丙C  | M10C2024 | M10 软工2202  | 小丙 | ACTIVE |
- * | 丁D  | M10D2024 | M10 软工2202  | 小丁 | 已停用 |
+ * | 成员 | 学号     | 班级          | 昵称 | 状态   | 部门 |
+ * | ---- | -------- | ------------- | ---- | ------ | ---- |
+ * | 甲A  | M10A2023 | M10 计科:2101 | 小甲 | ACTIVE | 维修部 |
+ * | 乙B  | M10B2023 | M10 计科:2101 | 小乙 | ACTIVE | 宣传部 |
+ * | 丙C  | M10C2024 | M10 软工2202  | 小丙 | ACTIVE | 宣传部 |
+ * | 丁D  | M10D2024 | M10 软工2202  | 小丁 | 已停用 | 办公室 |
  *
  * 班级里那个**冒号是故意的**：`filter` 的值允许带冒号（只切前两个），
  * 这是「不自己发明转义规则」那条设计的实测点。
@@ -127,6 +127,7 @@ async function createMember(fields: {
   studentId: string;
   className: string;
   nickname: string;
+  department: MemberDepartment;
 }): Promise<{ id: string }> {
   seq += 1;
   const serial = `${Date.now()}`.slice(-5) + String(seq).padStart(3, "0");
@@ -138,6 +139,7 @@ async function createMember(fields: {
       studentId: fields.studentId,
       className: fields.className,
       nickname: fields.nickname,
+      department: fields.department,
       idempotencyKey: randomUUID(),
     },
     ADMIN_ACTOR,
@@ -151,24 +153,28 @@ async function seed(): Promise<void> {
     studentId: "M10A2023",
     className: "M10 计科:2101",
     nickname: "小甲",
+    department: "REPAIR",
   });
   await createMember({
     label: "乙B",
     studentId: "M10B2023",
     className: "M10 计科:2101",
     nickname: "小乙",
+    department: "PUBLICITY",
   });
   await createMember({
     label: "丙C",
     studentId: "M10C2024",
     className: "M10 软工2202",
     nickname: "小丙",
+    department: "PUBLICITY",
   });
   const revoked = await createMember({
     label: "丁D",
     studentId: "M10D2024",
     className: "M10 软工2202",
     nickname: "小丁",
+    department: "OFFICE",
   });
   // 停用一个人：状态列的 `eq` 与 `neq` 两边都要有命中与不命中。
   await memberService.batchSetEnabled({ memberIds: [revoked.id], enabled: false }, ADMIN_ACTOR);
@@ -284,6 +290,30 @@ dbTest("枚举条件：eq 与 neq 各命中一边（含一个已停用成员）"
   });
   assert.equal(revoked.total, 1);
   assert.deepEqual(revoked.names, ["M10 丁D"]);
+});
+
+dbTest("部门条件：eq / neq 走真实路由，未知部门 400", async () => {
+  const publicity = await listVia({
+    filters: [{ field: "department", op: "eq", value: "PUBLICITY" }],
+    query: PREFIX.trim(),
+  });
+  assert.equal(publicity.status, 200);
+  assert.equal(publicity.total, 2);
+  assert.deepEqual(sortedNames(publicity.names), sortedNames(["M10 乙B", "M10 丙C"]));
+
+  const notOffice = await listVia({
+    filters: [{ field: "department", op: "neq", value: "OFFICE" }],
+    query: PREFIX.trim(),
+  });
+  assert.equal(notOffice.status, 200);
+  assert.equal(notOffice.total, 3, "非办公室 = 维修部 1 + 宣传部 2");
+
+  const invalid = await listVia({
+    filters: [{ field: "department", op: "eq", value: "SALES" }],
+    query: PREFIX.trim(),
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.code, "VALIDATION_FAILED");
 });
 
 dbTest("日期条件：区间闭到当天全天，昨天及以前不包含今天创建的人", async () => {

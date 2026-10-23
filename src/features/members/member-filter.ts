@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { parseUtcDateFilter } from "@/lib/api/date-filter";
 import { AppError } from "@/lib/api/errors";
 import type { FilterRule } from "@/lib/api/list-filter";
+import { parseMemberDepartment } from "@/features/members/member-department";
 import { MemberStatus } from "@/types/contracts";
 
 /**
@@ -34,6 +35,11 @@ export function memberFilterWhere(rules: readonly FilterRule[]): Prisma.MemberPr
       case "status": {
         const value = memberStatus(rule.value);
         return rule.op === "eq" ? { status: value } : { status: { not: value } };
+      }
+      case "department": {
+        // 与成员创建/详情共用同一份部门校验（issue #210 审查）。
+        const value = parseMemberDepartment(rule.value);
+        return rule.op === "eq" ? { department: value } : { department: { not: value } };
       }
       case "realName":
         return { realName: { contains: rule.value } };
