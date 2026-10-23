@@ -20,6 +20,25 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pc
 4. 脚本失败不是终点：它按中断阶段打印具体恢复动作（停机前失败时线上照常；停机后可用
    `--rollback` 秒级回退产物），修好重跑即可继续。
 
+### 部署结果通知（本机收尾，不授予机器人部署权限）
+
+`deploy-prod.sh` 的 EXIT 钩子调用 `tools/deploy/notify-result.sh` / `notify_deploy.py`，
+不是让模型记得手工发消息。详见 [通知配置与恢复](../../../tools/deploy/NOTIFICATIONS.md)。
+构建、上传、迁移、切换、冒烟失败同样收尾；保留原退出码，不因通知失败回滚站点。
+
+- 本机须有 Python 3（标准库即可）。用 `WHALE_NOTIFY_CONFIG` 指向私密 JSON，或通知 CLI 的
+  `--config` 显式指定；各维护者私密领取独立可撤销 token，不硬编码某个人的路径。
+  非默认 Python 使用 `WHALE_NOTIFY_PYTHON`；维护者称呼可设 `WHALE_NOTIFY_ACTOR`。
+- 每个终态保存独立 UUID 的完整 payload 到 `.runtime/deploy-notifications/`，12 秒请求一次。
+  失败后运行原 `--rollback` 会生成新 UUID 并关联本机最近失败编号。不得换新 ID 盲目补发。
+- `202` 仅代表入队；用 `python tools/deploy/notify_deploy.py --check <原UUID>` 查询。
+  `accepted` 仅代表 QQ 接口接收，不是送达/已读；404 和 unknown 都不能作为重新发送的依据。
+- 设置 `WHALE_NOTIFY_DISABLED=1` 关闭网络通知，仍保留本机记录；恢复时取消该变量。
+- 成功和回滚成功须实际冒烟通过且核对随 `.next` 切换的 `DEPLOY_COMMIT` / BUILD_ID。
+  回滚后不拿 Git HEAD 猜运行版本；历史产物缺标记时通知为 unknown。
+- 断电、强杀、完全断网不能保证即时通知；残留 `attempt-*.json` 的 running 状态不代表部署失败。
+  人工核实站点和本机记录后处理，不能自动重发或自动回滚。
+
 ## 0. 事实速查（不要在命令里硬编码密码）
 
 | 项 | 值 |

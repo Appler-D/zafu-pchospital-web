@@ -59,3 +59,9 @@ public/_originals/
 
 # M2 本地维修照片存储（生产使用持久化共享卷）
 /storage/
+
+# 本机部署通知记录与私密凭证（凭证通过 WHALE_NOTIFY_CONFIG 指定）
+/.runtime/deploy-notifications/
+DEPLOY_NOTIFY.private.json
+*.deploy-notify.private.json
+__pycache__/
