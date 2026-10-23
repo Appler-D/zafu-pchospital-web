@@ -70,6 +70,7 @@ PHASE_FAIL_GUIDE=""
 # 阶段头：$1=阶段号 $2=标题
 step() {
   CURRENT_PHASE="$1"
+  case "$1" in 7|8|R) NOTIFY_COMMIT="" ;; esac
   printf '\n%s====== [P%s] %s ======%s\n' "$C_BOLD" "$1" "$2" "$C_OFF"
 }
 
@@ -155,6 +156,7 @@ cleanup_local_bundle_branch() {
 }
 on_exit() {
   local code=$?
+  set +e # Notification/cleanup must never replace the deployment exit code.
   remote_restart_docs_sync
   cleanup_local_bundle_branch
   if [ "$code" != "0" ] && [ "$CURRENT_PHASE" != "" ]; then
@@ -186,8 +188,12 @@ on_exit() {
   if [ "$DEPLOY_OK" = "1" ] && [ "$WT_CREATED" = "1" ]; then
     git -C "$REPO_ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || true
   fi
+  if declare -F notify_deploy_result >/dev/null; then notify_deploy_result "$code"; fi
+  exit "$code"
 }
 trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # ---------------------------------------------------------------------------
 # SSH 辅助
@@ -213,6 +219,8 @@ remote_script() { ssh "${SSH_OPTS[@]}" "${SSH_OPTS_KEY[@]}" "$SSH_HOST" 'bash -s
 # ---------------------------------------------------------------------------
 rollback_flow() {
   step R "回滚到上一版产物（秒级；不动数据库与代码检出）"
+  if verify_runtime_commit; then NOTIFY_PREVIOUS="$NOTIFY_COMMIT"; fi
+  NOTIFY_COMMIT=""
   command -v ssh >/dev/null 2>&1 || die "缺少 ssh 命令。"
   command -v curl >/dev/null 2>&1 || die "缺少 curl 命令。"
   say "服务器：$SSH_HOST"
@@ -258,11 +266,13 @@ echo "回滚后站点内部状态码：$code（BUILD_ID=$(cat .next/BUILD_ID 2>/
 REMOTE
 
   say "外部验证…"
+  NOTIFY_SMOKE=unknown
   local RB_BAD=0 code
   for p in / /handbook/; do
     code="$(curl -sL --max-time 20 -o /dev/null -w '%{http_code}' "$BASE_URL$p" || echo 000)"
     if [ "$code" = "200" ]; then ok "$p -> 200"; else warn "$p -> $code"; RB_BAD=1; fi
   done
+  if [ "$RB_BAD" = "1" ]; then NOTIFY_SMOKE=failed; else NOTIFY_SMOKE=passed; fi
 
   remote_script <<'REMOTE'
 systemctl start docs-sync.timer 2>/dev/null || true
@@ -277,6 +287,8 @@ REMOTE
   say "  如需连代码一起退（git reset 属破坏性操作），按 skill 第 9 节人工处理。"
   say ""
   say "${C_BOLD}ROLLBACK RESULT: SUCCESS${C_OFF}"
+  NOTIFY_SMOKE=passed
+  if verify_runtime_commit; then NOTIFY_RESULT=rollback; else NOTIFY_RESULT=unknown; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -287,6 +299,7 @@ step 0 "参数与本地环境预检"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
 [ -n "$REPO_ROOT" ] || die "找不到 git 仓库：脚本应放在仓库的 tools/deploy/ 下运行。"
+source "$SCRIPT_DIR/notify-result.sh"
 
 LOG_FILE="${LOG_FILE_OPT:-${TMPDIR:-/tmp}/pczafu-deploy-$(date +%Y%m%d-%H%M%S).log}"
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
@@ -406,6 +419,7 @@ printf '%s\n' "$RECON_OUT"
 OLD_SHA="$(printf '%s\n' "$RECON_OUT" | sed -n 's/^OLD_SHA=//p')"
 [ -n "$OLD_SHA" ] || die "侦察输出异常：没有取到服务器 HEAD（见上方输出）。"
 OLD_LOG="$(printf '%s\n' "$RECON_OUT" | sed -n 's/^OLD_LOG=//p')"
+if verify_runtime_commit; then NOTIFY_PREVIOUS="$NOTIFY_COMMIT"; fi
 
 DIRTY="$(printf '%s\n' "$RECON_OUT" | sed -n '/^--GIT-STATUS--$/,/^--END-GIT-STATUS--$/{/^--/d;p}' | sed '/^[[:space:]]*$/d')"
 if [ -n "$DIRTY" ]; then
@@ -694,6 +708,7 @@ test "\$(sed -n 's/^commit=//p' /tmp/deploy-stage/BUILD_COMMIT)" = "$TARGET_SHA"
 test -s /tmp/deploy-stage/.next/BUILD_ID
 test -f /tmp/deploy-stage/public/handbook/index.html
 test "\$(cat /tmp/deploy-stage/.next/BUILD_ID)" = "$BUILD_ID"
+cp /tmp/deploy-stage/BUILD_COMMIT /tmp/deploy-stage/.next/DEPLOY_COMMIT
 echo "暂存就绪：/tmp/deploy-stage（BUILD_ID=$BUILD_ID）"
 REMOTE
 ok "暂存产物校验通过（commit / BUILD_ID / 文档 三项断言）。（服务全程正常）"
@@ -851,6 +866,7 @@ STAGED_ID=\$(cat /tmp/deploy-stage/.next/BUILD_ID)
 CUR_ID=\$(cat .next/BUILD_ID 2>/dev/null || echo none)
 if [ "\$CUR_ID" = "\$STAGED_ID" ]; then
   echo "产物已是目标版本（BUILD_ID=\$CUR_ID），跳过切换"
+  cp /tmp/deploy-stage/.next/DEPLOY_COMMIT .next/DEPLOY_COMMIT
 else
   rm -rf .next.old public/handbook.old
   mv .next .next.old
@@ -883,11 +899,13 @@ START_TS="$(printf '%s\n' "$SWAP_OUT" | sed -n 's/^START_TS=//p')"
 DOWNTIME=$((START_TS - STOP_TS))
 [ "$INTERNAL_HTTP" = "200" ] || die "切换后内部 curl 未返回 200（得到 ${INTERNAL_HTTP:-无}）。站点可能没起来，看 journalctl -u $SERVICE -n 50。"
 ok "服务已启动，内部 curl 200；停机时长 ${DOWNTIME}s。上一版产物在 .next.old（--rollback 秒级回退）。"
+verify_runtime_commit || true
 
 # ---------------------------------------------------------------------------
 # [P9] 冒烟验证
 # ---------------------------------------------------------------------------
 step 9 "冒烟验证（外部地址 $BASE_URL）"
+NOTIFY_SMOKE=unknown
 SMOKE_FAIL=0
 smoke() {
   local p="$1" code
@@ -920,7 +938,11 @@ else
   note "未设置 DEPLOY_SMOKE_QQ / DEPLOY_SMOKE_PASSWORD，跳过登录态验证（建议人工登录一次管理端确认）。"
 fi
 
-[ "$SMOKE_FAIL" = "0" ] || die "冒烟未全过（见上方失败项）。站点已上新版；若确认是新版问题：bash tools/deploy/deploy-prod.sh --rollback"
+if [ "$SMOKE_FAIL" != "0" ]; then
+  NOTIFY_SMOKE=failed
+  die "冒烟未全过（见上方失败项）。站点已上新版；若确认是新版问题：bash tools/deploy/deploy-prod.sh --rollback"
+fi
+NOTIFY_SMOKE=passed
 
 # ---------------------------------------------------------------------------
 # [P10] 总结与回滚指引
@@ -943,6 +965,13 @@ REMOTE
 fi
 
 DEPLOY_OK=1
+if verify_runtime_commit && [ "$NOTIFY_COMMIT" = "$TARGET_SHA" ]; then
+  NOTIFY_RESULT=success
+else
+  NOTIFY_COMMIT=""
+  NOTIFY_RESULT=unknown
+  warn "运行版本未能核实，通知将报告 unknown，不猜测目标 SHA。"
+fi
 say ""
 say "${C_GREEN}${C_BOLD}========== 部署完成 ==========${C_OFF}"
 say "  提交：      $OLD_SHA -> $TARGET_SHA（共 ${N_COMMITS:-?} 个提交）"
