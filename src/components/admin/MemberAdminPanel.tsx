@@ -27,7 +27,7 @@ import { MemberDetailPanel } from "@/components/admin/MemberDetailPanel";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
-import { adminFetch, prefetchAdmin } from "@/features/admin/admin-client";
+import { adminFetch } from "@/features/admin/admin-client";
 import { filterSignature, type FilterRule } from "@/lib/api/list-filter";
 import { listQueryParams, sortParam } from "@/lib/api/list-query";
 import { filterFieldsOf } from "@/lib/table/field-spec";
@@ -473,9 +473,6 @@ export function MemberAdminPanel() {
               // 正在拖的行半透明、落点行画一条指示线（`useRowDragSort`）。
               className: sort.rowClass(member.id),
               ...sort.rowProps(member.id),
-              // 悬停整行即预取该成员的详情与统计：详情窗口要发 3 个 GET，
-              // 提前取回来点「详情」就能直接出内容，不必先看骨架。
-              onMouseEnter: () => prefetchMemberDetail(member.id),
             })}
             overlay={
               <div className="admin-colgrid">
@@ -532,11 +529,4 @@ export function MemberAdminPanel() {
       ) : null}
     </div>
   );
-}
-
-/** 预取成员详情窗口需要的三份数据（与 `MemberDetailPanel` 的请求完全一致）。 */
-function prefetchMemberDetail(memberId: string) {
-  prefetchAdmin(`/api/v1/admin/members/${memberId}`);
-  prefetchAdmin(`/api/v1/admin/members/${memberId}/stats`);
-  prefetchAdmin("/api/v1/skills");
 }

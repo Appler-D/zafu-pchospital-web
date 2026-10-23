@@ -151,13 +151,16 @@ export const memberRepository = {
     return rows.map((row) => row.id);
   },
 
-  async findById(memberProfileId: string): Promise<MemberListEntry | null> {
-    const row = await getDb().memberProfile.findFirst({
+  async findById(
+    memberProfileId: string,
+    tx: Prisma.TransactionClient = getDb(),
+  ): Promise<MemberListEntry | null> {
+    const row = await tx.memberProfile.findFirst({
       where: { id: memberProfileId, deletedAt: null },
       select: adminProfileSelect,
     });
     if (!row) return null;
-    const stats = await approvedRepairStats([row.id]);
+    const stats = await approvedRepairStats([row.id], tx);
     return toEntry(row, stats.get(row.id) ?? { count: 0, minutes: 0 });
   },
 
@@ -167,8 +170,9 @@ export const memberRepository = {
    */
   async findSensitiveContacts(
     memberProfileId: string,
+    tx: Prisma.TransactionClient = getDb(),
   ): Promise<{ qq: string | null; phone: string | null }> {
-    const row = await getDb().memberProfile.findFirst({
+    const row = await tx.memberProfile.findFirst({
       where: { id: memberProfileId, deletedAt: null },
       select: {
         user: {
@@ -212,9 +216,12 @@ type RepairStats = { count: number; minutes: number };
  * 一条记录对每名参与者各计一次，时长不分人、取记录上的同一值；
  * 「有效记录」谓词复用 `approvedRepairSql`，不在这里重写第二份。
  */
-async function approvedRepairStats(memberProfileIds: string[]): Promise<Map<string, RepairStats>> {
+async function approvedRepairStats(
+  memberProfileIds: string[],
+  tx: Prisma.TransactionClient = getDb(),
+): Promise<Map<string, RepairStats>> {
   if (memberProfileIds.length === 0) return new Map();
-  const rows = await getDb().$queryRaw<
+  const rows = await tx.$queryRaw<
     Array<{ memberProfileId: string; count: unknown; minutes: unknown }>
   >`
     SELECT p.member_profile_id AS memberProfileId,
