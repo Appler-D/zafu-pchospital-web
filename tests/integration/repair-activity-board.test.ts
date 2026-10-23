@@ -749,7 +749,7 @@ dbTest("看板合并读取：复用管理员计数和本人出勤，成员不读
   const db = getDb();
   const row = await checkInFixture();
   await checkInFixture({ status: "CHECKED_IN" });
-  await checkInFixture({ status: "SERVED" });
+  const foreignServed = await checkInFixture({ status: "SERVED" });
   const count = await db.repairActivityRegistration.count({
     where: {
       activityId: ACTIVITY_ID,
@@ -808,14 +808,38 @@ dbTest("看板合并读取：复用管理员计数和本人出勤，成员不读
   });
   assert.equal(registrationRead.length, 2);
   const filter = registrationRead[1]!.where!;
-  assert.deepEqual(filter.status, { in: ["CHECKED_IN", "SERVED"] });
+  // issue #207：成员在库层只取排队 + 本人接待，不再按「CHECKED_IN / SERVED」整体读取。
+  assert.equal(filter.status, undefined);
+  assert.deepEqual((filter as { OR?: unknown }).OR, [
+    { status: "CHECKED_IN" },
+    { status: "SERVED", servedByMemberProfileId: STAFF_PROFILE_ID },
+  ]);
   assert.deepEqual(calls, { count: 1, self: 1, attendance: 1 });
   assert.equal(member.activity.registeredCount, count);
   assert.equal(member.attendanceCheckedInAt, admin.attendanceCheckedInAt);
   assert.deepEqual(member.eligible, []);
   assert.deepEqual(member.attendanceMembers, []);
   assert.deepEqual(member.queue, admin.queue);
-  assert.deepEqual(member.served, admin.served);
+  // 没有接待归属的 SERVED 不下发给成员；成员列表是管理员全量的子集且都属于本人。
+  assert.equal(
+    member.served.some((item) => item.id === foreignServed.id),
+    false,
+    "未记录接待者的已接待记录不得下发给成员",
+  );
+  assert.ok(
+    member.served.every((item) => admin.served.some((full) => full.id === item.id)),
+    "成员列表只能是管理员全量的子集",
+  );
+  if (member.served.length > 0) {
+    const owners = await db.repairActivityRegistration.findMany({
+      where: { id: { in: member.served.map((item) => item.id) } },
+      select: { servedByMemberProfileId: true },
+    });
+    assert.ok(
+      owners.every((item) => item.servedByMemberProfileId === STAFF_PROFILE_ID),
+      "成员拿到的已接待记录必须都是本人接待",
+    );
+  }
 });
 
 dbTest("出勤成员名单：管理员按签到时间升序拿到展示名，成员不下发（issue #107）", async () => {
@@ -1220,4 +1244,67 @@ dbTest("活动结束：三项写入及幂等重放拒绝，历史看板与撤回
       },
     });
   }
+});
+
+dbTest("成员「已接待」只含本人接待；管理员仍看本场全部（issue #207）", async () => {
+  const db = getDb();
+  const makeServed = async (profileId: string, name: string, offsetMs: number) => {
+    const row = await checkInFixture({ status: "SERVED" });
+    return db.repairActivityRegistration.update({
+      where: { id: row.id },
+      data: {
+        name,
+        servedAt: new Date(Date.now() + offsetMs),
+        servedByMemberProfileId: profileId,
+      },
+    });
+  };
+  // 两位其他成员先各接待一位客户；随后再让本成员接待一位（同时验证空态与本人视图）。
+  const staffServed = await makeServed(STAFF_PROFILE_ID, "REG79 管理员接待的客户", -3000);
+  const otherServed = await makeServed(
+    ABSENT_ADMIN_PROFILE_ID,
+    "REG79 另一位管理员接待的客户",
+    -2000,
+  );
+  const queued = await checkInFixture({ status: "CHECKED_IN" });
+
+  const memberActor: AuthorizedActor = {
+    actorType: "USER",
+    userId: ABSENT_STAFF_USER_ID,
+    userStatus: "ACTIVE",
+    permissions: permissionsForRoles(["MEMBER"]),
+    requestId: "req_reg79_member_served",
+  };
+
+  const emptyBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, memberActor);
+  assert.equal(emptyBoard.canAdmin, false);
+  assert.deepEqual(emptyBoard.served, [], "本人没有接待记录时为空数组（前端显示空态）");
+  const emptyJson = JSON.stringify(emptyBoard);
+  assert.equal(emptyJson.includes(staffServed.id), false, "他人接待记录不得出现在成员响应");
+  assert.equal(emptyJson.includes(otherServed.id), false);
+  assert.ok(
+    emptyBoard.queue.some((row) => row.id === queued.id),
+    "排队不受已接待过滤影响",
+  );
+
+  const mine = await makeServed(ABSENT_STAFF_PROFILE_ID, "REG79 本人接待的客户", -1000);
+  const memberBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, memberActor);
+  assert.deepEqual(
+    memberBoard.served.map((row) => row.id),
+    [mine.id],
+    "成员只看本人接待，且计数与列表同源",
+  );
+  assert.equal(memberBoard.served.length, 1);
+  assert.ok(memberBoard.queue.some((row) => row.id === queued.id));
+
+  const adminBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  assert.equal(adminBoard.canAdmin, true);
+  // 同文件早前的用例也会留下 SERVED 夹具，这里只核对本用例的三条及其相对顺序。
+  assert.deepEqual(
+    adminBoard.served
+      .map((row) => row.id)
+      .filter((id) => [mine.id, otherServed.id, staffServed.id].includes(id)),
+    [mine.id, otherServed.id, staffServed.id],
+    "管理员仍按 servedAt 倒序查看本场全部接待",
+  );
 });
