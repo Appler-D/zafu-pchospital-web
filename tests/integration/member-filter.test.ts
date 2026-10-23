@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 
 import { memberService } from "../../src/features/members/member-service";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
+import { AppError } from "../../src/lib/api/errors";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
 import type { AuthorizedActor } from "../../src/types/contracts";
 import type { FilterRule } from "../../src/lib/api/list-filter";
@@ -91,7 +92,11 @@ async function cleanup(): Promise<void> {
 }
 
 let seq = 0;
-async function createMember(label: string, className: string) {
+async function createMember(
+  label: string,
+  className: string,
+  department: "REPAIR" | "PUBLICITY" | "OFFICE",
+) {
   seq += 1;
   const serial = `${Date.now()}`.slice(-5) + String(seq).padStart(3, "0");
   const result = await memberService.create(
@@ -101,6 +106,7 @@ async function createMember(label: string, className: string) {
       phone: `136${serial}`.slice(0, 11),
       studentId: `${PREFIX.trim()}${label}`,
       className,
+      department,
       idempotencyKey: randomUUID(),
     },
     ADMIN_ACTOR,
@@ -117,9 +123,9 @@ function listBy(filters: FilterRule[], query?: string) {
  * 注意每人的 `studentId` 是 `M9甲A` 这种**唯一**值，便于用 contains 精确定位。
  */
 async function seed() {
-  await createMember("甲A", "M9 一班");
-  await createMember("乙B", "M9 一班");
-  await createMember("丙C", "M9 二班");
+  await createMember("甲A", "M9 一班", "REPAIR");
+  await createMember("乙B", "M9 一班", "PUBLICITY");
+  await createMember("丙C", "M9 二班", "PUBLICITY");
 }
 
 dbTest("文本条件：contains 命中，逐列独立生效", async () => {
@@ -139,6 +145,29 @@ dbTest("枚举条件：eq 与 neq 都生效", async () => {
   assert.equal(active.pagination.total, 3, "三个都是在册状态");
   const revoked = await listBy([{ field: "status", op: "neq", value: "ACTIVE" }], PREFIX.trim());
   assert.equal(revoked.pagination.total, 0, "neq ACTIVE 不该命中在册成员");
+});
+
+dbTest("部门条件：eq / neq 命中各自部门，未知部门被拒绝", async () => {
+  const publicity = await listBy(
+    [{ field: "department", op: "eq", value: "PUBLICITY" }],
+    PREFIX.trim(),
+  );
+  assert.equal(publicity.pagination.total, 2, "两个宣传部成员");
+  assert.deepEqual(
+    publicity.items.map((row) => row.realName).sort(),
+    [`${PREFIX}乙B`, `${PREFIX}丙C`].sort(),
+  );
+
+  const notRepair = await listBy(
+    [{ field: "department", op: "neq", value: "REPAIR" }],
+    PREFIX.trim(),
+  );
+  assert.equal(notRepair.pagination.total, 2, "非维修部 = 两个宣传部成员");
+
+  await assert.rejects(
+    () => listBy([{ field: "department", op: "eq", value: "SALES" }], PREFIX.trim()),
+    (error) => error instanceof AppError && error.code === "VALIDATION_FAILED",
+  );
 });
 
 dbTest("日期条件：lte=今天 必须命中今天创建的成员（结束日含全天）", async () => {

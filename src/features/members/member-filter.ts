@@ -3,7 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { parseUtcDateFilter } from "@/lib/api/date-filter";
 import { AppError } from "@/lib/api/errors";
 import type { FilterRule } from "@/lib/api/list-filter";
-import { MemberStatus } from "@/types/contracts";
+import { MemberDepartment, MemberStatus } from "@/types/contracts";
 
 /**
  * 成员列表的**列级筛选**白名单与 `where` 映射（后台表格内核的参考实现）。
@@ -35,6 +35,10 @@ export function memberFilterWhere(rules: readonly FilterRule[]): Prisma.MemberPr
         const value = memberStatus(rule.value);
         return rule.op === "eq" ? { status: value } : { status: { not: value } };
       }
+      case "department": {
+        const value = memberDepartment(rule.value);
+        return rule.op === "eq" ? { department: value } : { department: { not: value } };
+      }
       case "realName":
         return { realName: { contains: rule.value } };
       case "nickname":
@@ -61,6 +65,13 @@ export function memberFilterWhere(rules: readonly FilterRule[]): Prisma.MemberPr
 function memberStatus(value: string): string {
   if (!(MemberStatus as readonly string[]).includes(value)) {
     throw new AppError("VALIDATION_FAILED", `成员状态无效：${value}`);
+  }
+  return value;
+}
+
+function memberDepartment(value: string): string {
+  if (!(MemberDepartment as readonly string[]).includes(value)) {
+    throw new AppError("VALIDATION_FAILED", `成员部门无效：${value}`);
   }
   return value;
 }

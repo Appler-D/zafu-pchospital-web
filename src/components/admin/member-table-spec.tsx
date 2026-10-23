@@ -4,7 +4,7 @@ import { useRowSelect } from "@/components/admin/useRowSelect";
 import { Icon } from "@/components/ui/Icon";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
 import { formatDurationMinutes, formatShanghaiDate } from "@/config/member";
-import { memberDepartmentLabels } from "@/config/member-department";
+import { memberDepartmentLabels, memberDepartmentOptions } from "@/config/member-department";
 import { MemberStatus, type MemberListEntry } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
@@ -150,6 +150,11 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
       kind: "select",
       width: 84,
       sortable: false,
+      // 部门列级筛选（issue #210）：枚举 eq/neq，选项与详情/新建表单同一份。
+      filter: {
+        ops: ["eq", "neq"],
+        input: { kind: "enum", options: memberDepartmentOptions },
+      },
       render: (member) => memberDepartmentLabels[member.department],
     },
     {

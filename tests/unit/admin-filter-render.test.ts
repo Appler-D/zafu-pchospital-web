@@ -69,11 +69,11 @@ test("成员表：界面能筛的列与后端白名单逐项一致", async () =>
   // 后端认的是 `realName`。
   assert.deepEqual(
     fields.map((field) => field.key),
-    ["realName", "studentId", "className", "status", "joinedAt"],
+    ["realName", "department", "studentId", "className", "status", "joinedAt"],
   );
   assert.deepEqual(
     fields.map((field) => field.columnKey),
-    ["member", "studentId", "className", "status", "joinedAt"],
+    ["member", "department", "studentId", "className", "status", "joinedAt"],
   );
 
   for (const field of fields) {
@@ -164,9 +164,7 @@ test("条件区：列名来自 spec，值控件按声明的形态渲染", async 
     { field: "status", op: "eq", value: "ACTIVE" },
     { field: "joinedAt", op: "gte", value: "2026-01-01" },
   ] as const;
-  const html = renderToStaticMarkup(
-    createElement(AdminFilterDialogBody, { ...props, draft }),
-  );
+  const html = renderToStaticMarkup(createElement(AdminFilterDialogBody, { ...props, draft }));
 
   assert.equal(countOf(html, 'class="admin-conditions__row"'), 3);
 
@@ -194,6 +192,25 @@ test("条件区：列名来自 spec，值控件按声明的形态渲染", async 
     false,
     "「成员」列只声明了 contains，不该出现「等于」",
   );
+});
+
+test("部门列：枚举筛选提供三个部门选项，运算符与后端白名单一致", async () => {
+  const { filterFieldsOf, memberTableSpec, MEMBER_FILTERABLE } = await load();
+  const field = filterFieldsOf(memberTableSpec).find((item) => item.key === "department");
+  assert.ok(field, "部门列应当出现在列级筛选里");
+  assert.deepEqual([...field.ops], ["eq", "neq"]);
+  assert.deepEqual([...MEMBER_FILTERABLE.department], ["eq", "neq"]);
+  assert.equal(field.input.kind, "enum");
+  if (field.input.kind === "enum") {
+    assert.deepEqual(
+      field.input.options.map((option) => option.value),
+      ["REPAIR", "PUBLICITY", "OFFICE"],
+    );
+    assert.deepEqual(
+      field.input.options.map((option) => option.label),
+      ["维修部", "宣传部", "办公室"],
+    );
+  }
 });
 
 test("到达条件上限时「添加条件」禁用并说明原因", async () => {
