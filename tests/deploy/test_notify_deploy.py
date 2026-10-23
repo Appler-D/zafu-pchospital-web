@@ -21,7 +21,9 @@ SHA = "a" * 40
 
 
 class Response:
-    status = 202
+    def __init__(self, body=None, status=202):
+        self.status = status
+        self.body = body if body is not None else {"delivery": "pending", "untrusted": "secret-must-not-appear"}
 
     def __enter__(self):
         return self
@@ -30,7 +32,7 @@ class Response:
         return False
 
     def read(self, size):
-        return b'{"status":"pending","untrusted":"secret-must-not-appear"}'
+        return json.dumps(self.body).encode()
 
 
 class NotifyTests(unittest.TestCase):
@@ -68,14 +70,21 @@ class NotifyTests(unittest.TestCase):
         def check(request, timeout):
             self.assertEqual(request.method, "GET")
             self.assertIsNone(request.data)
-            return Response()
+            return Response({"state": "accepted", "untrusted": "secret-must-not-appear"}, status=200)
 
-        self.assertEqual(self.invoke(["--check", payload["operation_id"]], check)[0], 0)
+        code, output = self.invoke(["--check", payload["operation_id"]], check)
+        self.assertEqual(code, 0)
+        self.assertIn("delivery=accepted", output)
+        self.assertNotIn("unreported", output)
+        self.assertNotIn("结果已持久入队", output)
 
     def test_rollback_new_uuid_links_failure_and_immutable_conflict(self):
         for status in ("failed", "rollback"):
             args = ["--status", status, "--smoke", "passed", "--commit", SHA]
-            self.assertEqual(self.invoke(args, lambda *a, **k: Response())[0], 0)
+            code, output = self.invoke(args, lambda *a, **k: Response())
+            self.assertEqual(code, 0)
+            self.assertIn("delivery=pending", output)
+            self.assertNotIn("unreported", output)
         payloads = [json.loads(path.read_text(encoding="utf-8")) for path in (self.folder / "spool").glob("*.json")]
         failure = next(p for p in payloads if p["status"] == "failed")
         rollback = next(p for p in payloads if p["status"] == "rollback")

@@ -132,7 +132,7 @@ def main(argv=None, opener=None):
         with transport(request, timeout=12) as response:
             result = json.loads(response.read(4096))
             # Do not echo arbitrary response bodies, headers, or error details.
-            status = result.get("status")
+            status = result.get("state" if args.check else "delivery")
             safe_status = status if status in ("pending", "sending", "accepted", "rejected", "unknown") else "unreported"
             print(f"HTTP {response.status}; operation_id={operation}; delivery={safe_status}")
             if response.status == 202:
