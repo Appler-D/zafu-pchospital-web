@@ -8,7 +8,7 @@ const React = require("react") as typeof import("react");
 type Props = {
   children?: ReactNode;
   rowProps?: (row: { id: string }) => Record<string, unknown>;
-  renderContext?: { onView(id: string): void };
+  renderContext?: { onView(id: string): void; onDetail?(id: string): void };
   memberId?: string;
 };
 function elements(node: ReactNode): ReactElement<Props>[] {
@@ -17,7 +17,7 @@ function elements(node: ReactNode): ReactElement<Props>[] {
   return [node, ...elements(node.props.children)];
 }
 
-test("成员表悬停不读取敏感详情，显式查看仍打开原详情弹层", async (t) => {
+test("成员与维修表悬停不预取详情，显式查看入口保留", async (t) => {
   (globalThis as unknown as { React: typeof React }).React = React;
   const slots: unknown[] = [];
   let cursor = 0;
@@ -63,4 +63,12 @@ test("成员表悬停不读取敏感详情，显式查看仍打开原详情弹�
     elements(view()).filter((element) => element.props.memberId === "member-a").length,
     1,
   );
+  slots.length = 0;
+  cursor = 0;
+  const { RepairAdminPanel } = await import("../../src/components/admin/RepairAdminPanel");
+  const repairTable = elements(RepairAdminPanel()).find((element) => element.props.renderContext);
+  assert.ok(repairTable);
+  assert.equal(repairTable.props.rowProps, undefined);
+  assert.equal(typeof repairTable.props.renderContext!.onDetail, "function");
+  assert.equal(requests, 0);
 });

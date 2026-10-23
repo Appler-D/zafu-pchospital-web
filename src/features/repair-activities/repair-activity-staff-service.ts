@@ -392,24 +392,25 @@ export const repairActivityStaffService = {
     const canAdmin = actor.permissions.includes("activity:admin");
     const activity = await loadActivityOrThrow(activityId);
     const now = new Date();
-    const [registeredCount, attendance, registrations, servedRows, pendingDraft, attendanceRows] =
+    const [memberCount, attendance, registrations, pendingDraft, attendanceRows] =
       await Promise.all([
-        countEffective(activityId),
-        getDb().repairActivityAttendance.findUnique({
-          where: {
-            activityId_memberProfileId: { activityId, memberProfileId: member.id },
-          },
-        }),
+        // 管理员会读取全部有效报名，可直接计数；成员仍只在库层取排队/已接待的资料。
+        canAdmin ? Promise.resolve(null) : countEffective(activityId),
+        canAdmin
+          ? Promise.resolve(null)
+          : getDb().repairActivityAttendance.findUnique({
+              where: {
+                activityId_memberProfileId: { activityId, memberProfileId: member.id },
+              },
+            }),
         getDb().repairActivityRegistration.findMany({
           where: {
             activityId,
             deletedAt: null,
-            // 待签到（REGISTERED）仅管理员视图需要；成员在库层就不取（issue #108）。
-            status: { in: canAdmin ? ["REGISTERED", "CHECKED_IN"] : ["CHECKED_IN"] },
+            status: {
+              in: canAdmin ? [...EFFECTIVE_REGISTRATION_STATUSES] : ["CHECKED_IN", "SERVED"],
+            },
           },
-        }),
-        getDb().repairActivityRegistration.findMany({
-          where: { activityId, deletedAt: null, status: "SERVED" },
           include: {
             repairRecord: {
               select: { id: true, status: true, submittedAt: true, deletedAt: true },
@@ -437,6 +438,11 @@ export const repairActivityStaffService = {
           : Promise.resolve([]),
       ]);
 
+    const registeredCount = canAdmin ? registrations.length : memberCount!;
+    const ownAttendance = canAdmin
+      ? attendanceRows.find((row) => row.memberProfileId === member.id)
+      : attendance;
+
     const eligible = canAdmin
       ? registrations
           .filter((r) => r.status === "REGISTERED")
@@ -448,7 +454,8 @@ export const repairActivityStaffService = {
       registrations.filter((r) => r.status === "CHECKED_IN"),
     ).map(toStaffReg);
 
-    const served: StaffServedRow[] = servedRows
+    const served: StaffServedRow[] = registrations
+      .filter((row) => row.status === "SERVED")
       .sort((a, b) => (b.servedAt?.getTime() ?? 0) - (a.servedAt?.getTime() ?? 0))
       .map((row) => {
         const recordStatus =
@@ -480,9 +487,9 @@ export const repairActivityStaffService = {
     }));
 
     return {
-      activity: toListItem(activity, registeredCount, Boolean(attendance), now),
-      attended: Boolean(attendance),
-      attendanceCheckedInAt: attendance?.checkedInAt.toISOString() ?? null,
+      activity: toListItem(activity, registeredCount, Boolean(ownAttendance), now),
+      attended: Boolean(ownAttendance),
+      attendanceCheckedInAt: ownAttendance?.checkedInAt.toISOString() ?? null,
       canAdmin,
       attendanceMembers,
       eligible,
