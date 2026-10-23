@@ -251,7 +251,7 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 
 | 传递方式                     | 端点                                                                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`、`POST /api/v1/repairs/:id/withdraw`                                                                                            |
+| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`、`POST /api/v1/repairs/:id/withdraw`                                                       |
 | 请求体字段 `idempotencyKey`  | 管理端与后台写接口：`POST /api/v1/admin/repairs/:id/reviews`、`.../batch-reviews`、`admin/members`、`join-applications/:id/reviews`、`member-registrations/invite` |
 
 单条审核的键上限 128 位；批次键按 `${批次键}:${recordId}` 给每条记录派生一个键，`recordId` 是
@@ -581,7 +581,8 @@ DELETE     /api/v1/admin/comments/:id
   后台请求，重新可见时复查。旧请求、换活动或卸载后的响应不更新当前目标；后台失败保留
   已显示内容。报名写入成功后的主动刷新可替换旧轮询，状态以服务端响应为准。
 - 工作台将排队/已接待报名合并读取；管理员复用完整有效报名计数、出勤名单中的本人状态，
-  成员仍在库层排除待签到人员资料、保留独立总数和本人出勤查询。管理员每轮独立取数分支
+  成员仍在库层排除待签到人员资料、只保留排队与**本人接待**的已接待记录（issue #207），
+  保留独立总数和本人出勤查询。管理员每轮独立取数分支
   由 6 项减为 3 项、成员由 5 项减为 4 项（不含鉴权及前置活动/资格读取，不等同 SQL 条数）。
   原响应字段、排序、脱敏、权限、写操作和审计不变，进行中 5 秒/结束后 60 秒节拍不变。
 
@@ -662,7 +663,8 @@ DELETE     /api/v1/admin/comments/:id
   **任何活动**的 serve 都返回 409 `ACTIVITY_SERVE_DRAFT_PENDING`（消息含客户姓名）；
   软删除的草稿、`PENDING` / `REJECTED` 记录与手工草稿（非接待产生）都不拦截。
 - 看板 `GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
-  - `served: StaffServedRow[]` —— 本场 `SERVED` 报名（按 `servedAt` 倒序），
+  - `served: StaffServedRow[]` —— `SERVED` 报名（按 `servedAt` 倒序）：管理员为本场全部，
+    普通成员仅**本人接待**（issue #207）；
     每行在 `StaffRegistrationView` 上追加 `recordStatus: RepairStatus | null`
     （`null` = 记录缺失或已软删除）；
   - `pendingServeDraft: { repairRecordId, ownerName, activityTitle } | null` —— 全局拦截的
@@ -737,6 +739,19 @@ DELETE     /api/v1/admin/comments/:id
 「已接待」沿用 `servedAt` 降序，区块常驻、为空只换内容。
 
 新增错误码：无。
+
+### 成员「已接待」仅本人接待记录（issue #207）
+
+- 普通成员（`activity:staff`）的 board 在**库层**只读取「`CHECKED_IN` + 本人 `SERVED`」：
+  `served` 只包含 `servedByMemberProfileId = 当前成员档案` 的报名，他人接待的客户
+  （含脱敏电话与记录状态）不进入响应；`canAdmin` 账号仍返回本场全部 `SERVED`
+  （管理视图需要总览与跨人撤销）。
+- `served` 列表与计数同源（本人接待数），A 账号看不到 B 接待的客户；无记录时成员显示
+  「本场你还没有接待记录。」，管理员显示「本场还没有已接待的客户。」。
+- 排队（`CHECKED_IN`）、管理员待签到、排序 / 脱敏 / 撤销接待资格 / 审计均不变；
+  无新增端点、权限、错误码、Schema 或 Migration。
+- 影响范围：`repair-activity-staff-service.ts`（`getBoard`）→ `MemberRepairActivityBoard.tsx`
+  空态文案；集成测试 `repair-activity-board.test.ts` 钉住「成员只见本人 / 管理员全量」。
 
 ## 管理端活动列表显示出勤人数（issue #107）
 

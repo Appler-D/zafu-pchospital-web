@@ -407,9 +407,16 @@ export const repairActivityStaffService = {
           where: {
             activityId,
             deletedAt: null,
-            status: {
-              in: canAdmin ? [...EFFECTIVE_REGISTRATION_STATUSES] : ["CHECKED_IN", "SERVED"],
-            },
+            // 成员只取「排队 + **本人**接待」（issue #207）：他人接待的客户资料（含脱敏
+            // 电话与记录状态）在库层就不进入成员请求，而不是前端隐藏。管理员仍是全部有效报名。
+            ...(canAdmin
+              ? { status: { in: [...EFFECTIVE_REGISTRATION_STATUSES] } }
+              : {
+                  OR: [
+                    { status: "CHECKED_IN" },
+                    { status: "SERVED", servedByMemberProfileId: member.id },
+                  ],
+                }),
           },
           include: {
             repairRecord: {
@@ -455,7 +462,10 @@ export const repairActivityStaffService = {
     ).map(toStaffReg);
 
     const served: StaffServedRow[] = registrations
-      .filter((row) => row.status === "SERVED")
+      // 查询已经把成员范围收窄；这里再兜一层，防止以后改查询时把他人接待记录漏给成员。
+      .filter(
+        (row) => row.status === "SERVED" && (canAdmin || row.servedByMemberProfileId === member.id),
+      )
       .sort((a, b) => (b.servedAt?.getTime() ?? 0) - (a.servedAt?.getTime() ?? 0))
       .map((row) => {
         const recordStatus =

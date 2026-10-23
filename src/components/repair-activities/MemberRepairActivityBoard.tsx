@@ -773,7 +773,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <span className="member-section__tag">{copy.servedTag}</span>
           </header>
           {board.served.length === 0 ? (
-            <p className="muted activity-board__empty">{copy.servedEmpty}</p>
+            <p className="muted activity-board__empty">
+              {board.canAdmin ? copy.servedEmpty : copy.servedEmptySelf}
+            </p>
           ) : (
             <ul className="activity-board__list">
               {board.served.map((row) => {

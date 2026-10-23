@@ -159,6 +159,8 @@ export const memberRepairActivitiesCopy = {
     servedTitle: "已接待",
     servedTag: "Served",
     servedEmpty: "本场还没有已接待的客户。",
+    /** 成员视角（issue #207）：列表只含本人接待，空态要说清「你」。 */
+    servedEmptySelf: "本场你还没有接待记录。",
     fillRepair: "填写维修记录",
     /** 撤销接待（issue #166）：仅接待者本人 / 活动管理员，且草稿未提交。 */
     revertServe: "撤销接待",
