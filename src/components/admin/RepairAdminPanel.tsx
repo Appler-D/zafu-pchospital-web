@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared } from "@/config/admin";
 import { repairResultLabels, repairStatusLabels } from "@/config/repairs";
-import { adminFetch, prefetchAdmin } from "@/features/admin/admin-client";
+import { adminFetch } from "@/features/admin/admin-client";
 import { sortParam } from "@/lib/api/list-query";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
 import { AdminBatchTools } from "@/components/admin/AdminBatchTools";
@@ -353,10 +353,6 @@ export function RepairAdminPanel() {
             tableRef={resize.tableRef}
             wrapClassName="admin-table-wrap admin-table-wrap--resizable"
             className="admin-table admin-table--resizable admin-table--repairs"
-            rowProps={(record) => ({
-              // 悬停即预取记录详情（窗口里的照片要靠它）。
-              onMouseEnter: () => prefetchAdmin(`/api/v1/repairs/${record.id}`),
-            })}
             overlay={
               <div className="admin-colgrid">
                 {resize.boundaries.map((boundary) => (

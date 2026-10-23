@@ -47,6 +47,7 @@ export function RepairActivityDetail({ activityId }: Props) {
     deviceModel: string;
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
+  const request = useRef<{ background: boolean; controller: AbortController } | null>(null);
 
   /**
    * `background` = 倒计时驱动的自动重取：传输 / 服务端瞬时失败时保留已渲染内容，
@@ -54,17 +55,26 @@ export function RepairActivityDetail({ activityId }: Props) {
    */
   const load = useCallback(
     async (background = false) => {
+      if (background && (document.visibilityState !== "visible" || request.current)) return;
+      // 写入后的刷新可替换旧轮询，旧结果不能覆盖报名成功后的状态。
+      request.current?.controller.abort();
+      const active = { background, controller: new AbortController() };
+      request.current = active;
       if (!background) setProblem("");
       try {
-        const response = await fetch(`/api/v1/repair-activities/${activityId}`);
+        const response = await fetch(`/api/v1/repair-activities/${activityId}`, {
+          signal: active.controller.signal,
+        });
         // HTTP Date 头就是服务器此刻的时间（秒级）：用它校正倒计时基准。
         const serverDate = Date.parse(response.headers.get("Date") ?? "");
-        if (Number.isFinite(serverDate)) setServerOffsetMs(serverDate - Date.now());
         const json = (await response.json()) as {
           success: boolean;
           data?: RepairActivityPublicView;
           error?: { code?: string; message?: string };
         };
+        if (request.current !== active) return;
+        if (background && document.visibilityState !== "visible") return;
+        if (Number.isFinite(serverDate)) setServerOffsetMs(serverDate - Date.now());
         if (!json.success || !json.data) {
           const ended = json.error?.code === "ACTIVITY_ENDED" || response.status === 404;
           if (background && !ended) return;
@@ -80,16 +90,26 @@ export function RepairActivityDetail({ activityId }: Props) {
         setActivity(json.data);
         setState("ready");
       } catch {
+        if (request.current !== active) return;
         if (background) return;
         setState("error");
         setProblem("加载失败，请稍后重试");
+      } finally {
+        if (request.current === active) request.current = null;
       }
     },
     [activityId],
   );
 
   useEffect(() => {
+    setState("loading");
+    setActivity(null);
     void load();
+    return () => {
+      const active = request.current;
+      request.current = null;
+      active?.controller.abort();
+    };
   }, [load]);
 
   /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
@@ -112,9 +132,24 @@ export function RepairActivityDetail({ activityId }: Props) {
    */
   useEffect(() => {
     if (!waitingForOpen) return;
-    void load(true);
-    const timer = window.setInterval(() => void load(true), 30_000);
-    return () => window.clearInterval(timer);
+    const refresh = () => void load(true);
+    const visibility = () => {
+      if (document.visibilityState === "visible") refresh();
+      else if (request.current?.background) {
+        const active = request.current;
+        request.current = null;
+        active.controller.abort();
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
   }, [waitingForOpen, load]);
 
   /** 倒计时归零转为可报名时，给读屏一次性播报（数字块本身不进入 live region）。 */

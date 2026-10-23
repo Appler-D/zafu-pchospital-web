@@ -745,6 +745,79 @@ dbTest("看板按角色下发：canAdmin 决定待签到与写权限，成员签
   assert.equal(saved.checkedInAt, null);
 });
 
+dbTest("看板合并读取：复用管理员计数和本人出勤，成员不读取待签到资料", async (t) => {
+  const db = getDb();
+  const row = await checkInFixture();
+  await checkInFixture({ status: "CHECKED_IN" });
+  await checkInFixture({ status: "SERVED" });
+  const count = await db.repairActivityRegistration.count({
+    where: {
+      activityId: ACTIVITY_ID,
+      deletedAt: null,
+      status: { in: ["REGISTERED", "CHECKED_IN", "SERVED"] },
+    },
+  });
+  const registrationRead: NonNullable<
+    Parameters<typeof db.repairActivityRegistration.findMany>[0]
+  >[] = [];
+  const calls = { count: 0, self: 0, attendance: 0 };
+  // Query extension 只计数，所有 query(args) 仍走真实 GreatSQL，不替换读取结果。
+  const observed = db.$extends({
+    query: {
+      repairActivityRegistration: {
+        findMany({ args, query }) {
+          registrationRead.push(args);
+          return query(args);
+        },
+        count({ args, query }) {
+          calls.count++;
+          return query(args);
+        },
+      },
+      repairActivityAttendance: {
+        findUnique({ args, query }) {
+          calls.self++;
+          return query(args);
+        },
+        findMany({ args, query }) {
+          calls.attendance++;
+          return query(args);
+        },
+      },
+    },
+  });
+  const holder = globalThis as unknown as { __pcHospitalDb?: typeof db };
+  holder.__pcHospitalDb = observed as unknown as typeof db;
+  t.after(() => {
+    holder.__pcHospitalDb = db;
+  });
+  const admin = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  assert.equal(registrationRead.length, 1);
+  assert.deepEqual(calls, { count: 0, self: 0, attendance: 1 });
+  assert.equal(admin.activity.registeredCount, count);
+  assert.ok(admin.eligible.some((item) => item.id === row.id));
+  assert.equal(admin.attended, true);
+  assert.equal(
+    admin.attendanceCheckedInAt,
+    admin.attendanceMembers.find((item) => item.memberProfileId === STAFF_PROFILE_ID)!.checkedInAt,
+  );
+
+  const member = await repairActivityStaffService.getBoard(ACTIVITY_ID, {
+    ...staffActor,
+    permissions: permissionsForRoles(["MEMBER"]),
+  });
+  assert.equal(registrationRead.length, 2);
+  const filter = registrationRead[1]!.where!;
+  assert.deepEqual(filter.status, { in: ["CHECKED_IN", "SERVED"] });
+  assert.deepEqual(calls, { count: 1, self: 1, attendance: 1 });
+  assert.equal(member.activity.registeredCount, count);
+  assert.equal(member.attendanceCheckedInAt, admin.attendanceCheckedInAt);
+  assert.deepEqual(member.eligible, []);
+  assert.deepEqual(member.attendanceMembers, []);
+  assert.deepEqual(member.queue, admin.queue);
+  assert.deepEqual(member.served, admin.served);
+});
+
 dbTest("出勤成员名单：管理员按签到时间升序拿到展示名，成员不下发（issue #107）", async () => {
   const db = getDb();
   const now = new Date();
