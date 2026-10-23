@@ -176,6 +176,7 @@ model MemberProfile {
   activityServedRegs  RepairActivityRegistration[] @relation("RepairActivityServedBy")
 
   @@index([status, deletedAt], map: "member_profiles_status_deleted_idx")
+  @@index([department], map: "member_profiles_department_idx")
   @@index([deletedAt, sortOrder, createdAt], map: "member_profiles_order_idx")
   @@map("member_profiles")
 }

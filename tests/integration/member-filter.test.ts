@@ -6,7 +6,7 @@ import { memberService } from "../../src/features/members/member-service";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { AppError } from "../../src/lib/api/errors";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
-import type { AuthorizedActor } from "../../src/types/contracts";
+import type { AuthorizedActor, MemberDepartment } from "../../src/types/contracts";
 import type { FilterRule } from "../../src/lib/api/list-filter";
 import { integrationTestsEnabled } from "./db-guard";
 
@@ -92,11 +92,7 @@ async function cleanup(): Promise<void> {
 }
 
 let seq = 0;
-async function createMember(
-  label: string,
-  className: string,
-  department: "REPAIR" | "PUBLICITY" | "OFFICE",
-) {
+async function createMember(label: string, className: string, department: MemberDepartment) {
   seq += 1;
   const serial = `${Date.now()}`.slice(-5) + String(seq).padStart(3, "0");
   const result = await memberService.create(

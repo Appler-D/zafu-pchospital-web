@@ -7,7 +7,7 @@ import { MAX_FILTER_RULES, type FilterRule } from "../../src/lib/api/list-filter
 import { listQueryParams } from "../../src/lib/api/list-query";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
-import type { AuthorizedActor, MemberListEntry } from "../../src/types/contracts";
+import type { AuthorizedActor, MemberDepartment, MemberListEntry } from "../../src/types/contracts";
 
 import { callRoute, sessionCookie } from "./http-harness";
 import { integrationTestsEnabled } from "./db-guard";
@@ -127,7 +127,7 @@ async function createMember(fields: {
   studentId: string;
   className: string;
   nickname: string;
-  department: "REPAIR" | "PUBLICITY" | "OFFICE";
+  department: MemberDepartment;
 }): Promise<{ id: string }> {
   seq += 1;
   const serial = `${Date.now()}`.slice(-5) + String(seq).padStart(3, "0");
