@@ -6,7 +6,7 @@ import { AppError } from "@/lib/api/errors";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { assertCanEditRepair, assertCanWithdrawRepair } from "./repair-policy";
+import { assertCanEditRepair } from "./repair-policy";
 import { repairDetailInclude, repairRepository } from "./repair-repository";
 import {
   isBlankDraftFields,
@@ -71,6 +71,88 @@ export const repairService: RepairServiceContract = {
       });
     });
     return toRepairView(record, { canViewOwnerPhone: true });
+  },
+
+  /**
+   * 新建表单的「提交即建单」（#222）：不再先创建草稿，直接落 PENDING。
+   *
+   * 与成员自助提交同一套校验与时间线口径；`Idempotency-Key` 作为
+   * `createRequestKey`，重试返回原记录。分类必须存在且启用，参与人含创建人。
+   */
+  async createSubmitted(input, actor) {
+    requirePermission(actor, "repair:submit");
+    const member = await repairRepository.activeMemberForUser(actor.userId);
+    const key = input.idempotencyKey.trim();
+    if (!key || key.length > 128) throw new AppError("VALIDATION_FAILED", "Idempotency-Key 无效");
+    const existing = await getDb().repairRecord.findUnique({
+      where: { createRequestKey: key },
+      include: repairDetailInclude,
+    });
+    if (existing) return replaySubmitted(existing, member.id);
+    const fields = normalizeDraftFields(input);
+    validateDraftFields(fields);
+    const draft = { ...fields, result: fields.result ?? defaultRepairResult };
+    validateSubmission({
+      repairDate: parseRepairDate(draft.repairDate) ?? null,
+      durationMinutes: draft.durationMinutes ?? null,
+      categoryId: draft.categoryId ?? null,
+      ownerName: draft.ownerName ?? null,
+      ownerPhone: draft.ownerPhone ?? null,
+      deviceModel: draft.deviceModel ?? null,
+      content: draft.content ?? null,
+      result: draft.result ?? null,
+    });
+    if (draft.categoryId) {
+      const category = await getDb().repairCategory.findFirst({
+        where: { id: draft.categoryId, deletedAt: null },
+        select: { isActive: true },
+      });
+      if (!category) throw new AppError("VALIDATION_FAILED", "所选分类不存在");
+      if (!category.isActive) throw new AppError("REPAIR_CATEGORY_INACTIVE", "所选分类已停用");
+    }
+    const participantIds = composeParticipantIds(member.id, fields.participantIds ?? []);
+    await assertParticipantsExist(participantIds, [member.id]);
+    const now = new Date();
+    try {
+      const record = await inSerializableTransaction(async (tx) => {
+        const created = await tx.repairRecord.create({
+          data: {
+            id: randomUUID(),
+            memberProfileId: member.id,
+            status: "PENDING",
+            createRequestKey: key,
+            submittedAt: now,
+            reviewedAt: null,
+            createdAt: now,
+            ...dataFields(draft),
+          },
+        });
+        await insertRepairParticipants(tx, created.id, participantIds, now);
+        await timeline(
+          tx,
+          created.id,
+          actor.userId,
+          "SUBMITTED",
+          { from: null, idempotencyKey: key },
+          now,
+        );
+        return tx.repairRecord.findUniqueOrThrow({
+          where: { id: created.id },
+          include: repairDetailInclude,
+        });
+      });
+      return toRepairView(record, { canViewOwnerPhone: true });
+    } catch (error) {
+      // 同一幂等键并发提交：后者在唯一键或串行化冲突上失败，但先写入的记录已提交，
+      // 按 createRequestKey 重读并返回它，避免把可幂等的重试暴露成 500。
+      if (!hasPrismaCode(error, "P2002") && !hasPrismaCode(error, "P2034")) throw error;
+      const raced = await getDb().repairRecord.findUnique({
+        where: { createRequestKey: key },
+        include: repairDetailInclude,
+      });
+      if (!raced) throw error;
+      return replaySubmitted(raced, member.id);
+    }
   },
 
   async update(recordId, input, actor) {
@@ -163,63 +245,6 @@ export const repairService: RepairServiceContract = {
     return toRepairView(updated, { canViewOwnerPhone: true });
   },
 
-  /**
-   * 撤回审核（issue #165）：创建人把尚未审核的记录退回草稿，修改后可重新提交。
-   *
-   * 保留 `submittedAt` 作为「提交过」的标记 —— 前端据此把这条草稿标成「已撤回」，
-   * 接待流程也据此把它排除在「未提交的接待草稿」之外。审核结论、通知与统计不受影响。
-   */
-  async withdraw(recordId, input, actor) {
-    requirePermission(actor, "repair:submit");
-    const key = input.idempotencyKey.trim();
-    if (!key || key.length > 128) throw new AppError("VALIDATION_FAILED", "Idempotency-Key 无效");
-    const record = await repairRepository.getById(recordId);
-    // 撤回是低频操作，直接读完整详情（含 timeline）比对幂等键即可；
-    // 若将来调用频率上升，再改为按 (recordId, eventType, key) 的定向查询。
-    const retry = record.timeline.some((event) => {
-      if (event.eventType !== "WITHDRAWN") return false;
-      const summary = event.summary as { idempotencyKey?: unknown } | null;
-      return summary?.idempotencyKey === key;
-    });
-    assertCanWithdrawRepair(actor, record, { allowNonPending: retry });
-    if (retry) return toRepairView(record, { canViewOwnerPhone: true });
-    if (record.version !== input.version)
-      throw new AppError("REPAIR_VERSION_CONFLICT", "记录已被更新，请刷新后重试");
-    const now = new Date();
-    const updated = await inSerializableTransaction(async (tx) => {
-      const result = await tx.repairRecord.updateMany({
-        where: { id: recordId, version: input.version, status: "PENDING", deletedAt: null },
-        // 不动 submittedAt：它同时是「这条草稿曾经提交过」的标记（issue #165 的「已撤回」标签）。
-        data: { status: "DRAFT", version: { increment: 1 } },
-      });
-      if (result.count !== 1) throw new AppError("REPAIR_STATE_CONFLICT", "记录状态已变化");
-      await timeline(
-        tx,
-        recordId,
-        actor.userId,
-        "WITHDRAWN",
-        { from: "PENDING", to: "DRAFT", idempotencyKey: key },
-        now,
-      );
-      await appendAuditLog(tx, {
-        actor,
-        actorType: "USER",
-        actorUserId: actor.userId,
-        action: "repair.withdrawn",
-        targetType: "RepairRecord",
-        targetId: recordId,
-        result: "SUCCESS",
-        before: { status: "PENDING", version: record.version },
-        after: { status: "DRAFT", version: record.version + 1 },
-      });
-      return tx.repairRecord.findUniqueOrThrow({
-        where: { id: recordId },
-        include: repairDetailInclude,
-      });
-    });
-    return toRepairView(updated, { canViewOwnerPhone: true });
-  },
-
   async softDelete(recordId, reason, actor) {
     requirePermission(actor, "repair:delete");
     const note = reason.trim();
@@ -285,6 +310,22 @@ export async function timeline(
   await tx.repairTimelineEvent.create({
     data: { id: randomUUID(), repairRecordId, actorUserId, eventType, summary, createdAt },
   });
+}
+
+/** 幂等复放：同一 `Idempotency-Key` 返回首次结果；已软删除的提交不再返回可用记录。 */
+function replaySubmitted(
+  existing: Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>,
+  memberProfileId: string,
+) {
+  if (existing.memberProfileId !== memberProfileId)
+    throw new AppError("IDEMPOTENCY_CONFLICT", "幂等键已被使用");
+  if (existing.deletedAt)
+    throw new AppError("REPAIR_STATE_INVALID", "原提交已被删除，请刷新页面后重新提交");
+  return toRepairView(existing, { canViewOwnerPhone: true });
+}
+
+function hasPrismaCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /* ---------------------------------------------------- 参与维修人员（issue #114） */

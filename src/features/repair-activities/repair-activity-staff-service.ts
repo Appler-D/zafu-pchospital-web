@@ -69,8 +69,6 @@ export type StaffRegistrationView = {
 /** 已接待行：报名视图 + 对应维修单状态（`null` = 记录缺失、已软删除或尚未建单）。 */
 export type StaffServedRow = StaffRegistrationView & {
   recordStatus: RepairStatus | null;
-  /** 这条记录已从审核中撤回（issue #165）：状态是 DRAFT，但曾经提交过。 */
-  recordWithdrawn: boolean;
   /** 当前操作者能否撤销这次接待：未建单，且是接待者本人或活动管理员（issue #166 / #221）。 */
   canRevert: boolean;
   /** 只有接待者本人、且还没建单时才能「继续填写」（issue #221）。 */
@@ -488,17 +486,14 @@ export const repairActivityStaffService = {
           row.repairRecord && !row.repairRecord.deletedAt
             ? (row.repairRecord.status as RepairStatus)
             : null;
-        // 已撤回的草稿仍可编辑（历史数据），但不再算「待补建的接待」（issue #221）。
-        const recordWithdrawn = recordStatus === "DRAFT" && Boolean(row.repairRecord?.submittedAt);
         // 待补建 = 接待已占位、维修单还没创建（issue #221）。
         const pendingRecord = row.repairRecordId === null;
-        // 旧 serve 草稿（PR #221 之前）：登记仍关联 DRAFT，过渡期保留撤销入口（清理见 #223）。
+        // 旧 serve 草稿（PR #221 之前）：登记仍关联未提交的 DRAFT，过渡期保留撤销入口（清理见 #223）。
         const legacyDraft =
-          row.repairRecordId !== null && recordStatus === "DRAFT" && !recordWithdrawn;
+          row.repairRecordId !== null && recordStatus === "DRAFT" && !row.repairRecord?.submittedAt;
         return {
           ...toStaffReg(row),
           recordStatus,
-          recordWithdrawn,
           // 撤销接待：未建单或旧 serve 草稿；本人或活动管理员（issue #166 / #221）。
           canRevert:
             (pendingRecord || legacyDraft) &&

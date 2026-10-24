@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { formatRepairParticipants, repairCopy, repairWithdrawnLabel } from "@/config/repairs";
+import { formatRepairParticipants, repairCopy } from "@/config/repairs";
 import { parseRepairListStatus } from "@/features/repairs/repair-http";
 import type {
   PaginationMeta,
@@ -469,9 +469,6 @@ function RepairRow({
           <span className={`repair-tag repair-tag--${statusClass(item.status)}`}>
             {statusLabels[item.status]}
           </span>
-          {item.status === "DRAFT" && item.submittedAt ? (
-            <span className="admin-tag">{repairWithdrawnLabel}</span>
-          ) : null}
         </span>
       </td>
       <td data-label={copy.columns.action} className="repair-table__action">

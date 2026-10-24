@@ -9,7 +9,6 @@ import { RepairParticipantPicker } from "@/components/ui/RepairParticipantPicker
 import {
   defaultRepairResult,
   formatBytes,
-  repairDetailCopy,
   repairEditorCopy,
   repairFieldLimits,
   repairResultLabels,
@@ -77,7 +76,6 @@ function localDraftRecord(input: {
     reviews: [],
     timeline: [],
     canEdit: true,
-    canWithdraw: false,
     canReview: false,
     canFlag: false,
     isFavorited: false,
@@ -131,7 +129,7 @@ export function RepairEditor({
   serveContext,
 }: {
   /**
-   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，首次传图或提交时才建档（issue #162）。
+   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，提交时才建档（#222）。
    */
   recordId?: string;
   /** 新建流程不再暴露「草稿」（issue #72）：只留提交审核；编辑存量草稿与退回记录仍可保存。 */
@@ -145,7 +143,7 @@ export function RepairEditor({
   const createMode = !recordId;
   /** 活动接待补单的本地暂存按报名分桶（issue #221）。 */
   const draftScope = serveContext?.registrationId;
-  const [serverId, setServerId] = useState(recordId ?? "");
+  const serverId = recordId ?? "";
   /** 新建会话的幂等键：重复点提交 / 上传重试都不会多建草稿。 */
   const [createRequestKey] = useState(createIdempotencyKey);
   const [record, setRecord] = useState<RepairDetailView>();
@@ -314,22 +312,8 @@ export function RepairEditor({
   }
   async function persist(): Promise<RepairDetailView> {
     if (!record) throw new Error("记录尚未加载");
-    if (serveContext) throw new Error("接待补单请直接提交，不保存草稿。");
+    if (createMode) throw new Error("新建记录请直接提交，不保存草稿。");
     const fields = draftFieldsOf(record);
-    if (!serverId) {
-      // 新建页首次落库：把当前全部内容一次性带上（不再先建空草稿）。
-      const response = await fetch("/api/v1/repairs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": createRequestKey },
-        body: JSON.stringify(fields),
-      });
-      const json = await response.json();
-      if (!json.success) throw new Error(json.error.message);
-      clearCreateDraft(draftScope);
-      setServerId(json.data.id);
-      setRecord((current) => (current ? { ...current, ...json.data } : json.data));
-      return { ...record, ...json.data } as RepairDetailView;
-    }
     const response = await fetch(`/api/v1/repairs/${serverId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -383,6 +367,30 @@ export function RepairEditor({
     router.push(`/member/repair-activities/${encodeURIComponent(serveContext.activityId)}`);
   }
 
+  /** 新建「提交即建单」（#222）：直接创建 PENDING，不落草稿。 */
+  async function createSubmit() {
+    if (!record) throw new Error("记录尚未加载");
+    const response = await fetch("/api/v1/repairs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": createRequestKey },
+      body: JSON.stringify(draftFieldsOf(record)),
+    });
+    const json = await response.json();
+    if (!json.success) {
+      const fieldErrors = json.error.fieldErrors
+        ? Object.values(json.error.fieldErrors).flat().join("；")
+        : "";
+      throw new Error(fieldErrors || json.error.message);
+    }
+    clearCreateDraft(draftScope);
+    if (returnActivityId) {
+      setToast({ text: repairEditorCopy.activitySubmitSuccess, tone: "success" });
+      setSubmitted(true);
+    } else {
+      router.replace(`/member/repairs/${json.data.id}`);
+    }
+  }
+
   async function submit() {
     if (busy) return;
     // 机型提交必填（issue #218）：先在客户端给出可读提示，服务端还会再校验一次。
@@ -395,6 +403,10 @@ export function RepairEditor({
     try {
       if (serveContext) {
         await submitServe();
+        return;
+      }
+      if (createMode) {
+        await createSubmit();
         return;
       }
       // 先把当前表单存一次再提交：否则「填了但没保存」会被服务端的完整性校验拦下。
@@ -457,25 +469,15 @@ export function RepairEditor({
     setRecord((current) => (current ? { ...current, photos: json.data.photos } : current));
   }
   async function upload(files: File[]) {
-    // 接待补单不落草稿，照片上传入口已在界面隐藏（issue #221）。
-    if (serveContext) return;
+    // 新建/接待补单提交前没有记录，照片入口已在界面隐藏（#222）。
+    if (createMode) return;
     if (!files.length || !record) return;
     const selected = files;
     setBusy(true);
     setMessage("");
     try {
-      // 新建页首次传图：先把全部内容一次性落成服务端草稿（照片接口挂在记录 ID 上）。
-      let targetId = serverId;
-      let current = record;
-      if (!targetId) {
-        current = await persist();
-        targetId = current.id;
-        const detail = await fetch(`/api/v1/repairs/${targetId}`, { cache: "no-store" });
-        const detailJson = await detail.json();
-        if (!detailJson.success) throw new Error(detailJson.error.message);
-        current = detailJson.data as RepairDetailView;
-        setRecord(current);
-      }
+      const targetId = serverId;
+      const current = record;
       const { maxBytes, maxFiles } = current.photoLimits;
       // 按服务端下发的上限拦一遍：超限的文件根本传不上去，不必等 multipart 走完再说。
       const oversized = selected.find((file) => file.size > maxBytes);
@@ -506,8 +508,6 @@ export function RepairEditor({
       if (!json.success) throw new Error(json.error.message);
       await refreshPhotos(targetId);
       setMessage("照片已上传。");
-      // 建档后离开新建页：地址里带记录 ID，刷新不会丢关联，活动看板的「填写维修记录」也指向它。
-      if (createMode) router.replace(`/member/repairs/${targetId}/edit`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "上传失败");
     } finally {
@@ -569,21 +569,16 @@ export function RepairEditor({
     );
   if (!record) return null;
   const rejection = [...record.reviews].reverse().find((item) => item.decision === "REJECTED");
-  const photoHint = serveContext
-    ? repairEditorCopy.servePhotoUnavailable
-    : createMode && !serverId
-      ? repairEditorCopy.photoHintCreate
-      : repairEditorCopy.photoHint
-          .replace("{size}", formatBytes(record.photoLimits.maxBytes))
-          .replace("{count}", String(record.photoLimits.maxFiles));
+  const photoHint = createMode
+    ? serveContext
+      ? repairEditorCopy.servePhotoUnavailable
+      : repairEditorCopy.photoUnavailableCreate
+    : repairEditorCopy.photoHint
+        .replace("{size}", formatBytes(record.photoLimits.maxBytes))
+        .replace("{count}", String(record.photoLimits.maxFiles));
   return (
     <div className="repair-editor">
       <AdminToast toast={toast} onDismiss={() => setToast(null)} />
-      {record.status === "DRAFT" && record.submittedAt ? (
-        <Card variant="notice">
-          <p>{repairDetailCopy.withdrawnNotice}</p>
-        </Card>
-      ) : null}
       {rejection ? (
         <Card variant="notice">
           <strong>最新退回原因</strong>
@@ -729,7 +724,10 @@ export function RepairEditor({
           </p>
           {serveContext ? <p className="field__hint">{repairEditorCopy.serveSubmitNote}</p> : null}
           <p className="field__hint">
-            维修结果默认为「{repairResultLabels[defaultRepairResult]}」，保存与提交都会按此记录。
+            {(allowSaveDraft
+              ? repairEditorCopy.resultDefaultHint
+              : repairEditorCopy.resultDefaultHintSubmitOnly
+            ).replace("{result}", repairResultLabels[defaultRepairResult])}
           </p>
           {serverId ? <p className="field__hint">当前版本：{record.version}</p> : null}
           <div className="signup__actions">
@@ -771,8 +769,8 @@ export function RepairEditor({
             {repairEditorCopy.remarkHint}
           </span>
         </label>
-        {serveContext ? (
-          <p className="field__hint">{repairEditorCopy.servePhotoUnavailable}</p>
+        {createMode ? (
+          <p className="field__hint">{photoHint}</p>
         ) : (
           <>
             <label className="field">

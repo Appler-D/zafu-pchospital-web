@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     const { actor } = await authenticateRequest(request, requestId);
     const body = (await request.json()) as Record<string, unknown>;
     return apiSuccess(
-      await repairService.createDraft(
+      await repairService.createSubmitted(
         { ...draftInput(body), idempotencyKey: idempotencyKey(request) },
         actor,
       ),

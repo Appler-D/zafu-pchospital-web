@@ -659,8 +659,6 @@ export type RepairDetailView = RepairView & {
   reviews: RepairReviewView[];
   timeline: RepairTimelineView[];
   canEdit: boolean;
-  /** 创建人且记录待审核：可撤回成草稿重新编辑（issue #165）。 */
-  canWithdraw: boolean;
   canReview: boolean;
   canFlag: boolean;
   isFavorited: boolean;
@@ -694,6 +692,8 @@ export type RepairDraftFields = {
   participantIds?: string[];
 };
 export type CreateRepairDraftInput = RepairDraftFields & { idempotencyKey: string };
+/** 提交即建单（#222）：与草稿同形，但直接创建 PENDING 记录。 */
+export type CreateSubmittedRepairInput = RepairDraftFields & { idempotencyKey: string };
 export type UpdateRepairInput = RepairDraftFields & { version: number };
 export type SubmitRepairInput = { version: number; idempotencyKey: string };
 export type ReviewRepairInput = {
@@ -1508,11 +1508,12 @@ export interface AccountProvisionServiceContract {
 }
 
 export interface RepairServiceContract {
+  /** @deprecated 生产入口已下线（#222），仅测试夹具使用，随 #223 清理。 */
   createDraft(input: CreateRepairDraftInput, actor: AuthorizedActor): Promise<RepairView>;
+  /** 新建表单的「提交即建单」：直接创建 PENDING，不落草稿（#222）。 */
+  createSubmitted(input: CreateSubmittedRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   update(recordId: string, input: UpdateRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   submit(recordId: string, input: SubmitRepairInput, actor: AuthorizedActor): Promise<RepairView>;
-  /** 撤回审核（issue #165）：PENDING → DRAFT，仅创建人；入参与 submit 同形。 */
-  withdraw(recordId: string, input: SubmitRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   softDelete(recordId: string, reason: string, actor: AuthorizedActor): Promise<void>;
 }
 export interface RepairReviewServiceContract {

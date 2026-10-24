@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
-import { repairStatusLabels, repairWithdrawnLabel } from "@/config/repairs";
+import { repairStatusLabels } from "@/config/repairs";
 import { memberRepairActivitiesCopy, repairActivitiesPage } from "@/config/repair-activities";
 import {
   activityEndExclusive,
@@ -792,11 +792,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                         {pendingRecord ? (
                           <span className="admin-tag">{copy.servedPendingTag}</span>
                         ) : row.recordStatus ? (
-                          <span className="admin-tag">
-                            {row.recordWithdrawn
-                              ? repairWithdrawnLabel
-                              : repairStatusLabels[row.recordStatus]}
-                          </span>
+                          <span className="admin-tag">{repairStatusLabels[row.recordStatus]}</span>
                         ) : null}
                         {pendingRecord ? (
                           <p className="muted m-0">{copy.servedPendingHint}</p>

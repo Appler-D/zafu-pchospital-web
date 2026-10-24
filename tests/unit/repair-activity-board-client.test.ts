@@ -80,7 +80,6 @@ function board(attended = true): StaffBoardView {
         status: "SERVED",
         repairRecordId: "draft",
         recordStatus: "DRAFT",
-        recordWithdrawn: false,
         canRevert: true,
         canFill: false,
       },
