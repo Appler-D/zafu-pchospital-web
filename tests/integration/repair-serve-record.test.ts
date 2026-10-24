@@ -550,6 +550,104 @@ dbTest("撤销接待：仅未建单可用；本人 / 管理员权限；建单后
   assert.ok(await db.repairRecord.findFirst({ where: { id: record.id } }));
 });
 
+dbTest("旧 serve 草稿过渡：仍可撤销并删除草稿；已提交的拒绝（#221 审查）", async () => {
+  const db = getDb();
+  const registration = await checkedInRegistration(`${PREFIX} 旧草稿客户`);
+  await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
+  const now = new Date();
+  const recordId = randomUUID();
+  await db.repairRecord.create({
+    data: {
+      id: recordId,
+      memberProfileId: STAFF_PROFILE_ID,
+      status: "DRAFT",
+      createRequestKey: `activity-serve:${registration.id}`,
+      repairDate: new Date(),
+      durationMinutes: null,
+      categoryId: null,
+      ownerName: registration.name,
+      ownerPhone: registration.phone,
+      deviceModel: registration.deviceModel,
+      result: "COMPLETED",
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await db.repairRecordParticipant.create({
+    data: {
+      id: randomUUID(),
+      repairRecordId: recordId,
+      memberProfileId: STAFF_PROFILE_ID,
+      createdAt: now,
+    },
+  });
+  await db.repairActivityRegistration.update({
+    where: { id: registration.id },
+    data: { repairRecordId: recordId },
+  });
+
+  const board = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
+  const row = board.served.find((item) => item.id === registration.id);
+  assert.equal(row?.recordStatus, "DRAFT");
+  assert.equal(row?.canRevert, true, "旧草稿过渡期保留撤销入口");
+  assert.equal(row?.canFill, false);
+
+  const reverted = await repairActivityStaffService.revertServe(
+    ACTIVITY_ID,
+    registration.id,
+    staffActor,
+  );
+  assert.equal(reverted.registration.status, "CHECKED_IN");
+  assert.equal(reverted.deletedRecordId, recordId);
+  assert.equal(await db.repairRecord.count({ where: { id: recordId } }), 0);
+  const audit = await db.auditLog.findFirstOrThrow({
+    where: {
+      action: "repair_activity.registration_serve_reverted",
+      targetId: registration.id,
+    },
+  });
+  assert.equal((audit.afterSummary as { deletedRecordId?: string }).deletedRecordId, recordId);
+
+  // 已提交的旧记录不允许按「撤销接待」删除。
+  await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
+  const submittedId = randomUUID();
+  await db.repairRecord.create({
+    data: {
+      id: submittedId,
+      memberProfileId: STAFF_PROFILE_ID,
+      status: "PENDING",
+      createRequestKey: `activity-serve:${registration.id}-submitted`,
+      repairDate: new Date(),
+      durationMinutes: 30,
+      categoryId: null,
+      ownerName: registration.name,
+      ownerPhone: registration.phone,
+      deviceModel: registration.deviceModel,
+      result: "COMPLETED",
+      submittedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await db.repairActivityRegistration.update({
+    where: { id: registration.id },
+    data: { repairRecordId: submittedId },
+  });
+  await expectCode(
+    () => repairActivityStaffService.revertServe(ACTIVITY_ID, registration.id, staffActor),
+    "ACTIVITY_REGISTRATION_STATE_INVALID",
+  );
+  assert.ok(await db.repairRecord.findFirst({ where: { id: submittedId } }));
+
+  // 收尾：解除关联、删除测试记录并恢复登记，避免影响后续用例。
+  await db.repairActivityRegistration.update({
+    where: { id: registration.id },
+    data: { repairRecordId: null },
+  });
+  await db.repairRecord.delete({ where: { id: submittedId } });
+  await repairActivityStaffService.revertServe(ACTIVITY_ID, registration.id, staffActor);
+});
+
 dbTest("分类映射降级：映射不到启用分类时预填为空，提交需补选", async () => {
   const db = getDb();
   const registration = await checkedInRegistration(`${PREFIX} 分类客户`);

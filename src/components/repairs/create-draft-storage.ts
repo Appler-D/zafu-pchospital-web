@@ -78,6 +78,34 @@ export function clearCreateDraft(scope?: string): void {
   }
 }
 
+/**
+ * 活动接待补单的初始快照（issue #221，审查修正）：只要存在本机暂存就**整体采用**——
+ * 暂存是完整表单快照，包含用户显式清空的 null；不能再用 `stored.x ?? prefill.x`，
+ * 否则清空分类等字段后，暂存返回再进入会被预填重新填上。
+ */
+export function mergeServePrefill(
+  stored: CreateDraftSnapshot | null,
+  prefill: {
+    name: string;
+    phone: string;
+    deviceModel: string | null;
+    categoryId: string | null;
+    repairDate: string;
+  },
+): CreateDraftSnapshot {
+  if (stored) return stored;
+  return {
+    repairDate: prefill.repairDate,
+    durationMinutes: null,
+    categoryId: prefill.categoryId,
+    ownerName: prefill.name,
+    ownerPhone: prefill.phone,
+    deviceModel: prefill.deviceModel,
+    remark: null,
+    participantIds: [],
+  };
+}
+
 /** 只有「用户真的填过」才算有内容；维修日期默认今天，不计入。 */
 export function hasCreateDraftContent(fields: CreateDraftSnapshot): boolean {
   return Boolean(

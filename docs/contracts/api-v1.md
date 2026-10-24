@@ -674,8 +674,10 @@ DELETE     /api/v1/admin/comments/:id
     全局拦截的客户端先行判据（客户端据此弹层且**不发 serve 请求**；服务端 409 为并发兜底）。
 - `POST /api/v1/member/repair-activities/:id/revert-serve` 只允许撤销「已接待、未建单」的接待：
   登记恢复到接待前状态（签过到回 `CHECKED_IN`，否则回 `REGISTERED`）；已建单 / 已提交 / 已审核
-  的接待返回 409（属于审核流程）。审计 `repair_activity.registration_serve_reverted` 不再记录
-  删除记录 / 照片（没有可删的内容）。
+  的接待返回 409（属于审核流程）。审计 `repair_activity.registration_serve_reverted` 记录恢复状态。
+- **旧数据过渡**（PR #221 之前的接待草稿）：登记仍关联 `DRAFT` 且未提交时保留原撤销能力——
+  撤销会删除该草稿及照片，并清理评论 / 收藏 / 通知（#195），审计额外记录 `deletedRecordId`；
+  已提交 / 已审核 / 已撤回仍返回 409。存量处置见 #223。
 
 新增错误码：`ACTIVITY_SERVE_PENDING`(409)（取代 `ACTIVITY_SERVE_DRAFT_PENDING`）。
 

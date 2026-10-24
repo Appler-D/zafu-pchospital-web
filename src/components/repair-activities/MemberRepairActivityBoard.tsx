@@ -940,7 +940,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           }}
           onConfirm={() => void confirmRevertServe()}
         >
-          <p>{copy.revertServeConfirmHint}</p>
+          <p>
+            {revertTarget.repairRecordId
+              ? copy.revertServeConfirmHintLegacy
+              : copy.revertServeConfirmHint}
+          </p>
           <p>
             <strong>
               {revertTarget.name} · {revertTarget.phoneMasked}

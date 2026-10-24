@@ -22,6 +22,7 @@ import {
 } from "@/features/repair-activities/repair-activity-validation";
 import { resolveDisplayName } from "@/features/analytics/analytics-policy";
 import { createServedRepairRecord } from "@/features/repairs/repair-service";
+import { localRepairPhotoStorage } from "@/features/repairs/repair-photo-storage";
 import { repairRepository } from "@/features/repairs/repair-repository";
 import { toRepairView } from "@/features/repairs/repair-view";
 import { AppError } from "@/lib/api/errors";
@@ -84,9 +85,13 @@ export type StaffPendingServe = {
   activityTitle: string;
 };
 
-/** 撤销接待（issue #221）：只允许未建单的接待，报名回到接待前状态。 */
+/**
+ * 撤销接待（issue #221）：未建单的接待直接恢复登记；旧 serve 草稿（PR #221 之前）
+ * 仍可撤销，并返回被删除的草稿 id（过渡期兼容，清理见 #223）。
+ */
 export type RevertServeResultView = {
   registration: StaffRegistrationView;
+  deletedRecordId?: string;
 };
 
 /**
@@ -487,12 +492,17 @@ export const repairActivityStaffService = {
         const recordWithdrawn = recordStatus === "DRAFT" && Boolean(row.repairRecord?.submittedAt);
         // 待补建 = 接待已占位、维修单还没创建（issue #221）。
         const pendingRecord = row.repairRecordId === null;
+        // 旧 serve 草稿（PR #221 之前）：登记仍关联 DRAFT，过渡期保留撤销入口（清理见 #223）。
+        const legacyDraft =
+          row.repairRecordId !== null && recordStatus === "DRAFT" && !recordWithdrawn;
         return {
           ...toStaffReg(row),
           recordStatus,
           recordWithdrawn,
-          // 撤销接待：只有还没建单的接待可以撤；本人或活动管理员（issue #166 / #221）。
-          canRevert: pendingRecord && (canAdmin || row.servedByMemberProfileId === member.id),
+          // 撤销接待：未建单或旧 serve 草稿；本人或活动管理员（issue #166 / #221）。
+          canRevert:
+            (pendingRecord || legacyDraft) &&
+            (canAdmin || row.servedByMemberProfileId === member.id),
           // 继续填写：只有接待者本人能补建记录（管理员不代填）。
           canFill: pendingRecord && row.servedByMemberProfileId === member.id,
         };
@@ -661,11 +671,14 @@ export const repairActivityStaffService = {
   },
 
   /**
-   * 撤销接待（issue #221）：只针对**还没建维修单**的接待。
+   * 撤销接待（issue #221）：把接错客户的已接待报名恢复成接待前状态。
    *
-   * 把接错客户的登记恢复成接待前状态（签过到回排队，否则回待签到）；没有维修记录 /
-   * 照片需要删除。权限：接待者本人或活动管理员（`activity:admin`）。已建单 / 已提交 /
-   * 已审核的接待不能撤销 —— 那属于审核流程，仍走退回与管理员纠正。每一步都写审计。
+   * - 新流程（登记未建单）：直接恢复，没有维修记录 / 照片需要删除；
+   * - **旧数据过渡**（PR #221 之前的接待草稿，登记仍关联 `repairRecordId`）：保留原撤销能力，
+   *   仅当记录仍是 `DRAFT` 且未提交时删除草稿及照片，并清理评论 / 收藏 / 通知（#195）；
+   *   已提交 / 已审核 / 已撤回的接待不能撤销（属于审核流程）。
+   *
+   * 权限：接待者本人或活动管理员（`activity:admin`）。每一步都写审计。
    */
   async revertServe(
     activityId: string,
@@ -678,17 +691,82 @@ export const repairActivityStaffService = {
       throw new AppError("VALIDATION_FAILED", "报名 ID 无效");
     }
     const isAdmin = actor.permissions.includes("activity:admin");
-    return inSerializableTransaction(async (tx) => {
+    const photoKeys: string[] = [];
+    const result = await inSerializableTransaction(async (tx) => {
       const reg = await tx.repairActivityRegistration.findFirst({
         where: { id: registrationId, activityId, deletedAt: null },
       });
       if (!reg) throw new AppError("ACTIVITY_REGISTRATION_NOT_FOUND", "报名记录不存在");
-      if (reg.status !== "SERVED" || reg.repairRecordId)
-        throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "维修单已创建，不能撤销接待");
+      if (reg.status !== "SERVED")
+        throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "该报名当前不是已接待状态");
       if (!isAdmin && reg.servedByMemberProfileId !== member.id)
         throw new AppError("FORBIDDEN", "只有接待者本人或活动管理员可以撤销接待");
 
+      // 接待前的具体状态没有单独留存，用「是否签过到」还原：签过到回排队，否则回待签到。
       const restoredStatus = reg.checkedInAt ? "CHECKED_IN" : "REGISTERED";
+      let deleted: {
+        id: string;
+        photos: number;
+        comments: number;
+        favorites: number;
+        notifications: number;
+      } | null = null;
+
+      if (reg.repairRecordId) {
+        const record = await tx.repairRecord.findFirst({
+          where: { id: reg.repairRecordId, deletedAt: null },
+          select: { id: true, status: true, submittedAt: true },
+        });
+        // 已撤回审核的草稿（submittedAt 非空）曾进入审核流程，不允许按「撤销接待」整条删除。
+        if (!record || record.status !== "DRAFT" || record.submittedAt)
+          throw new AppError(
+            "ACTIVITY_REGISTRATION_STATE_INVALID",
+            "维修记录已提交或不存在，不能撤销接待",
+          );
+        const photos = await tx.repairPhoto.findMany({
+          where: { repairRecordId: record.id },
+          select: { storageKey: true },
+        });
+        // 社区与通知子表以 RESTRICT 引用记录：作者能读自己的 DRAFT，就可能留下
+        // 评论 / 收藏 / 通知（审查 #195），不先清掉删记录会撞外键、把撤销打成 500。
+        const commentIds = (
+          await tx.repairComment.findMany({
+            where: { repairRecordId: record.id },
+            select: { id: true },
+          })
+        ).map((row) => row.id);
+        const favoritesDeleted = await tx.repairFavorite.deleteMany({
+          where: { repairRecordId: record.id },
+        });
+        const notificationsDeleted = await tx.notification.deleteMany({
+          where: { OR: [{ repairRecordId: record.id }, { commentId: { in: commentIds } }] },
+        });
+        await tx.commentMention.deleteMany({ where: { commentId: { in: commentIds } } });
+        const repliesDeleted = await tx.repairComment.deleteMany({
+          where: { repairRecordId: record.id, parentCommentId: { not: null } },
+        });
+        const topCommentsDeleted = await tx.repairComment.deleteMany({
+          where: { repairRecordId: record.id },
+        });
+        // 先解除登记对草稿的 RESTRICT 外键，再按外键顺序硬删草稿子表。
+        await tx.repairActivityRegistration.update({
+          where: { id: reg.id },
+          data: { repairRecordId: null },
+        });
+        await tx.repairRecordParticipant.deleteMany({ where: { repairRecordId: record.id } });
+        await tx.repairPhoto.deleteMany({ where: { repairRecordId: record.id } });
+        await tx.repairTimelineEvent.deleteMany({ where: { repairRecordId: record.id } });
+        await tx.repairRecord.delete({ where: { id: record.id } });
+        photoKeys.push(...photos.map((photo) => photo.storageKey));
+        deleted = {
+          id: record.id,
+          photos: photos.length,
+          comments: repliesDeleted.count + topCommentsDeleted.count,
+          favorites: favoritesDeleted.count,
+          notifications: notificationsDeleted.count,
+        };
+      }
+
       const updated = await tx.repairActivityRegistration.update({
         where: { id: reg.id },
         data: {
@@ -706,11 +784,31 @@ export const repairActivityStaffService = {
         targetType: "RepairActivityRegistration",
         targetId: reg.id,
         result: "SUCCESS",
-        before: { status: "SERVED" },
-        after: { status: restoredStatus, memberProfileId: member.id },
+        before: deleted ? { status: "SERVED", repairRecordId: deleted.id } : { status: "SERVED" },
+        after: {
+          status: restoredStatus,
+          memberProfileId: member.id,
+          ...(deleted
+            ? {
+                deletedRecordId: deleted.id,
+                photosDeleted: deleted.photos,
+                commentsDeleted: deleted.comments,
+                favoritesDeleted: deleted.favorites,
+                notificationsDeleted: deleted.notifications,
+              }
+            : {}),
+        },
       });
-      return { registration: toStaffReg(updated) };
+      return {
+        registration: toStaffReg(updated),
+        ...(deleted ? { deletedRecordId: deleted.id } : {}),
+      };
     });
+    // 事务提交后再删磁盘文件：回滚时不会删掉仍被引用的照片。
+    await Promise.all(
+      photoKeys.map((key) => localRepairPhotoStorage.delete(key).catch(() => undefined)),
+    );
+    return result;
   },
 
   /**

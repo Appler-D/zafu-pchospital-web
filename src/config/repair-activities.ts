@@ -174,6 +174,9 @@ export const memberRepairActivitiesCopy = {
     revertServeConfirmTitle: "确认撤销接待？",
     revertServeConfirmHint:
       "撤销后该客户回到接待前的位置；这次接待还没有创建维修单，不会删除任何维修记录或照片。已建单的接待不能撤销，操作会记录审计。",
+    /** 旧 serve 草稿（PR #221 之前）仍保留撤销入口：会删除未提交草稿及照片。 */
+    revertServeConfirmHintLegacy:
+      "撤销后该客户回到接待前的位置；这次接待生成的未提交维修草稿及其照片会被删除。已提交的维修记录不能撤销，操作会记录审计。",
     revertServeConfirm: "确认撤销",
     revertServeCancel: "取消",
     revertServeSuccess: "已撤销接待，客户回到接待前的位置。",

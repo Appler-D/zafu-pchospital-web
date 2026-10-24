@@ -25,6 +25,7 @@ import type {
 import {
   clearCreateDraft,
   hasCreateDraftContent,
+  mergeServePrefill,
   readCreateDraft,
   writeCreateDraft,
   type CreateDraftSnapshot,
@@ -101,17 +102,10 @@ function serveDraftRecord(input: {
     repairDate: string;
   };
 }): RepairDetailView {
-  const merged: CreateDraftSnapshot = {
-    repairDate: input.stored?.repairDate ?? input.prefill.repairDate,
-    durationMinutes: input.stored?.durationMinutes ?? null,
-    categoryId: input.stored?.categoryId ?? input.prefill.categoryId,
-    ownerName: input.stored?.ownerName ?? input.prefill.name,
-    ownerPhone: input.stored?.ownerPhone ?? input.prefill.phone,
-    deviceModel: input.stored?.deviceModel ?? input.prefill.deviceModel,
-    remark: input.stored?.remark ?? null,
-    participantIds: input.stored?.participantIds ?? [],
-  };
-  return localDraftRecord({ ...input, stored: merged });
+  return localDraftRecord({
+    ...input,
+    stored: mergeServePrefill(input.stored, input.prefill),
+  });
 }
 
 /** 只把非图片字段写进暂存；参与人排除创建人本人。 */
