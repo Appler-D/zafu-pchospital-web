@@ -138,6 +138,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
     categoryId: "category",
     ownerName: "张三",
     ownerPhone: "13800138000",
+    deviceModel: "联想小新 Air 14",
     content: null,
     result: "COMPLETED",
   };
@@ -152,6 +153,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
         categoryId: null,
         ownerName: null,
         ownerPhone: null,
+        deviceModel: null,
         content: null,
         result: null,
       }),
@@ -161,6 +163,8 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
   for (const [field, patch] of [
     ["ownerName", { ownerName: null }],
     ["ownerPhone", { ownerPhone: null }],
+    // 机型提交必填（issue #218）：历史记录不回填，只在提交这一刻要求。
+    ["deviceModel", { deviceModel: null }],
   ] as const) {
     assert.throws(
       () => validateSubmission({ ...complete, ...patch }),
@@ -200,6 +204,14 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
     () => validateSubmission({ ...complete, content: "字".repeat(10001) }),
     (e) => e instanceof AppError && e.code === "REPAIR_SUBMISSION_INCOMPLETE",
   );
+  // 机型上限 60（与 `device_model VARCHAR(60)` 对齐）：提交口径同样拦超长值。
+  assert.throws(
+    () => validateSubmission({ ...complete, deviceModel: "机".repeat(61) }),
+    (e) =>
+      e instanceof AppError &&
+      e.code === "REPAIR_SUBMISSION_INCOMPLETE" &&
+      e.fieldErrors?.deviceModel !== undefined,
+  );
   assert.throws(() => validateDraftFields({ durationMinutes: 10081 }), AppError);
 });
 
@@ -228,6 +240,21 @@ test("草稿校验：机主字段可空，填了则受上限与格式约束；�
   assert.equal(normalizeDraftFields({ ownerPhone: "138-0013-8000" }).ownerPhone, "13800138000");
   assert.equal(normalizeDraftFields({ ownerPhone: "" }).ownerPhone, null);
   assert.equal(normalizeDraftFields({}).ownerName, undefined, "未提交的字段保持 undefined（不动）");
+  // 机型（issue #218）：草稿可空、填了 trim、超长在草稿阶段就拦。
+  assert.equal(normalizeDraftFields({ deviceModel: " 联想 小新 " }).deviceModel, "联想 小新");
+  assert.equal(normalizeDraftFields({ deviceModel: "   " }).deviceModel, null);
+  assert.equal(normalizeDraftFields({}).deviceModel, undefined, "未提交的机型保持不动");
+  assert.throws(
+    () => validateDraftFields({ deviceModel: "机".repeat(61) }),
+    (e) =>
+      e instanceof AppError &&
+      e.code === "VALIDATION_FAILED" &&
+      e.fieldErrors?.deviceModel !== undefined,
+  );
+  validateDraftFields({ deviceModel: "机".repeat(60) });
+  // 只填机型也不属于「空白建档」：不能拿它复用一条空草稿。
+  assert.equal(isBlankDraftFields({ deviceModel: "联想小新" }), false);
+  assert.equal(isBlankDraftFields({}), true);
 });
 
 test("维修日期上下限在保存草稿时就生效，而不是等到提交", () => {
@@ -308,6 +335,7 @@ test("提交缺项与非法电话的 message 同样说明具体字段", () => {
     categoryId: "category",
     ownerName: "张三",
     ownerPhone: "13800138000",
+    deviceModel: "联想小新 Air 14",
     content: null,
     result: "COMPLETED",
   };
@@ -318,6 +346,7 @@ test("提交缺项与非法电话的 message 同样说明具体字段", () => {
     [{ ownerName: null }, "请填写机主姓名"],
     [{ ownerPhone: null }, "请填写机主电话"],
     [{ ownerPhone: "12345678901" }, "机主电话须为 11 位中国大陆手机号"],
+    [{ deviceModel: null }, "请填写机型"],
     [{ result: null }, "维修结果缺失"],
     [{ ownerName: null, ownerPhone: null }, "请填写机主姓名；请填写机主电话"],
   ] as const;

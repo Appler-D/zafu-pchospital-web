@@ -193,6 +193,7 @@ async function draftRepair(owner: AuthorizedActor) {
       repairDate: new Date().toISOString().slice(0, 10),
       durationMinutes: 30,
       categoryId: CATEGORY_ID,
+      deviceModel: "M6 测试机型",
       ownerName: "M6 集成机主",
       ownerPhone: "13800138005",
       content: "M6 集成测试维修记录正文内容，用于覆盖管理端审核与导出。",

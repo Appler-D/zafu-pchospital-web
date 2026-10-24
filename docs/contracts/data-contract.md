@@ -206,8 +206,10 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
   X小时Y分）/ 纯数字（≤12 按小时、>12 按分钟）」解析，解析不出（如「一次」「十五min」）逐行拒收；
   分类列缺失时 `--fallback-category` 统一挂兜底分类（`HISTORY_IMPORT`，`--apply` 时自动创建），
   时长列缺失或为空时 `--default-duration` 按分钟补录——补录值一律写进备注，可事后甄别修正。
-- `device_model` 是选填机型（issue #68，可空 `VarChar(60)`）：活动报名时填写，接待落单时
-  **复制**进记录，此后两边独立。只用于展示，不参与统计口径、筛选或校验；手工建单一般为空。
+- `device_model` 是机型（issue #68 引入、issue #218 起成为成员表单字段，可空 `VarChar(60)`）：
+  活动报名时选填，接待落单时**复制**进记录，此后两边独立；成员在维修表单里填写 / 修改，
+  **提交审核时必填**（草稿允许暂时为空），历史记录不回填。上限 60 字、去首尾空白，集中在
+  `repairFieldLimits.deviceModelMaxLength`。当前只用于展示与核对，不参与统计口径与筛选。
 - 机主两列（issue #79 第 6 项，Migration `20261008000000_repair_record_owner`，纯增量）：
   `owner_name`（可空 `VarChar(40)`）与 `owner_phone`（可空 `VarChar(11)`，存储剔除非数字字符后的
   11 位）。来源：接待落单自动带自报名，手工建单由成员填写；**历史数据不回填**（导入工具未映射

@@ -111,6 +111,8 @@ export const repairFieldLimits = {
   remarkMaxLength: 2000,
   /** 机主姓名上限，与 `owner_name` 的 VarChar(40) 对齐。 */
   ownerNameMaxLength: 40,
+  /** 机型上限，与 `device_model` 的 VarChar(60) 对齐（issue #218）。 */
+  deviceModelMaxLength: 60,
   durationMinutesMin: 1,
   durationMinutesMax: 10080,
   /** 维修日期下限：早于它的基本是年份打错（1026 年、202 年这类）。 */
@@ -140,6 +142,12 @@ export const repairEditorCopy = {
   /** 新建流程没有草稿（issue #72），提示改说提交口径。 */
   requiredNoteCreate: "标注「必填」的字段都已必填；填写完成后点「提交审核」进入管理员审核。",
   dateHint: "默认今天；不得晚于今天。",
+  deviceModelLabel: "机型",
+  deviceModelPlaceholder: "如：联想小新 Air 14",
+  deviceModelHint: `必填，最多 ${repairFieldLimits.deviceModelMaxLength} 字；填写品牌 + 型号即可。`,
+  /** 活动草稿会由接待落单带出报名机型（issue #68/#218）。 */
+  deviceModelActivityHint: "已自动带出客户预约时填写的机型，可直接修改。",
+  deviceModelRequired: "请填写机型",
   ownerNameLabel: "机主姓名",
   ownerNameHint: "机主即送修设备的同学；请填写真实姓名，便于核对与回访。",
   ownerPhoneLabel: "机主电话",

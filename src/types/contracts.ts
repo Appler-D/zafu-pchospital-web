@@ -630,7 +630,7 @@ export type RepairView = {
   repairDate: string | null;
   durationMinutes: number | null;
   category: RepairCategoryView | null;
-  /** 机型（issue #68）：活动报名时填的选填字段，接待落单时带进记录；手工建单一般为 null。 */
+  /** 机型（issue #68 / #218）：成员在表单填写（提交审核必填），活动接待时会先带出报名机型；历史记录可能为 null。 */
   deviceModel: string | null;
   /** 机主（客户）姓名：接待落单带自报名，手工建单由成员填写；旧数据为 null。 */
   ownerName: string | null;
@@ -678,6 +678,11 @@ export type RepairDraftFields = {
   categoryId?: string | null;
   ownerName?: string | null;
   ownerPhone?: string | null;
+  /**
+   * 机型（issue #218）：成员填写 / 修改，提交审核时必填；草稿允许为空（活动落单可能还没带出）。
+   * 缺省（`undefined`）表示「不动」，`null` / 空白表示清空。
+   */
+  deviceModel?: string | null;
   content?: string | null;
   result?: RepairResult | null;
   remark?: string | null;

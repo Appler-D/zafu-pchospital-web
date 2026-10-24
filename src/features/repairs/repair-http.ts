@@ -52,6 +52,7 @@ export function draftInput(body: Record<string, unknown>) {
     categoryId: nullableString(body.categoryId),
     ownerName: nullableString(body.ownerName),
     ownerPhone: nullableString(body.ownerPhone),
+    deviceModel: nullableString(body.deviceModel),
     content: nullableString(body.content),
     result: nullableResult(body.result),
     remark: nullableString(body.remark),
