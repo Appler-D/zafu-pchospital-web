@@ -88,11 +88,7 @@ export const repairService: RepairServiceContract = {
       where: { createRequestKey: key },
       include: repairDetailInclude,
     });
-    if (existing) {
-      if (existing.memberProfileId !== member.id)
-        throw new AppError("IDEMPOTENCY_CONFLICT", "幂等键已被使用");
-      return toRepairView(existing, { canViewOwnerPhone: true });
-    }
+    if (existing) return replaySubmitted(existing, member.id);
     const fields = normalizeDraftFields(input);
     validateDraftFields(fields);
     const draft = { ...fields, result: fields.result ?? defaultRepairResult };
@@ -117,34 +113,46 @@ export const repairService: RepairServiceContract = {
     const participantIds = composeParticipantIds(member.id, fields.participantIds ?? []);
     await assertParticipantsExist(participantIds, [member.id]);
     const now = new Date();
-    const record = await inSerializableTransaction(async (tx) => {
-      const created = await tx.repairRecord.create({
-        data: {
-          id: randomUUID(),
-          memberProfileId: member.id,
-          status: "PENDING",
-          createRequestKey: key,
-          submittedAt: now,
-          reviewedAt: null,
-          createdAt: now,
-          ...dataFields(draft),
-        },
+    try {
+      const record = await inSerializableTransaction(async (tx) => {
+        const created = await tx.repairRecord.create({
+          data: {
+            id: randomUUID(),
+            memberProfileId: member.id,
+            status: "PENDING",
+            createRequestKey: key,
+            submittedAt: now,
+            reviewedAt: null,
+            createdAt: now,
+            ...dataFields(draft),
+          },
+        });
+        await insertRepairParticipants(tx, created.id, participantIds, now);
+        await timeline(
+          tx,
+          created.id,
+          actor.userId,
+          "SUBMITTED",
+          { from: null, idempotencyKey: key },
+          now,
+        );
+        return tx.repairRecord.findUniqueOrThrow({
+          where: { id: created.id },
+          include: repairDetailInclude,
+        });
       });
-      await insertRepairParticipants(tx, created.id, participantIds, now);
-      await timeline(
-        tx,
-        created.id,
-        actor.userId,
-        "SUBMITTED",
-        { from: null, idempotencyKey: key },
-        now,
-      );
-      return tx.repairRecord.findUniqueOrThrow({
-        where: { id: created.id },
+      return toRepairView(record, { canViewOwnerPhone: true });
+    } catch (error) {
+      // 同一幂等键并发提交：后者在唯一键或串行化冲突上失败，但先写入的记录已提交，
+      // 按 createRequestKey 重读并返回它，避免把可幂等的重试暴露成 500。
+      if (!hasPrismaCode(error, "P2002") && !hasPrismaCode(error, "P2034")) throw error;
+      const raced = await getDb().repairRecord.findUnique({
+        where: { createRequestKey: key },
         include: repairDetailInclude,
       });
-    });
-    return toRepairView(record, { canViewOwnerPhone: true });
+      if (!raced) throw error;
+      return replaySubmitted(raced, member.id);
+    }
   },
 
   async update(recordId, input, actor) {
@@ -302,6 +310,22 @@ export async function timeline(
   await tx.repairTimelineEvent.create({
     data: { id: randomUUID(), repairRecordId, actorUserId, eventType, summary, createdAt },
   });
+}
+
+/** 幂等复放：同一 `Idempotency-Key` 返回首次结果；已软删除的提交不再返回可用记录。 */
+function replaySubmitted(
+  existing: Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>,
+  memberProfileId: string,
+) {
+  if (existing.memberProfileId !== memberProfileId)
+    throw new AppError("IDEMPOTENCY_CONFLICT", "幂等键已被使用");
+  if (existing.deletedAt)
+    throw new AppError("REPAIR_STATE_INVALID", "原提交已被删除，请刷新页面后重新提交");
+  return toRepairView(existing, { canViewOwnerPhone: true });
+}
+
+function hasPrismaCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
 /* ---------------------------------------------------- 参与维修人员（issue #114） */

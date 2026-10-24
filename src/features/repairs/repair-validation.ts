@@ -143,7 +143,7 @@ export function validateSubmission(record: {
   if (!record.ownerPhone) errors.ownerPhone = ["请填写机主电话"];
   else if (!CN_MOBILE_PATTERN.test(record.ownerPhone))
     errors.ownerPhone = ["机主电话须为 11 位中国大陆手机号"];
-  // 机型改为提交必填（issue #218）：历史记录不回填，只在提交审核（含撤回后重提）时要求。
+  // 机型改为提交必填（issue #218）：历史记录不回填，只在提交审核（含退回后重提）时要求。
   if (!record.deviceModel) errors.deviceModel = ["请填写机型"];
   else if (record.deviceModel.length > repairFieldLimits.deviceModelMaxLength)
     errors.deviceModel = [`机型不能超过 ${repairFieldLimits.deviceModelMaxLength} 字`];

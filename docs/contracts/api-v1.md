@@ -261,8 +261,10 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 
 `POST /api/v1/repairs` 为「提交即建单」（issue #222）：请求体是完整草稿字段 + `Idempotency-Key`
 请求头，服务端按成员自助提交同一套校验直接创建 **`PENDING`** 记录，不再先建草稿；同一幂等键
-重试返回原记录。新建页在提交前不落库（非图片字段暂存本机 sessionStorage）；提交前的照片上传
-暂不提供（issue #226 评估）。编辑既有记录（`DRAFT` / `REJECTED`）携带 `version`；过期版本返回
+重试返回原记录（并发同键也只落一条）。原记录若已被管理员删除，重试返回 **409
+`REPAIR_STATE_INVALID`** 并提示刷新后重新提交，不会把已删除记录当作成功结果下发。新建页在
+提交前不落库（非图片字段暂存本机 sessionStorage）；提交前的照片上传暂不提供（issue #226 评估）。
+编辑既有记录（`DRAFT` / `REJECTED`）携带 `version`；过期版本返回
 `REPAIR_VERSION_CONFLICT`。列表支持分页、成员、分类、状态、结果、日期、疑难、典型和关键词
 筛选；普通成员只能看到本人全部状态与他人的 `APPROVED` 记录。照片内容接口要求有效 Session，
 并返回私有缓存、`nosniff`、正确 MIME 与长度。
@@ -702,7 +704,7 @@ DELETE     /api/v1/admin/comments/:id
 - `POST /api/v1/repairs` 与 `PATCH /api/v1/repairs/:id` 的字段集增加
   `deviceModel?: string | null`：去首尾空白、空串落 `null`，上限 60 字（与 `device_model VARCHAR(60)`
   对齐）；非字符串超限 400 `VALIDATION_FAILED`，`fieldErrors.deviceModel`。缺省表示「不动」。
-- **提交审核必填**（`POST /api/v1/repairs/:id/submit`，含撤回后重提）：缺机型返回 400
+- **提交审核必填**（`POST /api/v1/repairs/:id/submit`，含退回后重提）：缺机型返回 400
   `REPAIR_SUBMISSION_INCOMPLETE` 并定位 `fieldErrors.deviceModel`；草稿仍可暂时为空
   （活动落单可能还没有带出报名机型），填写后即受上限校验。
 - 历史记录**不回填**，`RepairView.deviceModel` 可为 `null`（详情显示「—」）；活动接待补单会把

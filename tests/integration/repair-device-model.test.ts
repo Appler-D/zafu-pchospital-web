@@ -14,7 +14,9 @@ import { callRoute, sessionCookie } from "./http-harness";
 
 /**
  * 成员维修表单的「机型」字段（issue #218，真实 GreatSQL）：
- * 路由入参归一 → 详情回显 → 草稿可改 → 提交审核必填（撤回重提同样适用）。
+ * 路由入参归一 → 详情回显 → 草稿可改 → 提交审核必填（退回重提同样适用）。
+ *
+ * 同文件还覆盖「提交即建单」（#222）的幂等复放：并发同键只落一条、软删除后复放不返回旧记录。
  *
  * 独立的 UUID 段 `e8c00000-…` 与姓名前缀 "DM218 "：清理只按这两者限定。
  * 机型列与活动落单复制已由 `repair-activity-device-model.test.ts` 覆盖，这里只测成员侧写入。
@@ -274,5 +276,56 @@ dbTest("新建提交即建单（#222）：不产生草稿、提交必填与幂�
     }),
     0,
     "新建提交不产生草稿",
+  );
+});
+
+dbTest("新建提交即建单（#222）：同一幂等键并发提交只落一条", async () => {
+  const member = await createMember("并发提交");
+  const key = randomUUID();
+  const fields = await completeDraftFields("并发机型");
+  const create = () =>
+    callRoute(createRoute, "http://localhost/api/v1/repairs", {
+      method: "POST",
+      headers: { cookie: member.cookie, "Idempotency-Key": key },
+      body: fields,
+    });
+  const responses = await Promise.all([create(), create(), create()]);
+  for (const response of responses) {
+    assert.equal(response.status, 201, JSON.stringify(response.json));
+  }
+  const ids = new Set(responses.map((response) => (response.json.data as { id: string }).id));
+  assert.equal(ids.size, 1, "并发请求应复用同一条记录");
+  assert.equal(
+    await getDb().repairRecord.count({ where: { memberProfileId: member.profileId } }),
+    1,
+    "同一幂等键不应落出多条记录",
+  );
+});
+
+dbTest("新建提交即建单（#222）：记录被删除后同键复放返回 409", async () => {
+  const member = await createMember("删除复放");
+  const key = randomUUID();
+  const fields = await completeDraftFields("删除复放机型");
+  const create = () =>
+    callRoute(createRoute, "http://localhost/api/v1/repairs", {
+      method: "POST",
+      headers: { cookie: member.cookie, "Idempotency-Key": key },
+      body: fields,
+    });
+  const created = await create();
+  assert.equal(created.status, 201, JSON.stringify(created.json));
+  const recordId = (created.json.data as { id: string }).id;
+  await getDb().repairRecord.update({
+    where: { id: recordId },
+    data: { deletedAt: new Date() },
+  });
+
+  const retry = await create();
+  assert.equal(retry.status, 409);
+  assert.equal((retry.json.error as { code?: string }).code, "REPAIR_STATE_INVALID");
+  assert.equal(
+    await getDb().repairRecord.count({ where: { createRequestKey: key } }),
+    1,
+    "复放不应再建一条记录",
   );
 });

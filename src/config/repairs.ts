@@ -60,7 +60,7 @@ export const repairCopy = {
   create: {
     title: "新建维修记录",
     label: "New Repair",
-    lead: "直接填写维修信息并上传照片，提交后进入审核。",
+    lead: "直接填写维修信息，提交后进入审核。",
     /** 活动接待「继续填写」（issue #221）：预填来自登记行，提交时才建维修单。 */
     serveTitle: "继续填写维修记录",
     serveLead: "这条接待已记录客户信息；补齐维修时长与内容后提交，才会创建维修单并进入审核。",
@@ -147,7 +147,7 @@ export const repairEditorCopy = {
   /** 照片上限来自服务端（随详情下发），所以文案留占位符而不是写死数字。 */
   photoHint: "支持 JPEG、PNG、WebP；单张不超过 {size}、最多 {count} 张。选填，可稍后补充。",
   /** 新建/接待补单提交即建单（#222），提交前没有记录可挂照片。 */
-  photoUnavailableCreate: "新建提交时不会先创建草稿，照片上传暂不提供（后续评估）。",
+  photoUnavailableCreate: "新建提交前暂不支持上传照片；如需补充，请联系管理员。",
   /** 新建页从 sessionStorage 恢复未提交内容时的提示（issue #162）。 */
   createDraftRestored: "已恢复上次未提交的内容；提交成功后会清除这份本地暂存。",
   /** 活动接待补单（issue #221）：不落草稿，提交时才创建维修单。 */
@@ -155,6 +155,9 @@ export const repairEditorCopy = {
   serveSubmitNote:
     "提交后才会创建维修单并关联本次接待；中途离开可从「已接待」的「继续填写」重新打开，本机暂存会保留未提交内容。",
   servePhotoUnavailable: "接待补单暂不支持上传照片；如需补充，请联系管理员。",
+  /** 维修结果默认值提示：编辑存量记录可保存草稿；新建 / 接待补单只有提交（#222）。 */
+  resultDefaultHint: "维修结果默认为「{result}」，保存与提交都会按此记录。",
+  resultDefaultHintSubmitOnly: "维修结果默认为「{result}」，提交时会按此记录。",
   photoTooLarge: "「{name}」有 {size}，超过单张 {limit} 的上限，请压缩或换一张。",
   photoTooMany: "已上传 {count} 张，最多只能再传 {remain} 张。",
 };

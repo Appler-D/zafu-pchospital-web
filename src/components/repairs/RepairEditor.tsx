@@ -129,7 +129,7 @@ export function RepairEditor({
   serveContext,
 }: {
   /**
-   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，首次传图或提交时才建档（issue #162）。
+   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，提交时才建档（#222）。
    */
   recordId?: string;
   /** 新建流程不再暴露「草稿」（issue #72）：只留提交审核；编辑存量草稿与退回记录仍可保存。 */
@@ -508,8 +508,6 @@ export function RepairEditor({
       if (!json.success) throw new Error(json.error.message);
       await refreshPhotos(targetId);
       setMessage("照片已上传。");
-      // 建档后离开新建页：地址里带记录 ID，刷新不会丢关联，活动看板的「填写维修记录」也指向它。
-      if (createMode) router.replace(`/member/repairs/${targetId}/edit`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "上传失败");
     } finally {
@@ -726,7 +724,10 @@ export function RepairEditor({
           </p>
           {serveContext ? <p className="field__hint">{repairEditorCopy.serveSubmitNote}</p> : null}
           <p className="field__hint">
-            维修结果默认为「{repairResultLabels[defaultRepairResult]}」，保存与提交都会按此记录。
+            {(allowSaveDraft
+              ? repairEditorCopy.resultDefaultHint
+              : repairEditorCopy.resultDefaultHintSubmitOnly
+            ).replace("{result}", repairResultLabels[defaultRepairResult])}
           </p>
           {serverId ? <p className="field__hint">当前版本：{record.version}</p> : null}
           <div className="signup__actions">
