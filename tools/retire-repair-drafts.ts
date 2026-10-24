@@ -141,10 +141,13 @@ function readArgValue(arg: string, name: string): string | null {
 function assertExpectedDatabase(expected: string): void {
   const raw = process.env.DATABASE_URL;
   if (!raw) throw new Error("未设置 DATABASE_URL");
-  const actual = new URL(raw).pathname.replace(/^\/+/, "");
-  if (actual !== expected)
+  const actualName = new URL(raw).pathname.replace(/^\/+/, "");
+  const actualLabel = databaseLabel();
+  // 允许只核对库名（防最常见误连），也允许写 host:port/库名 同时防同名库。
+  const matched = expected.includes("/") ? expected === actualLabel : expected === actualName;
+  if (!matched)
     throw new Error(
-      `目标库不匹配：DATABASE_URL 指向「${actual}」，--expect-db 为「${expected}」。已拒绝执行。`,
+      `目标库不匹配：当前为「${actualLabel}」，--expect-db 为「${expected}」。已拒绝执行。`,
     );
 }
 
@@ -158,6 +161,7 @@ function printUsage(): void {
 
 说明：
   - 缺省 dry-run，只读；--apply 才会写库，且必须先写出备份。
+  - --expect-db 可写库名（只防库名误连）或完整 host:port/库名（同时防同名库）。
   - 已撤回草稿需用 --submitted 明确按作废（void）或补提（submit）处置。
   - 作废为软删除，并清空活动接待的 repair_record_id；不物理删除。`);
 }
@@ -285,8 +289,12 @@ function printApplyResult(result: DraftRetirementApplyResult): void {
   console.log(
     `  · 接待关联已清空：${check.clearedRegistrationCount}/${result.clearedRegistrationIds.length}`,
   );
-  console.log(`  · 悬挂登记行：${check.danglingRegistrationCount}（要求 0）`);
-  console.log(`  · 待补建接待：${check.servedWithoutRecordCount}（信息项）`);
+  console.log(
+    `  · 悬挂登记行：${check.danglingRegistrationCount}（执行前 ${check.baselineDanglingRegistrationCount}；本次新增 ${check.newDanglingRegistrationCount}，要求 0）`,
+  );
+  if (check.baselineDanglingRegistrationCount > 0)
+    console.log("    执行前已存在的悬挂不计入本次失败；软删除登记行不参与统计。");
+  console.log(`  · 待补建接待：${check.servedWithoutRecordCount}（含执行前已存在；信息项）`);
   console.log(`结论：${result.postCheckPassed ? "通过" : "未通过，请检查失败项后重跑"}`);
 }
 

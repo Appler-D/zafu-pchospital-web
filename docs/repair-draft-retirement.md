@@ -73,7 +73,7 @@ corepack pnpm retire:repair-drafts --json=/opt/zafu-pchospital-backups/draft-ret
 确认：
 
 - 总数与预期一致；
-- 「作废原因」中没有可避免的字段缺失；
+- 「不可补提 / 作废原因」中没有可避免的字段缺失；
 - 已撤回草稿数量与「可补提 / 不可补提」；
 - 需要保留的记录是否都在「补提」组。
 
@@ -90,8 +90,10 @@ corepack pnpm retire:repair-drafts \
 
 - `--backup-dir` 必填：工具会在写库前落一份完整快照
   `<runId>.backup.json`（含机主姓名 / 电话，权限 0600），备份失败不会写库；
-- `--expect-db` 必填：与 `DATABASE_URL` 的库名不一致时直接拒绝，避免误连开发 / 测试库；
+- `--expect-db` 必填：可写库名（只防库名误连），也可写完整 `host:port/库名`
+  （同时防同名库误连）；与当前连接不一致时直接拒绝；
 - `--submitted=void|submit`：存在已撤回草稿时必填；`void` = 作废，`submit` = 补提；
+  选择补提时，结果不是「已完成」或字段仍不完整的已撤回草稿仍会转作废；
 - 执行后会在同目录写 `<runId>.result.json`（runId、逐条结果、事后核对，不含 PII）。
 
 工具最后打印事后核对：
@@ -99,8 +101,9 @@ corepack pnpm retire:repair-drafts \
 - 可编辑草稿残留必须为 0（作废只做软删除，`deleted_at` 非空的旧 `DRAFT` 行仍保留；
   业务查询均按 `deleted_at IS NULL` 排除，验收计数也按此口径）；
 - 补提后 `PENDING` 数 / 作废软删除数 / 接待关联清空数与执行数一致；
-- 悬挂登记行（仍指向已删除记录）必须为 0；
-- 「待补建接待」是信息项，等于被作废且来自接待的记录数。
+- 悬挂登记行（未删除的登记行仍指向已软删除记录）：执行前已存在的记为 baseline，只要求
+  **本次净新增为 0**；软删除的登记行不参与统计，避免历史数据让一次正确执行报失败；
+- 「待补建接待」是信息项，**含本次作废与执行前已存在**的 `SERVED + 无维修单` 登记。
 
 任一项不通过时退出码为 1；按失败项处理后**重跑**即可（已处理的记录不会重复处理）。
 
@@ -112,7 +115,8 @@ docker exec -e MYSQL_PWD="$GREATSQL_ROOT_PASSWORD" zafu-pchospital-db-greatsql-1
   mysql -uroot zafu_pchospital -e "
 SELECT COUNT(*) AS active_drafts FROM repair_records WHERE status='DRAFT' AND deleted_at IS NULL;
 SELECT COUNT(*) AS dangling FROM repair_activity_registrations r
-  JOIN repair_records x ON x.id = r.repair_record_id WHERE x.deleted_at IS NOT NULL;
+  JOIN repair_records x ON x.id = r.repair_record_id
+  WHERE r.deleted_at IS NULL AND x.deleted_at IS NOT NULL;
 SELECT action, COUNT(*) AS n FROM audit_logs
   WHERE action LIKE 'repair.draft_retired_%' GROUP BY action;
 SELECT COUNT(*) AS pending_served FROM repair_activity_registrations
@@ -142,4 +146,6 @@ SELECT COUNT(*) AS pending_served FROM repair_activity_registrations
 
 - 留存：全量 dump、dry-run 报告、`<runId>.backup.json`、`<runId>.result.json`、执行终端输出；
 - 清理完成后，再单独评估移除代码中对旧 `DRAFT` 的兼容分支（另开小 PR，不在本工具范围）；
-- 若仍有「待补建接待」，由管理员在看板逐条补建或撤销接待，不要再次运行本工具。
+- 若仍有「待补建接待」，由管理员在看板逐条补建或撤销接待，不要再次运行本工具；
+- 已知遗留：批量软删除后，成员收藏列表仍可能显示已作废记录（这是既有软删除行为，
+  与本工具无关，另案处理）。

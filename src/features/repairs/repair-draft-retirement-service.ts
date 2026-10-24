@@ -31,6 +31,13 @@ const snapshotInclude = {
   notifications: true,
 } satisfies Prisma.RepairRecordInclude;
 
+/** 只统计未删除的登记行：软删除登记不参与悬挂判定（存量历史数据不阻断本次执行）。 */
+const danglingRegistrationWhere = {
+  deletedAt: null,
+  repairRecordId: { not: null },
+  repairRecord: { is: { deletedAt: { not: null } } },
+} satisfies Prisma.RepairActivityRegistrationWhereInput;
+
 export type DraftRetirementSnapshot = {
   exportedAt: string;
   database: string;
@@ -43,9 +50,13 @@ export type DraftRetirementPostCheck = {
   submittedPendingCount: number;
   voidedCount: number;
   clearedRegistrationCount: number;
-  /** 登记行仍指向已软删除记录的数量，必须为 0。 */
+  /** 执行前已存在的悬挂（未删除登记行仍指向已软删除记录），只作 baseline。 */
+  baselineDanglingRegistrationCount: number;
+  /** 执行后仍未删除的悬挂数量；软删除登记行不参与统计。 */
   danglingRegistrationCount: number;
-  /** 待补建接待数量（信息项，不参与通过判定）。 */
+  /** 本次执行净新增的悬挂，必须为 0。 */
+  newDanglingRegistrationCount: number;
+  /** 待补建接待数量（含执行前已存在；信息项，不参与通过判定）。 */
   servedWithoutRecordCount: number;
 };
 
@@ -99,6 +110,7 @@ export async function retireRepairDrafts(
   if (report.withdrawn.total > 0 && options.withdrawnMode === null)
     throw new Error("存在已撤回草稿：请用 --submitted=void|submit 明确处置口径后重试。");
   if (!options.backupWriter) throw new Error("apply 必须先写出备份，拒绝继续。");
+  const baselineDanglingRegistrationCount = await countDanglingRegistrations();
   const now = options.now ?? new Date();
   const runId = options.runId ?? createRunId(now);
   const backupPath = await options.backupWriter(snapshot, report, {
@@ -136,6 +148,7 @@ export async function retireRepairDrafts(
     submittedRecordIds,
     voidedRecordIds,
     clearedRegistrationIds,
+    baselineDanglingRegistrationCount,
   });
   const postCheckPassed =
     failures.length === 0 &&
@@ -143,7 +156,7 @@ export async function retireRepairDrafts(
     postCheck.submittedPendingCount === submittedRecordIds.length &&
     postCheck.voidedCount === voidedRecordIds.length &&
     postCheck.clearedRegistrationCount === clearedRegistrationIds.length &&
-    postCheck.danglingRegistrationCount === 0;
+    postCheck.newDanglingRegistrationCount === 0;
 
   return {
     report,
@@ -288,10 +301,12 @@ async function applyVoid(item: DraftRetirementPlanItem, ctx: ApplyContext): Prom
     if (updated.count !== 1)
       throw new AppError("REPAIR_VERSION_CONFLICT", "草稿已被修改，请重新盘点后重试");
     if (item.registrationId) {
-      await tx.repairActivityRegistration.updateMany({
+      const cleared = await tx.repairActivityRegistration.updateMany({
         where: { id: item.registrationId, repairRecordId: item.recordId },
         data: { repairRecordId: null },
       });
+      if (cleared.count !== 1)
+        throw new AppError("REPAIR_STATE_CONFLICT", "接待关联已被其他操作修改，请重新盘点后重试");
     }
     await timeline(
       tx,
@@ -330,6 +345,7 @@ async function inspectPostConditions(input: {
   submittedRecordIds: string[];
   voidedRecordIds: string[];
   clearedRegistrationIds: string[];
+  baselineDanglingRegistrationCount: number;
 }): Promise<DraftRetirementPostCheck> {
   const db = getDb();
   const activeDraftCount = await db.repairRecord.count({
@@ -355,12 +371,7 @@ async function inspectPostConditions(input: {
         where: { id: { in: input.clearedRegistrationIds }, repairRecordId: null },
       })
     : 0;
-  const danglingRegistrationCount = await db.repairActivityRegistration.count({
-    where: {
-      repairRecordId: { not: null },
-      repairRecord: { is: { deletedAt: { not: null } } },
-    },
-  });
+  const danglingRegistrationCount = await countDanglingRegistrations();
   const servedWithoutRecordCount = await db.repairActivityRegistration.count({
     where: { status: "SERVED", repairRecordId: null, deletedAt: null },
   });
@@ -369,9 +380,18 @@ async function inspectPostConditions(input: {
     submittedPendingCount,
     voidedCount,
     clearedRegistrationCount,
+    baselineDanglingRegistrationCount: input.baselineDanglingRegistrationCount,
     danglingRegistrationCount,
+    newDanglingRegistrationCount: Math.max(
+      0,
+      danglingRegistrationCount - input.baselineDanglingRegistrationCount,
+    ),
     servedWithoutRecordCount,
   };
+}
+
+async function countDanglingRegistrations(): Promise<number> {
+  return getDb().repairActivityRegistration.count({ where: danglingRegistrationWhere });
 }
 
 function createRunId(now: Date): string {
