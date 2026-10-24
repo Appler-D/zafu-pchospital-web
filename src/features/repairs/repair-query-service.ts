@@ -300,6 +300,12 @@ export function listWhere(
   const visibility: Prisma.RepairRecordWhereInput = actor.permissions.includes("repair:review")
     ? {}
     : { OR: [{ memberProfile: { userId: actor.userId } }, { status: "APPROVED" }] };
+  // 管理端默认不显示草稿（issue #220）：未显式选择状态时，「全部」= 非草稿；
+  // 显式 status=DRAFT 仍可查看 / 导出草稿。成员视角不变（成员必须看到自己的草稿）。
+  const status =
+    !input.status && actor.permissions.includes("repair:review")
+      ? ({ not: "DRAFT" } as const)
+      : input.status;
   const query = input.query?.trim();
   // 案例库准入（issue #134）：并集条件必须经 AND 数组注入 —— 返回值已有顶层 `OR`
   // 承载关键词搜索，Prisma 同一对象内两个同名键后者覆盖前者，另开顶层 `OR`
@@ -315,7 +321,7 @@ export function listWhere(
     // 管理端要能查出「某人参与过的全部记录」；创建人恒有参与行，旧口径被完全覆盖。
     participants: input.memberId ? { some: { memberProfileId: input.memberId } } : undefined,
     categoryId: input.categoryId,
-    status: input.status,
+    status,
     result: input.result,
     repairDate: {
       // `repair_date` 是 DATE 列：走日期边界，且结束日用「次日零点」这个排他上界。
