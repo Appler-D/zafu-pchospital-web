@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { repairDetailInclude } from "@/features/repairs/repair-repository";
 import { uploadLimits } from "@/features/repairs/repair-photo-storage";
+import { canAttachRepairPhotos } from "@/features/repairs/repair-policy";
 import type { AuthorizedActor, RepairDetailView, RepairView } from "@/types/contracts";
 
 type RecordRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
@@ -87,6 +88,8 @@ export function toRepairDetail(
       canViewOwnerPhone: owner || actor.permissions.includes("repair:review"),
     }),
     canEdit: owner && (record.status === "DRAFT" || record.status === "REJECTED"),
+    /** 审核前补附件（issue #226）：DRAFT / REJECTED 或本人未审核的 PENDING。 */
+    canAttachPhotos: canAttachRepairPhotos(actor, record),
     canReview: actor.permissions.includes("repair:review") && record.status === "PENDING",
     canFlag: actor.permissions.includes("repair:flag"),
     isFavorited: options.isFavorited === true,

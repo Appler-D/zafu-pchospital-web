@@ -74,6 +74,11 @@ export const repairCopy = {
     title: "维修记录详情",
     label: "Repair Detail",
     lead: "查看维修信息、审核历史与记录时间线。",
+    /** 审核前补照片（issue #226）：仅记录本人、提交后未审核时可见。 */
+    pendingPhotoHint:
+      "审核前可补充照片（最多 {count} 张，单张不超过 {size}）；审核通过后不可修改。",
+    pendingPhotoEmpty: "暂无照片，可在审核前补充。",
+    photoEmpty: "暂无照片。",
   },
   empty: "暂时没有符合条件的维修记录。",
 } as const;
@@ -147,14 +152,14 @@ export const repairEditorCopy = {
   /** 照片上限来自服务端（随详情下发），所以文案留占位符而不是写死数字。 */
   photoHint: "支持 JPEG、PNG、WebP；单张不超过 {size}、最多 {count} 张。选填，可稍后补充。",
   /** 新建/接待补单提交即建单（#222），提交前没有记录可挂照片。 */
-  photoUnavailableCreate: "新建提交前暂不支持上传照片；如需补充，请联系管理员。",
+  photoUnavailableCreate: "提交后可在维修详情页补充照片，审核通过后不可修改。",
   /** 新建页从 sessionStorage 恢复未提交内容时的提示（issue #162）。 */
   createDraftRestored: "已恢复上次未提交的内容；提交成功后会清除这份本地暂存。",
   /** 活动接待补单（issue #221）：不落草稿，提交时才创建维修单。 */
   serveStageAndBack: "暂存返回",
   serveSubmitNote:
     "提交后才会创建维修单并关联本次接待；中途离开可从「已接待」的「继续填写」重新打开，本机暂存会保留未提交内容。",
-  servePhotoUnavailable: "接待补单暂不支持上传照片；如需补充，请联系管理员。",
+  servePhotoUnavailable: "补单提交后可在维修详情页补充照片，审核通过后不可修改。",
   /** 维修结果默认值提示：编辑存量记录可保存草稿；新建 / 接待补单只有提交（#222）。 */
   resultDefaultHint: "维修结果默认为「{result}」，保存与提交都会按此记录。",
   resultDefaultHintSubmitOnly: "维修结果默认为「{result}」，提交时会按此记录。",

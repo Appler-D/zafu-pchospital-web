@@ -263,7 +263,8 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 请求头，服务端按成员自助提交同一套校验直接创建 **`PENDING`** 记录，不再先建草稿；同一幂等键
 重试返回原记录（并发同键也只落一条）。原记录若已被管理员删除，重试返回 **409
 `REPAIR_STATE_INVALID`** 并提示刷新后重新提交，不会把已删除记录当作成功结果下发。新建页在
-提交前不落库（非图片字段暂存本机 sessionStorage）；提交前的照片上传暂不提供（issue #226 评估）。
+提交前不落库（非图片字段暂存本机 sessionStorage）；提交前没有记录可挂照片，提交后由记录本人在
+审核前到详情页补充（issue #226）。
 编辑既有记录（`DRAFT` / `REJECTED`）携带 `version`；过期版本返回
 `REPAIR_VERSION_CONFLICT`。列表支持分页、成员、分类、状态、结果、日期、疑难、典型和关键词
 筛选；普通成员只能看到本人全部状态与他人的 `APPROVED` 记录。照片内容接口要求有效 Session，
@@ -540,6 +541,16 @@ DELETE     /api/v1/admin/comments/:id
   客户端据此在**选文件时**先拦超限项；服务端仍逐张复检，超限返回 413
   `REPAIR_PHOTO_TOO_LARGE`，消息带文件名与实际体积（`「xx.jpg」12.4 MB，超过单张 10 MB 的上限`）。
   `maxBytes` 是**单张**上限，不是本次合计。
+
+### 审核前补充照片（issue #226）
+
+- 照片上传 / 排序 / 删除的权限从 `DRAFT` / `REJECTED` 扩展到：**记录本人**且
+  （`DRAFT` / `REJECTED`，或 `PENDING` 且 `reviewedAt` 为空）。
+- 仍要求 `repair:update`，仅记录本人；管理员不代传。审核通过后写入返回 `REPAIR_STATE_INVALID`；
+  退回后按现有 `REJECTED` 可编辑规则继续补充。
+- 写接口在事务内 `SELECT ... FOR UPDATE` 锁定记录并复核状态与照片数；审核先完成时补传失败，
+  不会出现「已审核通过但照片后到」。照片上限仍按 `photoLimits`。
+- `RepairDetailView` 增加 `canAttachPhotos: boolean`，只控制详情页入口，服务端仍独立复核。
 
 ### 成员案例库准入规则（issue #134，前端页面，无新接口）
 
