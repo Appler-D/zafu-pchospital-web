@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AppError, ApiErrorCode } from "../../src/lib/api/errors";
 import { apiFailure } from "../../src/lib/api/response";
-import { detectImageType } from "../../src/features/repairs/repair-photo-service";
+import {
+  createRepairPhotoService,
+  detectImageType,
+} from "../../src/features/repairs/repair-photo-service";
+import { repairRepository } from "../../src/features/repairs/repair-repository";
+import { uploadLimits } from "../../src/features/repairs/repair-photo-storage";
 import { isRepairTransitionAllowed } from "../../src/features/repairs/repair-state";
 import {
   isBlankDraftFields,
@@ -404,6 +409,36 @@ test("图片魔数拒绝伪造 MIME 并识别 JPEG PNG WebP", () => {
     "image/webp",
   );
   assert.equal(detectImageType(Uint8Array.from(Buffer.from("not-an-image"))), null);
+});
+
+test("已有照片加本次上传超限时，在读取文件和调用存储前拒绝", async (t) => {
+  const { maxFiles } = uploadLimits();
+  t.mock.method(repairRepository, "getById", async () =>
+    recordRow({ status: "PENDING", photos: Array.from({ length: maxFiles }, () => ({})) }),
+  );
+  const file = new File([Uint8Array.from([0xff, 0xd8, 0xff])], "extra.jpg", {
+    type: "image/jpeg",
+  });
+  const read = t.mock.method(file, "arrayBuffer");
+  const storage = {
+    put: t.mock.fn(async () => ({ storageKey: "unused.jpg" })),
+    open: t.mock.fn(async () => new Uint8Array()),
+    delete: t.mock.fn(async () => {}),
+  };
+  await assert.rejects(
+    () =>
+      createRepairPhotoService(storage).upload("r1", [file], {
+        actorType: "USER",
+        userId: "u1",
+        userStatus: "ACTIVE",
+        permissions: ["repair:update"],
+        requestId: "req_photo_limit",
+      }),
+    (error) => error instanceof AppError && error.code === "REPAIR_PHOTO_LIMIT_EXCEEDED",
+  );
+  assert.equal(read.mock.callCount(), 0);
+  assert.equal(storage.put.mock.callCount(), 0);
+  assert.equal(storage.delete.mock.callCount(), 0);
 });
 
 test("维修列表 status 查询白名单：合法预选，非法忽略", () => {

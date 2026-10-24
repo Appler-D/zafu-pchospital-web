@@ -26,7 +26,8 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
       assertCanAttachRepairPhotos(actor, record);
       const limits = uploadLimits();
       if (!files.length) throw new AppError("VALIDATION_FAILED", "请选择照片");
-      if (files.length > limits.maxFiles)
+      // 快照预检先挡住明显超限的请求，避免读文件和落盘；并发下仍以锁后复核为准。
+      if (record.photos.length + files.length > limits.maxFiles)
         throw new AppError(
           "REPAIR_PHOTO_LIMIT_EXCEEDED",
           `每条记录最多上传 ${limits.maxFiles} 张照片`,
