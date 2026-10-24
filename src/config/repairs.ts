@@ -83,22 +83,6 @@ export const repairStatusLabels: Record<(typeof RepairStatus)[number], string> =
   APPROVED: "已通过",
   REJECTED: "已退回",
 };
-/** 已撤回审核的草稿（DRAFT 且曾经提交过，issue #165）：与未填完的草稿区分。 */
-export const repairWithdrawnLabel = "已撤回";
-export const repairDetailCopy = {
-  withdraw: "撤回审核",
-  withdrawing: "撤回中…",
-  withdrawConfirmTitle: "确认撤回审核？",
-  withdrawConfirmHint:
-    "撤回后记录回到草稿，可修改后重新提交；这次操作会保留在时间线与审计记录里。已通过或已退回的记录不在此处理。",
-  withdrawConfirm: "确认撤回",
-  withdrawCancel: "取消",
-  withdrawSuccess: "已撤回，记录回到草稿。",
-  withdrawFailed: "撤回失败，请稍后重试",
-  withdrawInvalidResponse: "服务返回了无法解析的响应",
-  withdrawNetworkError: "网络异常，请检查连接后重试",
-  withdrawnNotice: "这条记录已从审核中撤回，修改后可重新提交。",
-} as const;
 export const repairResultLabels: Record<(typeof RepairResult)[number], string> = {
   COMPLETED: "已完成",
   NOT_COMPLETED: "未完成",
@@ -162,9 +146,8 @@ export const repairEditorCopy = {
   attachmentsTitle: "备注与附件",
   /** 照片上限来自服务端（随详情下发），所以文案留占位符而不是写死数字。 */
   photoHint: "支持 JPEG、PNG、WebP；单张不超过 {size}、最多 {count} 张。选填，可稍后补充。",
-  /** 新建页尚未建档：上限由服务端校验；首次选图会把当前内容存成草稿并进入编辑页（issue #162）。 */
-  photoHintCreate:
-    "支持 JPEG、PNG、WebP；首次选择照片会先把当前内容存为草稿并进入编辑页，大小与数量上限由服务端校验。",
+  /** 新建/接待补单提交即建单（#222），提交前没有记录可挂照片。 */
+  photoUnavailableCreate: "新建提交时不会先创建草稿，照片上传暂不提供（后续评估）。",
   /** 新建页从 sessionStorage 恢复未提交内容时的提示（issue #162）。 */
   createDraftRestored: "已恢复上次未提交的内容；提交成功后会清除这份本地暂存。",
   /** 活动接待补单（issue #221）：不落草稿，提交时才创建维修单。 */

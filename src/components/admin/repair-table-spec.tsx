@@ -6,7 +6,6 @@ import {
   repairCopy,
   repairResultLabels,
   repairStatusLabels,
-  repairWithdrawnLabel,
 } from "@/config/repairs";
 import { UNCATEGORIZED_LABEL } from "@/types/contracts";
 import type { RepairView } from "@/types/contracts";
@@ -120,7 +119,6 @@ export const repairTableSpec: TableViewSpec<RepairView, RepairTableContext> = {
       title: (record) =>
         [
           repairStatusLabels[record.status],
-          record.status === "DRAFT" && record.submittedAt ? repairWithdrawnLabel : "",
           record.isDifficult ? repairCopy.list.difficult : "",
           record.isTypical ? repairCopy.list.typical : "",
         ]
@@ -131,9 +129,6 @@ export const repairTableSpec: TableViewSpec<RepairView, RepairTableContext> = {
           <span className={`repair-tag repair-tag--${record.status.toLowerCase()}`}>
             {repairStatusLabels[record.status]}
           </span>
-          {record.status === "DRAFT" && record.submittedAt ? (
-            <span className="admin-tag">{repairWithdrawnLabel}</span>
-          ) : null}
           {record.isDifficult ? (
             <span className="admin-tag">{repairCopy.list.difficult}</span>
           ) : null}

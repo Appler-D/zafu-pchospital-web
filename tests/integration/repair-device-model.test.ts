@@ -4,9 +4,10 @@ import { after, test } from "node:test";
 
 import { GET as detailRoute, PATCH as updateRoute } from "../../src/app/api/v1/repairs/[id]/route";
 import { POST as submitRoute } from "../../src/app/api/v1/repairs/[id]/submit/route";
-import { POST as withdrawRoute } from "../../src/app/api/v1/repairs/[id]/withdraw/route";
 import { POST as createRoute } from "../../src/app/api/v1/repairs/route";
 import { repairFieldLimits } from "../../src/config/repairs";
+import { repairService } from "../../src/features/repairs/repair-service";
+import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
 import { integrationTestsEnabled } from "./db-guard";
 import { callRoute, sessionCookie } from "./http-harness";
@@ -52,7 +53,20 @@ async function createMember(label: string) {
 }
 
 async function systemCategoryId(): Promise<string> {
-  return (await getDb().repairCategory.findUniqueOrThrow({ where: { code: "SYSTEM" } })).id;
+  const db = getDb();
+  const existing = await db.repairCategory.findUnique({ where: { code: "SYSTEM" } });
+  if (existing) return existing.id;
+  // 单文件定向运行时测试库可能还没被其它套件建分类，这里兜底。
+  const created = await db.repairCategory.create({
+    data: {
+      id: randomUUID(),
+      code: "SYSTEM",
+      name: "系统问题",
+      sortOrder: 90,
+      createdAt: new Date(),
+    },
+  });
+  return created.id;
 }
 
 /** 一份能通过提交校验的完整草稿（除机型外），机型由调用方决定。 */
@@ -63,8 +77,18 @@ async function completeDraftFields(deviceModel?: string | null) {
     categoryId: await systemCategoryId(),
     ownerName: "机主",
     ownerPhone: "13900002180",
-    result: "COMPLETED",
+    result: "COMPLETED" as const,
     ...(deviceModel === undefined ? {} : { deviceModel }),
+  };
+}
+
+function memberActor(member: { userId: string }) {
+  return {
+    actorType: "USER" as const,
+    userId: member.userId,
+    userStatus: "ACTIVE" as const,
+    permissions: permissionsForRoles(["MEMBER"]),
+    requestId: `req_dm218_${member.userId.slice(0, 8)}`,
   };
 }
 
@@ -116,15 +140,12 @@ after(async () => {
   await disconnectDb();
 });
 
-dbTest("机型（#218）：路由入参去空白，详情回显，草稿可改可清空", async () => {
+dbTest("机型（#218）：草稿写入去空白、可改可清空（过渡期服务层夹具）", async () => {
   const member = await createMember("写入");
-  const created = await callRoute(createRoute, "http://localhost/api/v1/repairs", {
-    method: "POST",
-    headers: { cookie: member.cookie, "Idempotency-Key": randomUUID() },
-    body: { deviceModel: "  联想 小新  " },
-  });
-  assert.equal(created.status, 201);
-  const draft = created.json.data as { id: string; version: number; deviceModel: string | null };
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), deviceModel: "  联想 小新  " },
+    memberActor(member),
+  );
   assert.equal(draft.deviceModel, "联想 小新", "写入前应去掉首尾空白");
 
   const patched = await callRoute(updateRoute, "http://localhost/api/v1/repairs/x", {
@@ -165,59 +186,93 @@ dbTest("机型（#218）：路由入参去空白，详情回显，草稿可改�
   assert.ok(fieldErrorsOf(tooLong.json).deviceModel, "错误应定位到 deviceModel 字段");
 });
 
-dbTest("机型（#218）：提交审核必填，撤回重提同样要求", async () => {
+dbTest("机型（#218）：提交审核必填，提交后成员不可再改", async () => {
   const member = await createMember("提交");
-  const created = await callRoute(createRoute, "http://localhost/api/v1/repairs", {
-    method: "POST",
-    headers: { cookie: member.cookie, "Idempotency-Key": randomUUID() },
-    body: await completeDraftFields(),
-  });
-  assert.equal(created.status, 201);
-  let current = created.json.data as { id: string; version: number; deviceModel: string | null };
-  assert.equal(current.deviceModel, null, "草稿允许暂时没有机型（活动落单可能就是空的）");
+  const draft = await repairService.createDraft(
+    { idempotencyKey: randomUUID(), ...(await completeDraftFields(null)) },
+    memberActor(member),
+  );
+  assert.equal(draft.deviceModel, null, "草稿允许暂时没有机型（活动落单可能就是空的）");
 
   const submit = (version: number) =>
     callRoute(submitRoute, "http://localhost/api/v1/repairs/x/submit", {
       method: "POST",
       headers: { cookie: member.cookie, "Idempotency-Key": randomUUID() },
       body: { version },
-      params: { id: current.id },
+      params: { id: draft.id },
     });
 
-  const blocked = await submit(current.version);
+  const blocked = await submit(draft.version);
   assert.equal(blocked.status, 400);
-  assert.equal((blocked.json.error as { code?: string }).code, "REPAIR_SUBMISSION_INCOMPLETE");
+  const blockedCode = (blocked.json.error as { code?: string }).code;
+  assert.equal(blockedCode, "REPAIR_SUBMISSION_INCOMPLETE");
   assert.ok(fieldErrorsOf(blocked.json).deviceModel, "缺机型要定位到 deviceModel");
 
   const filled = await callRoute(updateRoute, "http://localhost/api/v1/repairs/x", {
     method: "PATCH",
     headers: { cookie: member.cookie },
-    body: { version: current.version, deviceModel: "Redmi Book Pro 15" },
-    params: { id: current.id },
+    body: { version: draft.version, deviceModel: "Redmi Book Pro 15" },
+    params: { id: draft.id },
   });
-  current = filled.json.data as typeof current;
-  const accepted = await submit(current.version);
+  const accepted = await submit((filled.json.data as { version: number }).version);
   assert.equal(accepted.status, 200);
   assert.equal((accepted.json.data as { status: string }).status, "PENDING");
   assert.equal((accepted.json.data as { deviceModel: string }).deviceModel, "Redmi Book Pro 15");
 
-  // 撤回 → 改回空机型（草稿允许）→ 再次提交仍被拦：撤回重提不豁免必填。
-  const withdrawn = await callRoute(withdrawRoute, "http://localhost/api/v1/repairs/x/withdraw", {
-    method: "POST",
-    headers: { cookie: member.cookie, "Idempotency-Key": randomUUID() },
-    body: { version: (accepted.json.data as { version: number }).version },
-    params: { id: current.id },
-  });
-  const backToDraft = withdrawn.json.data as { version: number; status: string };
-  assert.equal(backToDraft.status, "DRAFT");
-  const emptied = await callRoute(updateRoute, "http://localhost/api/v1/repairs/x", {
+  // 提交后成员不可再编辑（PENDING 不属于可编辑状态）。
+  const blockedEdit = await callRoute(updateRoute, "http://localhost/api/v1/repairs/x", {
     method: "PATCH",
     headers: { cookie: member.cookie },
-    body: { version: backToDraft.version, deviceModel: null },
-    params: { id: current.id },
+    body: {
+      version: (accepted.json.data as { version: number }).version,
+      deviceModel: "再次修改",
+    },
+    params: { id: draft.id },
   });
-  assert.equal(emptied.status, 200);
-  const blockedAgain = await submit((emptied.json.data as { version: number }).version);
-  assert.equal(blockedAgain.status, 400);
-  assert.ok(fieldErrorsOf(blockedAgain.json).deviceModel);
+  assert.equal(blockedEdit.status, 409);
+  assert.equal((blockedEdit.json.error as { code?: string }).code, "REPAIR_STATE_INVALID");
+});
+
+dbTest("新建提交即建单（#222）：不产生草稿、提交必填与幂等", async () => {
+  const member = await createMember("提交即建单");
+  const missing = await callRoute(createRoute, "http://localhost/api/v1/repairs", {
+    method: "POST",
+    headers: { cookie: member.cookie, "Idempotency-Key": randomUUID() },
+    body: await completeDraftFields(),
+  });
+  assert.equal(missing.status, 400);
+  assert.equal((missing.json.error as { code?: string }).code, "REPAIR_SUBMISSION_INCOMPLETE");
+  assert.ok(fieldErrorsOf(missing.json).deviceModel, "新建提交同样要求机型");
+
+  const key = randomUUID();
+  const fields = await completeDraftFields("  Redmi Book  ");
+  const created = await callRoute(createRoute, "http://localhost/api/v1/repairs", {
+    method: "POST",
+    headers: { cookie: member.cookie, "Idempotency-Key": key },
+    body: fields,
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.json));
+  const record = created.json.data as {
+    id: string;
+    status: string;
+    deviceModel: string | null;
+    submittedAt: string | null;
+  };
+  assert.equal(record.status, "PENDING", "新建提交直接进入待审核");
+  assert.equal(record.deviceModel, "Redmi Book");
+  assert.ok(record.submittedAt);
+
+  const retry = await callRoute(createRoute, "http://localhost/api/v1/repairs", {
+    method: "POST",
+    headers: { cookie: member.cookie, "Idempotency-Key": key },
+    body: fields,
+  });
+  assert.equal((retry.json.data as { id: string }).id, record.id, "同一幂等键返回原记录");
+  assert.equal(
+    await getDb().repairRecord.count({
+      where: { memberProfileId: member.profileId, status: "DRAFT" },
+    }),
+    0,
+    "新建提交不产生草稿",
+  );
 });

@@ -231,7 +231,6 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 - `GET/POST /api/v1/repairs`
 - `GET/PATCH/DELETE /api/v1/repairs/:id`（DELETE 仅管理员）
 - `POST /api/v1/repairs/:id/submit`
-- `POST /api/v1/repairs/:id/withdraw`（issue #165：创建人撤回待审核记录，PENDING → DRAFT）
 - `POST /api/v1/repairs/:id/photos`
 - `PATCH/DELETE /api/v1/repairs/:id/photos/:photoId`
 - `GET /api/v1/repair-photos/:photoId/content`
@@ -251,7 +250,7 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 
 | 传递方式                     | 端点                                                                                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`、`POST /api/v1/repairs/:id/withdraw`                                                       |
+| `Idempotency-Key` **请求头** | 成员端写接口：`POST /api/v1/repairs`、`POST /api/v1/repairs/:id/submit`                                                                                            |
 | 请求体字段 `idempotencyKey`  | 管理端与后台写接口：`POST /api/v1/admin/repairs/:id/reviews`、`.../batch-reviews`、`admin/members`、`join-applications/:id/reviews`、`member-registrations/invite` |
 
 单条审核的键上限 128 位；批次键按 `${批次键}:${recordId}` 给每条记录派生一个键，`recordId` 是
@@ -260,21 +259,18 @@ PR 中记录影响范围。不强制单独评审；但若影响其他模块，�
 > 单条审核曾读**头**而界面发**体**，两边对不上导致管理端审核必然 400（issue #62）。
 > 现在两类端点各按上表取值，`tests/integration/m6-admin.test.ts` 从真实路由打进一次以防回归。
 
-更新草稿携带 `version`；过期版本返回
+`POST /api/v1/repairs` 为「提交即建单」（issue #222）：请求体是完整草稿字段 + `Idempotency-Key`
+请求头，服务端按成员自助提交同一套校验直接创建 **`PENDING`** 记录，不再先建草稿；同一幂等键
+重试返回原记录。新建页在提交前不落库（非图片字段暂存本机 sessionStorage）；提交前的照片上传
+暂不提供（issue #226 评估）。编辑既有记录（`DRAFT` / `REJECTED`）携带 `version`；过期版本返回
 `REPAIR_VERSION_CONFLICT`。列表支持分页、成员、分类、状态、结果、日期、疑难、典型和关键词
 筛选；普通成员只能看到本人全部状态与他人的 `APPROVED` 记录。照片内容接口要求有效 Session，
 并返回私有缓存、`nosniff`、正确 MIME 与长度。
 
-撤回审核（issue #165）：
-
-- `POST /api/v1/repairs/:id/withdraw`，请求体 `{version}`，`Idempotency-Key` 请求头与 `submit` 同形；
-  仅**记录创建人**可调用，只允许 `PENDING → DRAFT`；管理员、参与者、其他成员返回 `REPAIR_FORBIDDEN`，
-  非 `PENDING` 状态返回 `REPAIR_STATE_INVALID` 409。
-- 撤回**保留 `submittedAt`**：它同时是「这条草稿曾经提交过」的标记，成员列表 / 详情 / 活动看板
-  据此显示「已撤回」，接待流程据此把它排除在「未提交的接待草稿」之外（不拦截下一位接待，
-  也不能按「撤销接待」整条删除）。
-- 时间线写 `WITHDRAWN`（from/to 与幂等键），审计写 `repair.withdrawn`；不产生通知。
-  相同幂等键重放直接返回当前记录，不会二次撤回。
+撤回审核已下线（issue #222）：`PENDING → DRAFT` 不再允许，`POST /api/v1/repairs/:id/withdraw`
+不存在。提交后如需修改，请联系管理员退回（`REJECTED`，成员可编辑后重提）或由管理员直接修正
+数据（`PATCH /api/v1/admin/repairs/:id`，原因 + 版本锁 + 审计）。历史 `WITHDRAWN` 时间线与旧
+`DRAFT` 行仍可读取（旧草稿在 #223 清理前仍可编辑 / 提交）；存量处置见 #223。
 
 ## M3 成员工作台与个人主页
 
@@ -680,7 +676,7 @@ DELETE     /api/v1/admin/comments/:id
   的接待返回 409（属于审核流程）。审计 `repair_activity.registration_serve_reverted` 记录恢复状态。
 - **旧数据过渡**（PR #221 之前的接待草稿）：登记仍关联 `DRAFT` 且未提交时保留原撤销能力——
   撤销会删除该草稿及照片，并清理评论 / 收藏 / 通知（#195），审计额外记录 `deletedRecordId`；
-  已提交 / 已审核 / 已撤回仍返回 409。存量处置见 #223。
+  已提交 / 已审核仍返回 409。存量处置见 #223。
 
 新增错误码：`ACTIVITY_SERVE_PENDING`(409)（取代 `ACTIVITY_SERVE_DRAFT_PENDING`）。
 

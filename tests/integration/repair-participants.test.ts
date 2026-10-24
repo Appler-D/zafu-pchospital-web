@@ -535,7 +535,7 @@ dbTest("管理端 memberId 筛选：创建人之外的参与者也命中", async
   );
 
   const matched = await repairQueryService.list(
-    { page: 1, pageSize: 20, memberId: b.profileId },
+    { page: 1, pageSize: 20, memberId: b.profileId, status: "DRAFT" },
     adminActor,
   );
   assert.equal(
@@ -544,7 +544,7 @@ dbTest("管理端 memberId 筛选：创建人之外的参与者也命中", async
     "按「参与过」筛选：额外参与者也能查到",
   );
   const unmatched = await repairQueryService.list(
-    { page: 1, pageSize: 20, memberId: outsider.profileId },
+    { page: 1, pageSize: 20, memberId: outsider.profileId, status: "DRAFT" },
     adminActor,
   );
   assert.equal(
