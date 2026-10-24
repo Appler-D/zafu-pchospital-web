@@ -256,6 +256,7 @@ export function dataFields(input: RepairDraftFields) {
     categoryId: input.categoryId,
     ownerName: input.ownerName,
     ownerPhone: input.ownerPhone,
+    deviceModel: input.deviceModel,
     content: input.content,
     result: input.result,
     remark: input.remark,

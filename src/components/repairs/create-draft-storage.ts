@@ -11,6 +11,8 @@ export type CreateDraftSnapshot = {
   categoryId: string | null;
   ownerName: string | null;
   ownerPhone: string | null;
+  /** 机型（issue #218）：新建页未建档时的本地暂存也要带上，否则刷新会丢。 */
+  deviceModel: string | null;
   remark: string | null;
   participantIds: string[];
 };
@@ -39,6 +41,7 @@ export function readCreateDraft(): CreateDraftSnapshot | null {
       categoryId: text(fields.categoryId),
       ownerName: text(fields.ownerName),
       ownerPhone: text(fields.ownerPhone),
+      deviceModel: text(fields.deviceModel),
       remark: text(fields.remark),
       participantIds: Array.isArray(fields.participantIds)
         ? fields.participantIds.filter((id): id is string => typeof id === "string")

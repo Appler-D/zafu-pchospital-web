@@ -58,7 +58,7 @@ function localDraftRecord(input: {
     repairDate: input.stored?.repairDate ?? shanghaiToday(),
     durationMinutes: input.stored?.durationMinutes ?? null,
     category: categoryId ? (input.categories.find((item) => item.id === categoryId) ?? null) : null,
-    deviceModel: null,
+    deviceModel: input.stored?.deviceModel ?? null,
     ownerName: input.stored?.ownerName ?? null,
     ownerPhone: input.stored?.ownerPhone ?? null,
     content: null,
@@ -92,6 +92,7 @@ function snapshotOf(record: RepairDetailView): CreateDraftSnapshot {
     categoryId: record.category?.id ?? null,
     ownerName: record.ownerName,
     ownerPhone: record.ownerPhone,
+    deviceModel: record.deviceModel,
     remark: record.remark,
     participantIds: record.participants
       .filter((participant) => participant.id !== record.member.id)
@@ -235,6 +236,7 @@ export function RepairEditor({
       categoryId: record.category?.id ?? null,
       ownerName: record.ownerName,
       ownerPhone: record.ownerPhone,
+      deviceModel: record.deviceModel,
       // 不再发送 `content`：字段已从表单退场，`undefined` 即「不动」——
       // 老记录的正文不会被这里清空（issue #79 第 6 项）。
       remark: record.remark,
@@ -283,6 +285,11 @@ export function RepairEditor({
   }
   async function submit() {
     if (busy) return;
+    // 机型提交必填（issue #218）：先在客户端给出可读提示，服务端还会再校验一次。
+    if (!record?.deviceModel?.trim()) {
+      setMessage(repairEditorCopy.deviceModelRequired);
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -523,6 +530,25 @@ export function RepairEditor({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              <span className="field__label">
+                {repairEditorCopy.deviceModelLabel}
+                <span className="field__req">{repairEditorCopy.requiredMark}</span>
+              </span>
+              <input
+                className="field__input"
+                type="text"
+                maxLength={repairFieldLimits.deviceModelMaxLength}
+                placeholder={repairEditorCopy.deviceModelPlaceholder}
+                value={record.deviceModel ?? ""}
+                onChange={(e) => field("deviceModel", e.target.value || null)}
+                aria-describedby="repair-device-model-hint"
+              />
+              <span className="field__hint" id="repair-device-model-hint">
+                {repairEditorCopy.deviceModelHint}
+                {returnActivityId ? ` ${repairEditorCopy.deviceModelActivityHint}` : null}
+              </span>
             </label>
             <label className="field">
               <span className="field__label">

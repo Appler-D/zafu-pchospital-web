@@ -181,6 +181,7 @@ async function createApprovedRepair(
       repairDate: options.repairDate ?? new Date().toISOString().slice(0, 10),
       durationMinutes: options.durationMinutes ?? 30,
       categoryId: category.id,
+      deviceModel: "M4 测试机型",
       ownerName: "M4 集成机主",
       ownerPhone: "13800138004",
       content: "M4 集成测试维修记录正文内容，用于覆盖通知与收藏。",

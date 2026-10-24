@@ -227,6 +227,7 @@ async function createApprovedRepair(owner: AuthorizedActor, ownerLabel: string) 
       repairDate: new Date().toISOString().slice(0, 10),
       durationMinutes: 30,
       categoryId: category.id,
+      deviceModel: "SERVE 测试机型",
       ownerName: `${PREFIX}${ownerLabel}机主`,
       ownerPhone: "13800139001",
       result: "COMPLETED",
@@ -484,7 +485,7 @@ dbTest("提交后（PENDING）不拦截；手工草稿（非接待产生）也�
   });
   const filled = await repairService.update(
     draft.id,
-    { version: draft.version, durationMinutes: 45 },
+    { version: draft.version, durationMinutes: 45, deviceModel: "SERVE 测试机型" },
     staffActor,
   );
   assert.equal(filled.ownerPhone, "13900002005", "serve 的回归视图对归属人下发完整号");
@@ -536,7 +537,7 @@ dbTest("看板 served 与 pendingServeDraft：草稿提交前非空、提交后�
   });
   const filled = await repairService.update(
     draft.id,
-    { version: draft.version, durationMinutes: 20 },
+    { version: draft.version, durationMinutes: 20, deviceModel: "SERVE 测试机型" },
     staffActor,
   );
   await repairService.submit(
@@ -748,7 +749,7 @@ dbTest("撤销接待：非接待者且非管理员被拒；已提交记录不能
   });
   const filled = await repairService.update(
     record.id,
-    { version: record.version, durationMinutes: 20 },
+    { version: record.version, durationMinutes: 20, deviceModel: "SERVE 测试机型" },
     staffActor,
   );
   await repairService.submit(
@@ -916,7 +917,7 @@ dbTest("已撤回的接待记录不拦截下一位、不可撤销接待；未提
   });
   const filled = await repairService.update(
     record.id,
-    { version: record.version, durationMinutes: 15 },
+    { version: record.version, durationMinutes: 15, deviceModel: "SERVE 测试机型" },
     staffActor,
   );
   const submitted = await repairService.submit(

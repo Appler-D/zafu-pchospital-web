@@ -11,6 +11,7 @@ export function normalizeDraftFields(input: RepairDraftFields): RepairDraftField
     categoryId: input.categoryId === undefined ? undefined : input.categoryId || null,
     ownerName: input.ownerName === undefined ? undefined : clean(input.ownerName),
     ownerPhone: input.ownerPhone === undefined ? undefined : cleanOwnerPhone(input.ownerPhone),
+    deviceModel: input.deviceModel === undefined ? undefined : clean(input.deviceModel),
     content: input.content === undefined ? undefined : clean(input.content),
     result: input.result,
     remark: input.remark === undefined ? undefined : clean(input.remark),
@@ -50,6 +51,7 @@ export function isBlankDraftFields(input: RepairDraftFields): boolean {
     blank(input.categoryId) &&
     blank(input.ownerName) &&
     blank(input.ownerPhone) &&
+    blank(input.deviceModel) &&
     blank(input.content) &&
     blank(input.result) &&
     blank(input.remark) &&
@@ -79,6 +81,12 @@ export function validateDraftFields(input: RepairDraftFields): void {
     ];
   if (input.ownerName != null && input.ownerName.length > repairFieldLimits.ownerNameMaxLength)
     errors.ownerName = [`机主姓名不能超过 ${repairFieldLimits.ownerNameMaxLength} 字`];
+  // 草稿允许为空（活动落单可能还没带出来自报名的机型）；填了就必须在上限内（issue #218）。
+  if (
+    input.deviceModel != null &&
+    input.deviceModel.length > repairFieldLimits.deviceModelMaxLength
+  )
+    errors.deviceModel = [`机型不能超过 ${repairFieldLimits.deviceModelMaxLength} 字`];
   // 草稿允许不填电话（与日期 / 时长同思路）；填了就必须是合法的 11 位手机号。
   if (input.ownerPhone != null && !CN_MOBILE_PATTERN.test(input.ownerPhone))
     errors.ownerPhone = ["机主电话须为 11 位中国大陆手机号"];
@@ -107,6 +115,7 @@ export function validateSubmission(record: {
   categoryId: string | null;
   ownerName: string | null;
   ownerPhone: string | null;
+  deviceModel: string | null;
   content: string | null;
   result: string | null;
 }): void {
@@ -134,6 +143,10 @@ export function validateSubmission(record: {
   if (!record.ownerPhone) errors.ownerPhone = ["请填写机主电话"];
   else if (!CN_MOBILE_PATTERN.test(record.ownerPhone))
     errors.ownerPhone = ["机主电话须为 11 位中国大陆手机号"];
+  // 机型改为提交必填（issue #218）：历史记录不回填，只在提交审核（含撤回后重提）时要求。
+  if (!record.deviceModel) errors.deviceModel = ["请填写机型"];
+  else if (record.deviceModel.length > repairFieldLimits.deviceModelMaxLength)
+    errors.deviceModel = [`机型不能超过 ${repairFieldLimits.deviceModelMaxLength} 字`];
   // `content` 不再是提交必填（旧记录仍可能带着历史正文），但上限校验保留。
   if (record.content != null && record.content.length > repairFieldLimits.contentMaxLength)
     errors.content = [`维修内容不能超过 ${repairFieldLimits.contentMaxLength} 字`];

@@ -27,6 +27,7 @@ test("默认维修日期保持 YYYY-MM-DD，不受 Intl 地区格式影响", (t)
     categoryId: "category",
     ownerName: "张三",
     ownerPhone: "13800138000",
+    deviceModel: "联想小新 Air 14",
     content: null,
     result: "COMPLETED",
   });
