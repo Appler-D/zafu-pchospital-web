@@ -618,7 +618,7 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
     onSortChange: () => {},
   });
   const buttons = [
-    ...html.matchAll(/<button type="button" class="admin-th__sort[^"]*">(.*?)<\/button>/g),
+    ...html.matchAll(/<button type="button" class="admin-th__sort[^"]*"[^>]*>(.*?)<\/button>/g),
   ];
   // 可排：维修日期 / 成员 / 分类 / 结果 / 时长 / 状态；不可排：选择列、机型列与操作列。
   assert.deepEqual(
@@ -633,6 +633,7 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
       copy.table.status,
     ],
   );
+  assert.ok(html.includes('title="按创建成员实名排序；此列显示全部参与者"'));
   const head = html.slice(html.indexOf("<thead>"), html.indexOf("</thead>"));
   assert.ok(
     head.includes('aria-sort="ascending"'),

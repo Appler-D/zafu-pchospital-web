@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { tableQueryOptions } from "../../src/config/table-queries";
+import { tableField, tableQueryOptions, tableSortLabel } from "../../src/config/table-queries";
 import {
   readTableParams,
   shareableTableParams,
@@ -70,6 +70,29 @@ test("查询白名单：非法字段、方向、分组和原型键受控拒绝",
   assert.throws(() => parseFilters(["constructor:eq:x"], { status: ["eq"] }), {
     code: "VALIDATION_FAILED",
   });
+});
+
+test("复合成员列明确区分创建人排序与任一参与人筛选", async () => {
+  assert.equal(tableSortLabel("repairs", "memberName"), "创建成员实名");
+  assert.equal(tableField("repairs", "memberName").label, "参与成员姓名");
+  (globalThis as unknown as { React: typeof React }).React = React;
+  const { AdminTableQuery } = await import("../../src/components/admin/AdminTableQuery");
+  const html = renderToStaticMarkup(
+    React.createElement(AdminTableQuery, {
+      value: {
+        ...emptyTableQuery({ query: "" }),
+        sort: [{ field: "memberName", direction: "asc" }],
+        filters: [{ field: "memberName", op: "contains", value: "参与者" }],
+      },
+      options: tableQueryOptions("repairs"),
+      quick: [],
+      refreshing: false,
+      onChange() {},
+      onClear() {},
+    }),
+  );
+  assert.match(html, /创建成员实名/);
+  assert.match(html, /参与成员姓名/);
 });
 
 test("共用查询界面：清除和高级入口常驻，排序/条件可独立移除，不含成功结论", async () => {

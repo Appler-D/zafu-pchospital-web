@@ -33,13 +33,14 @@ async function main() {
     actor: "昵称/实名/账号名回退的派生展示；高级条件按操作人 ID 或类型筛选。",
     window: "复合区间；高级面板分别按生效时间、失效时间查询。",
     usage: "复合次数；高级面板分别按已用次数、使用上限查询。",
-    member: "维修排序按创建成员实名，筛选按任一参与成员姓名；成员表按实名。",
+    realName: "按成员实名排序和筛选；昵称可独立查询。",
+    memberName: "显示全部参与者（昵称优先）；按创建成员实名排序，按任一参与者实名或昵称筛选。",
     approvedAt: "首次 PASSED 审核记录 createdAt 的最小值，历史缺失为 null；不等同面试时间。",
     lastReviewedAt: "管理员填写的面试时间，沿用原 lastReviewedAt；非服务端通过操作时间。",
     actions: "操作列，不是数据字段。",
     select: "选择控件，不是数据字段。",
   };
-  let text = `# 表格能力清单\n\n<!-- generated: pnpm exec tsx tools/generate-table-capabilities.ts -->\n\n本文件由表格 spec 和共用查询白名单生成。修改来源后运行生成命令；\n\`pnpm exec tsx tools/generate-table-capabilities.ts --check\` 检查漂移。\n\n## 通用规则\n\n- 五张分页表均由服务端排序/筛选，不只处理当前页。列头三态，最多 3 项排序，最终以 id desc 兜底；不排序时恢复各表原默认序。枚举按存储码排序；可空字段沿用 GreatSQL 的 ASC 空值在前、DESC 在后。\n- 关键词/快捷条件/最多 5 条列级条件同时以 AND 生效；日期按上海自然日含结束日，维修 DATE 列保持日历日口径。筛选或排序变化重新加载第 1 页，保留已渲染内容直到响应到达。\n- 默认计数复用 meta.pagination.total，为当前筛选后的全量，不是当前已加载数；分组只支持下列枚举，按需随同一列表 HTTP 响应返回 meta.summary。邀请码派生状态按同一服务端 now 串行计数，不另开一组并发请求。无求和/耗时/统计结果导出。\n- 每次 20 条，服务端上限仍为 100；沿用连续加载和“已加载/总数”，不改成另一套翻页。输入仅在应用时发请求，不逐字查询；旧条件请求取消，迟到结果丢弃。\n- 清除同时恢复关键词、快捷条件、列级条件、排序与分组；列宽偏好用高级面板独立恢复。分类/技能无查询条件，清除入口禁用并说明，拖动序不被重置。\n- URL 仅恢复受控排序、日期与枚举条件；姓名、QQ、手机号、学号、批次等文本不写页面 URL/持久存储。刷新/回退恢复可分享部分，连续加载从第一页重新读取。\n- 维修和报名导出复用列表筛选与排序，保留原列及权限/审计；超限拒绝，不静默截断；不新增其他表导出。文本条件值不进入新增审计摘要。\n\n`;
+  let text = `# 表格能力清单\n\n<!-- generated: pnpm exec tsx tools/generate-table-capabilities.ts -->\n\n本文件由表格 spec 和共用查询白名单生成。修改来源后运行生成命令；\n\`pnpm table:capabilities\` 检查漂移，CI 必须通过此闸门。\n\n## 通用规则\n\n- 五张分页表均由服务端排序/筛选，不只处理当前页。列头三态，最多 3 项排序，最终以 id desc 兜底；不排序时恢复各表原默认序。枚举按存储码排序；可空字段沿用 GreatSQL 的 ASC 空值在前、DESC 在后。\n- 关键词/快捷条件/最多 5 条列级条件同时以 AND 生效；日期按上海自然日含结束日，维修 DATE 列保持日历日口径。筛选或排序变化重新加载第 1 页，保留已渲染内容直到响应到达。\n- 默认计数复用 meta.pagination.total，为当前筛选后的全量，不是当前已加载数；分组只支持下列枚举，按需随同一列表 HTTP 响应返回 meta.summary。邀请码派生状态按同一服务端 now 串行计数，不另开一组并发请求。无求和/耗时/统计结果导出。\n- 每次 20 条，服务端上限仍为 100；沿用连续加载和“已加载/总数”，不改成另一套翻页。输入仅在应用时发请求，不逐字查询；旧条件请求取消，迟到结果丢弃。\n- 清除同时恢复关键词、快捷条件、列级条件、排序与分组；列宽偏好用高级面板独立恢复。分类/技能无查询条件，清除入口禁用并说明，拖动序不被重置。\n- URL 仅恢复受控排序、日期与枚举条件；姓名、QQ、手机号、学号、批次等文本不写页面 URL/持久存储。刷新/回退恢复可分享部分，连续加载从第一页重新读取。\n- 维修和报名导出复用列表筛选与排序，保留原列及权限/审计；超限拒绝，不静默截断；不新增其他表导出。文本条件值不进入新增审计摘要。\n\n`;
   for (const spec of specs) {
     const options = queryIds.includes(spec.id) ? tableQueryOptions(spec.id as TableId) : undefined;
     text += `## ${spec.title}（${spec.id}）\n\n| 字段/列 | 排序 | 筛选 | 分组计数 | 说明 |\n| --- | --- | --- | --- | --- |\n`;
@@ -50,7 +51,7 @@ async function main() {
       const sortable = Boolean(options?.sortable.includes(key) && field.sortable !== false);
       const filters = options?.filterable[key];
       const group = options?.groups.includes(key);
-      text += `| ${field.label || field.headLabel || field.key}（${key}） | ${sortable ? "升/降" : "—"} | ${filters?.join(" / ") ?? "—"} | ${group ? "支持" : "—"} | ${options ? (notes[field.key] ?? (sortable || filters ? "标量查询；不对该字段另做聚合。" : "派生/复合列，不提供独立查询。")) : "业务拖动序优先；保留原编辑/启停与引用计数，不提供列头排序、筛选或分组。"} |\n`;
+      text += `| ${field.label || field.headLabel || field.key}（${key}） | ${sortable ? "升/降" : "—"} | ${filters?.join(" / ") ?? "—"} | ${group ? "支持" : "—"} | ${options ? (notes[key] ?? notes[field.key] ?? (sortable || filters ? "标量查询；不对该字段另做聚合。" : "派生/复合列，不提供独立查询。")) : "业务拖动序优先；保留原编辑/启停与引用计数，不提供列头排序、筛选或分组。"} |\n`;
     }
     for (const key of new Set([
       ...(options?.sortable ?? []),

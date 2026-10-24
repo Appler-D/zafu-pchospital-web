@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/Button";
 import { adminCopy, adminShared } from "@/config/admin";
+import { tableField } from "@/config/table-queries";
 import { formatDurationMinutes, formatShanghaiDate } from "@/config/member";
 import {
   formatRepairParticipants,
@@ -66,6 +67,7 @@ export const repairTableSpec: TableViewSpec<RepairView, RepairTableContext> = {
       key: "member",
       // 列 id 描述「这一格显示谁」，排序字段是 API 的 `memberName`。
       sortKey: "memberName",
+      sortDescription: tableField("repairs", "memberName").sortDescription,
       label: copy.table.member,
       kind: "text",
       width: 150,

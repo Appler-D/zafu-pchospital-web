@@ -25,7 +25,13 @@ import type { FilterableFields } from "@/lib/api/list-filter";
 import type { FilterFieldOption } from "@/lib/table/field-spec";
 
 export type TableId = keyof typeof TABLE_GROUPS;
-type Field = { label: string; kind?: "date" | "number"; labels?: Readonly<Record<string, string>> };
+type Field = {
+  label: string;
+  sortLabel?: string;
+  sortDescription?: string;
+  kind?: "date" | "number";
+  labels?: Readonly<Record<string, string>>;
+};
 const fields: Record<string, Field> = {
   realName: { label: "姓名" },
   nickname: { label: "昵称" },
@@ -35,7 +41,11 @@ const fields: Record<string, Field> = {
   department: { label: "部门", labels: memberDepartmentLabels },
   repairDate: { label: "维修日期", kind: "date" },
   durationMinutes: { label: "维修时长（分钟）", kind: "number" },
-  memberName: { label: "参与成员姓名" },
+  memberName: {
+    label: "参与成员姓名",
+    sortLabel: "创建成员实名",
+    sortDescription: "按创建成员实名排序；此列显示全部参与者",
+  },
   categoryName: { label: "故障分类" },
   deviceModel: { label: "设备型号" },
   createdAt: { label: "创建时间", kind: "date" },
@@ -111,6 +121,11 @@ export function tableField(id: TableId, key: string): Field {
     labels: policies[id].labels[key] ?? fields[key]?.labels,
   };
 }
+export function tableSortLabel(id: TableId, key: string): string {
+  const field = tableField(id, key);
+  return field.sortLabel ?? field.label;
+}
+
 export function tableQueryOptions(id: TableId) {
   const policy = policies[id];
   const filters: FilterFieldOption[] = Object.entries(policy.filterable).map(([key, ops]) => {

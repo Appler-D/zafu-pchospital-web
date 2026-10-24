@@ -26,7 +26,7 @@
 - 成员 Repository、维修 Query Service、JoinApplication Service、InviteCode Service、AuditLog Service 与对应管理 Route 同步贯通；成员/维修原调用方兼容可选新增字段。
 - 报名使用同一参数化谓词处理列表、计数、分组和导出。列表只读取 DTO 所需字段，通过时间复用既有审核索引；没有每行补查询或额外读取完整报名资料。
 - 默认统计不增加查询；选择分组才在同一 HTTP 响应增加 `meta.summary`。邀请码派生状态沿用同一 `now` 和原 SQL 谓词，逐项串行计数，避免五个额外并发连接。
-- 能力清单从七张表格 spec 和前后端共用白名单生成，包含复合/派生列的例外及原因，使用 `--check` 检查漂移。
+- 能力清单从七张表格 spec 和前后端共用白名单生成，包含复合/派生列的例外及原因，使用 `pnpm table:capabilities` 检查漂移，CI 在安装依赖后自动执行。
 
 ## 安全、兼容与取舍
 

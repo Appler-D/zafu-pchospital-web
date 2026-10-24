@@ -36,7 +36,12 @@ export function AdminTableExport({
         onError(json?.error?.message ?? tableCopy.exportFailed);
         return;
       }
-      const count = Number(response.headers.get("X-Export-Row-Count"));
+      const rawCount = response.headers.get("X-Export-Row-Count")?.trim();
+      const count = Number(rawCount);
+      if (!rawCount || !/^\d+$/.test(rawCount) || !Number.isSafeInteger(count)) {
+        onError(tableCopy.exportFailed);
+        return;
+      }
       if (count === 0) {
         onError(tableCopy.exportEmpty);
         return;

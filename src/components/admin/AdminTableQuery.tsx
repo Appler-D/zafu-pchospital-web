@@ -5,7 +5,7 @@ import { AdminFilterDialog } from "@/components/admin/AdminFilterDialog";
 import { Button } from "@/components/ui/Button";
 import { adminShared } from "@/config/admin";
 import { tableCopy } from "@/config/admin-tables";
-import { tableField, type TableQueryOptions } from "@/config/table-queries";
+import { tableField, tableSortLabel, type TableQueryOptions } from "@/config/table-queries";
 import type { TableQueryState } from "@/lib/table/query-state";
 import type { SortRule, TableGroupSummary } from "@/types/table";
 
@@ -113,10 +113,10 @@ export function AdminTableQuery<F extends Record<string, string>>({
           <Button
             key={rule.field}
             variant="ghost"
-            aria-label={`${tableCopy.remove} ${tableField(options.id, rule.field).label} ${tableCopy.sort}`}
+            aria-label={`${tableCopy.remove} ${tableSortLabel(options.id, rule.field)} ${tableCopy.sort}`}
             onClick={() => onChange({ ...value, sort: value.sort.filter((_, i) => i !== index) })}
           >
-            {index + 1}. {tableField(options.id, rule.field).label}{" "}
+            {index + 1}. {tableSortLabel(options.id, rule.field)}{" "}
             {rule.direction === "asc" ? "↑" : "↓"} ×
           </Button>
         ))}
@@ -210,7 +210,7 @@ function QueryDialog<F extends Record<string, string>>({
                     value={field}
                     disabled={field !== rule.field && sort.some((entry) => entry.field === field)}
                   >
-                    {tableField(options.id, field).label}
+                    {tableSortLabel(options.id, field)}
                   </option>
                 ))}
               </select>
