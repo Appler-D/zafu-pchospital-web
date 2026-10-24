@@ -11,6 +11,7 @@ import { GET as GET_PHONE } from "../../src/app/api/v1/member/repair-activities/
 import { POST as POST_REGISTRATION } from "../../src/app/api/v1/repair-activities/[id]/registrations/route";
 import { repairActivityStaffService } from "../../src/features/repair-activities/repair-activity-staff-service";
 import { resetRateLimitsForTests } from "../../src/lib/api/rate-limit";
+import { shanghaiToday } from "../../src/lib/shanghai-date";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
 import type { AuthorizedActor } from "../../src/types/contracts";
@@ -503,14 +504,37 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
     () => repairActivityStaffService.withdraw(ACTIVITY_ID, first.id, memberActor),
     { code: "FORBIDDEN" },
   );
-  // 成员仍可接待：serve 保持 activity:staff。
+  // 成员仍可接待：serve 保持 activity:staff。issue #221 起接待只占登记行，不建草稿。
   await repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], staffActor);
   const served = await repairActivityStaffService.serve(ACTIVITY_ID, first.id, memberActor);
-  const record = await db.repairRecord.findUniqueOrThrow({
-    where: { id: served.repairRecordId },
-    include: { category: true },
-  });
-  assert.equal(record.category?.code, "SYSTEM");
+  assert.equal(served.registration.repairRecordId, null, "接待不再创建维修草稿");
+  const prefill = await repairActivityStaffService.getServePrefill(
+    ACTIVITY_ID,
+    first.id,
+    memberActor,
+  );
+  assert.ok(prefill.categoryId, "故障类型应映射到启用中的分类");
+  const record = await repairActivityStaffService.createServeRecord(
+    ACTIVITY_ID,
+    first.id,
+    {
+      idempotencyKey: `activity-serve:${first.id}`,
+      fields: {
+        repairDate: shanghaiToday(),
+        durationMinutes: 30,
+        categoryId: prefill.categoryId,
+        ownerName: prefill.name,
+        ownerPhone: prefill.phone,
+        deviceModel: prefill.deviceModel,
+        remark: "REG79 补单",
+        result: "COMPLETED",
+        participantIds: [],
+      },
+    },
+    memberActor,
+  );
+  assert.equal(record.status, "PENDING");
+  assert.equal(record.category?.id, prefill.categoryId);
   assert.equal(record.deviceModel, first.deviceModel);
   await db.repairRecord.update({ where: { id: record.id }, data: { deletedAt: new Date() } });
 });
@@ -1046,6 +1070,8 @@ dbTest("SERVED 不可撤回：409 ACTIVITY_REGISTRATION_STATE_INVALID，状态�
     where: { id: registrationId },
   });
   assert.equal(row.status, "SERVED", "被拒绝的撤回不应改动状态");
+  // 收尾：撤销这次未建单的接待，避免全局拦截影响后续用例。
+  await repairActivityStaffService.revertServe(ACTIVITY_ID, registrationId, staffActor);
 });
 
 dbTest("未标记出勤：管理员签到 / 撤回 403 ACTIVITY_ATTENDANCE_REQUIRED，报名状态不变", async () => {

@@ -82,9 +82,10 @@ function board(attended = true): StaffBoardView {
         recordStatus: "DRAFT",
         recordWithdrawn: false,
         canRevert: true,
+        canFill: false,
       },
     ],
-    pendingServeDraft: null,
+    pendingServeRegistration: null,
   };
 }
 

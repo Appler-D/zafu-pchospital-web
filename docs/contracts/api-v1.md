@@ -527,8 +527,8 @@ DELETE     /api/v1/admin/comments/:id
 - 机型出现在三处读模型：公开报名回执 `RegistrationPublicView.deviceModel`、管理端报名列表
   `RegistrationAdminView.deviceModel`、接待台 `StaffRegistrationView.deviceModel`（没填就不显示，
   不占位）。
-- 接待落单（`POST /api/v1/member/repair-activities/:id/serve`）把报名上的机型**复制**进新建的
-  维修记录，两边看到的是同一个值；之后各自独立 —— 用 `editToken` 修改报名只改 `issueType`，
+- 接待补单（serve → 继续填写 → 提交）把报名上的机型**带入预填与新建的维修记录**
+  （issue #221），两边看到的是同一个值；之后各自独立 —— 用 `editToken` 修改报名只改 `issueType`，
   不回写已有记录。
 - 两列都可空（Migration `20260928120000_repair_activity_device_model`）：历史报名与手工建单
   没有这个信息，不用默认值伪造。
@@ -600,8 +600,8 @@ DELETE     /api/v1/admin/comments/:id
 - 看板禁用三项操作及签到勾选，确认弹层也按当前窗口复核；保留已有出勤状态、历史列表和
   历史看板查看。结束提示区分“报名尚未截止”，服务端结束响应不卸载已渲染看板、不自动重试。
 - 撤回排队仍沿用原有权限、出勤与报名状态校验，允许修正历史误签到。
-- 撤销接待草稿仍按原接待者/管理员及 DRAFT 资格校验，保留 #195 的历史关联清理；不冻结
-  已创建维修记录的后续填写/提交，不清理历史误补签数据。不新增接口字段、权限或 Migration。
+- 撤销接待仍按原接待者/管理员与「已接待、未建单」资格校验（issue #221）；已建单的接待走审核
+  流程。不冻结已创建维修记录的后续填写/提交，不清理历史误补签数据。不新增权限或 Migration。
 
 ### 签到时核对与修改故障类型
 
@@ -651,27 +651,38 @@ DELETE     /api/v1/admin/comments/:id
 影响范围：成员看板两个列表 → 单条 phone Route → Staff Service → 查看审计与集成测试；
 原 `StaffRegistrationView`、维修单 `ownerPhone` 权限与其余调用方保持兼容。
 
-### 接待落草稿与机主字段（issue #79 第 6 项）
+### 接待补单（不落草稿）与机主字段（issue #79 第 6 项 / issue #221）
 
-**serve 行为变更**：
+**serve 行为**：
 
-- `POST /api/v1/member/repair-activities/:id/serve` 不再直接落 `PENDING`，改为生成 **`DRAFT`**
-  草稿：预填维修日期（活动当天）、机主姓名 / 电话（完整取自报名）、故障分类（由故障类型映射，
-  映射不到或已停用时**置空** —— 不再抛 `ACTIVITY_CATEGORY_MISSING`，接待动作本身必须成功）、
-  机型（报名选填）；`content` / `durationMinutes` / `remark` 一律为 `null`，由成员在表单里补齐。
-  时间线只写 `CREATED`（summary 带 `source: "repair_activity_serve"`、`registrationId`、
-  `activityId`），审计 `repair.created_from_activity_serve` 保留，
-  `createRequestKey = activity-serve:<registrationId>` 的幂等语义保留。
-- **全局拦截**：本成员存在「报名接待产生、`status = DRAFT` 且未软删除」的记录时，
-  **任何活动**的 serve 都返回 409 `ACTIVITY_SERVE_DRAFT_PENDING`（消息含客户姓名）；
-  软删除的草稿、`PENDING` / `REJECTED` 记录与手工草稿（非接待产生）都不拦截。
-- 看板 `GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
+- `POST /api/v1/member/repair-activities/:id/serve` 只把登记行置为 `SERVED` 并记录接待人
+  （`servedByMemberProfileId` / `servedAt`），**不再创建维修单或草稿**（`repair_record_id` 保持空）。
+  权限、出勤与操作窗口同「成员出勤、签到与接待的操作窗口」一节。
+- **全局拦截**：本成员存在「`SERVED` 且 `repair_record_id` 为空」的登记时，**任何活动**的 serve
+  都返回 409 `ACTIVITY_SERVE_PENDING`（消息含客户姓名）；撤销或提交后解除。
+- **继续填写**：
+  - `GET /api/v1/member/repair-activities/:id/registrations/:registrationId/prefill`：仅接待者本人可读，
+    返回客户姓名、完整电话、机型、故障类型映射后的启用分类与活动日；完整电话读取写
+    `repair_activity.registration_phone.viewed` 审计。管理员不代填（403）。
+  - `POST /api/v1/member/repair-activities/:id/registrations/:registrationId/record`：接待者本人提交，
+    `Idempotency-Key` 必填；在一个事务里创建 **`PENDING`** 维修记录（与成员自助提交同一套校验，
+    含机型必填）、写参与人 / `SUBMITTED` 时间线 / 审计，并回写 `repair_record_id`。
+    同一幂等键重试返回原记录；登记已被其他会话建单返回 409 `ACTIVITY_REGISTRATION_STATE_INVALID`。
+- 看板 `GET /api/v1/member/repair-activities/:id/board`：
   - `served: StaffServedRow[]` —— `SERVED` 报名（按 `servedAt` 倒序）：管理员为本场全部，
-    普通成员仅**本人接待**（issue #207）；
-    每行在 `StaffRegistrationView` 上追加 `recordStatus: RepairStatus | null`
-    （`null` = 记录缺失或已软删除）；
-  - `pendingServeDraft: { repairRecordId, ownerName, activityTitle } | null` —— 全局拦截的
-    客户端先行判据（客户端据此弹层且**不发 serve 请求**；服务端 409 为并发兜底）。
+    普通成员仅**本人接待**（issue #207）；每行新增 `canFill`（本人接待且未建单）与
+    `canRevert`（本人或管理员且未建单）；`recordStatus` 为 `null` 且没有 `repairRecordId` 表示
+    「待补建」，前端显示「待补建 / 继续填写」。
+  - `pendingServeRegistration: { registrationId, name, activityId, activityTitle } | null` ——
+    全局拦截的客户端先行判据（客户端据此弹层且**不发 serve 请求**；服务端 409 为并发兜底）。
+- `POST /api/v1/member/repair-activities/:id/revert-serve` 只允许撤销「已接待、未建单」的接待：
+  登记恢复到接待前状态（签过到回 `CHECKED_IN`，否则回 `REGISTERED`）；已建单 / 已提交 / 已审核
+  的接待返回 409（属于审核流程）。审计 `repair_activity.registration_serve_reverted` 记录恢复状态。
+- **旧数据过渡**（PR #221 之前的接待草稿）：登记仍关联 `DRAFT` 且未提交时保留原撤销能力——
+  撤销会删除该草稿及照片，并清理评论 / 收藏 / 通知（#195），审计额外记录 `deletedRecordId`；
+  已提交 / 已审核 / 已撤回仍返回 409。存量处置见 #223。
+
+新增错误码：`ACTIVITY_SERVE_PENDING`(409)（取代 `ACTIVITY_SERVE_DRAFT_PENDING`）。
 
 **机主字段与新列**：
 
@@ -690,8 +701,6 @@ DELETE     /api/v1/admin/comments/:id
 - 摘要取值链（列表 / 案例库 / 通知 / 成员摘要）：`remark` 优先 → 老记录的 `content` 回退 →
   占位「未填写备注」。
 
-新增错误码：`ACTIVITY_SERVE_DRAFT_PENDING`(409)。
-
 ### 维修表单的机型字段（issue #218）
 
 - `POST /api/v1/repairs` 与 `PATCH /api/v1/repairs/:id` 的字段集增加
@@ -700,8 +709,8 @@ DELETE     /api/v1/admin/comments/:id
 - **提交审核必填**（`POST /api/v1/repairs/:id/submit`，含撤回后重提）：缺机型返回 400
   `REPAIR_SUBMISSION_INCOMPLETE` 并定位 `fieldErrors.deviceModel`；草稿仍可暂时为空
   （活动落单可能还没有带出报名机型），填写后即受上限校验。
-- 历史记录**不回填**，`RepairView.deviceModel` 可为 `null`（详情显示「—」）；活动接待落单仍会把
-  报名时填写的机型复制进草稿，成员可在表单里修改，保存以修改值为准。
+- 历史记录**不回填**，`RepairView.deviceModel` 可为 `null`（详情显示「—」）；活动接待补单会把
+  报名时填写的机型经预填带入维修记录（issue #221），成员可在表单里修改，保存以修改值为准。
 
 ### 维修参与人员（issue #114）
 

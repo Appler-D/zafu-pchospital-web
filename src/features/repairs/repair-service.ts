@@ -381,83 +381,110 @@ export async function replaceRepairParticipants(
 }
 
 /**
- * 活动接待内部落单通道（仅供维修活动 serve 在同一可序列化事务内调用）。
+ * 活动接待「提交即建单」（issue #221）。
  *
- * 生成 **DRAFT**（issue #79 第 6 项）：预填机主（姓名 / 电话）与日期 / 分类 / 机型，
- * 正文、时长、备注全部留空，由成员在表单里补齐后自行提交；只写 CREATED 时间线，
- * 不写 SUBMITTED、不置 `submittedAt`。来源痕留在时间线 summary 与审计里。
- * 参与维修人员（issue #114）先落接待人本人一行，其他成员由成员在表单里添加。
+ * 接待本身只在登记行占位（`SERVED` + 接待人，`repair_record_id` 为空），不再预建草稿；
+ * 成员补完表单提交时，才在同一事务里创建 **PENDING** 维修记录并把登记行关联过来。
+ *
+ * - 锁登记行：同一接待的并发 / 多标签提交只允许一条成功建单；
+ * - 幂等：同一表单会话携带同一个 `Idempotency-Key` 重试时，直接返回已建记录；
+ *   登记已被另一会话建单则返回状态冲突，由前端回看板查看；
+ * - 提交校验与成员自助提交同源（`validateDraftFields` + `validateSubmission`），
+ *   不因为来自接待就放宽必填（含 #218 机型）；
+ * - 时间线写 `SUBMITTED`（source=repair_activity_serve），审计沿用
+ *   `repair.created_from_activity_serve`。
  */
-export type CreateServeDraftForActivityInput = {
+export type CreateServedRepairRecordInput = {
   memberProfileId: string;
-  /** 分类映射结果；映射不到 / 已停用时为 null，由成员在表单里补选，接待动作本身必须成功。 */
-  categoryId: string | null;
-  repairDate: string; // YYYY-MM-DD（上海日历日）
-  ownerName: string;
-  /** 完整 11 位；可见性收口在视图层（`toRepairView` 的 `canViewOwnerPhone`），不在这里掩码。 */
-  ownerPhone: string;
-  /** 报名时选填的机型（issue #68）；没填传 null。 */
-  deviceModel: string | null;
-  /** 幂等键；固定 `activity-serve:{registrationId}` */
-  createRequestKey: string;
-  registrationId: string;
   activityId: string;
+  registrationId: string;
+  idempotencyKey: string;
+  fields: RepairDraftFields;
 };
 
-export async function createServeDraftForActivity(
+export async function createServedRepairRecord(
   tx: Prisma.TransactionClient,
-  input: CreateServeDraftForActivityInput,
+  input: CreateServedRepairRecordInput,
   actor: import("@/types/contracts").AuthorizedActor,
   now: Date,
-): Promise<{ repairRecordId: string }> {
-  const existing = await tx.repairRecord.findUnique({
-    where: { createRequestKey: input.createRequestKey },
+) {
+  await tx.$queryRaw`SELECT id FROM repair_activity_registrations WHERE id = ${input.registrationId} FOR UPDATE`;
+  const registration = await tx.repairActivityRegistration.findFirst({
+    where: { id: input.registrationId, activityId: input.activityId, deletedAt: null },
   });
-  if (existing && !existing.deletedAt) {
-    return { repairRecordId: existing.id };
+  if (!registration) throw new AppError("ACTIVITY_REGISTRATION_NOT_FOUND", "报名记录不存在");
+  if (registration.repairRecordId) {
+    const existing = await tx.repairRecord.findFirst({
+      where: { id: registration.repairRecordId, deletedAt: null },
+      include: repairDetailInclude,
+    });
+    if (existing && existing.createRequestKey === input.idempotencyKey) return existing;
+    throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "该接待已创建维修单");
   }
+  if (
+    registration.status !== "SERVED" ||
+    registration.servedByMemberProfileId !== input.memberProfileId
+  )
+    throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "该报名不在你的接待中");
 
-  const repairDate = parseRepairDate(input.repairDate);
-  if (!repairDate) {
-    throw new AppError("VALIDATION_FAILED", "维修日期无效");
+  const fields = normalizeDraftFields(input.fields);
+  validateDraftFields(fields);
+  const draft = { ...fields, result: fields.result ?? defaultRepairResult };
+  validateSubmission({
+    repairDate: parseRepairDate(draft.repairDate) ?? null,
+    durationMinutes: draft.durationMinutes ?? null,
+    categoryId: draft.categoryId ?? null,
+    ownerName: draft.ownerName ?? null,
+    ownerPhone: draft.ownerPhone ?? null,
+    deviceModel: draft.deviceModel ?? null,
+    content: draft.content ?? null,
+    result: draft.result ?? null,
+  });
+  if (draft.categoryId) {
+    const category = await tx.repairCategory.findFirst({
+      where: { id: draft.categoryId, deletedAt: null },
+      select: { isActive: true },
+    });
+    if (!category) throw new AppError("VALIDATION_FAILED", "所选分类不存在");
+    if (!category.isActive) throw new AppError("REPAIR_CATEGORY_INACTIVE", "所选分类已停用");
   }
+  const participantIds = composeParticipantIds(input.memberProfileId, fields.participantIds ?? []);
+  await assertParticipantsExist(participantIds, [input.memberProfileId]);
 
   const recordId = randomUUID();
   await tx.repairRecord.create({
     data: {
       id: recordId,
       memberProfileId: input.memberProfileId,
-      status: "DRAFT",
-      createRequestKey: input.createRequestKey,
-      repairDate,
-      categoryId: input.categoryId,
-      deviceModel: input.deviceModel,
-      ownerName: input.ownerName,
-      ownerPhone: input.ownerPhone,
-      // 正文 / 时长 / 备注留空：模板正文、「1 分钟」占位与「活动接待自动落单」备注是旧流程
-      // 的产物，改造后由成员在表单里补齐（issue #79 第 6 项）。
-      content: null,
-      durationMinutes: null,
-      remark: null,
-      result: defaultRepairResult,
+      status: "PENDING",
+      createRequestKey: input.idempotencyKey,
+      submittedAt: now,
+      reviewedAt: null,
       createdAt: now,
+      ...dataFields(draft),
     },
   });
+  await insertRepairParticipants(tx, recordId, participantIds, now);
   await timeline(
     tx,
     recordId,
     actor.userId,
-    "CREATED",
+    "SUBMITTED",
     {
-      status: "DRAFT",
+      from: null,
       source: "repair_activity_serve",
       activityId: input.activityId,
       registrationId: input.registrationId,
+      idempotencyKey: input.idempotencyKey,
     },
     now,
   );
-  // 参与维修人员（issue #114）：接待人本人先落一行（不变量：每条记录恒有 ≥1 参与行）。
-  await insertRepairParticipants(tx, recordId, [input.memberProfileId], now);
+  const linked = await tx.repairActivityRegistration.updateMany({
+    where: { id: input.registrationId, status: "SERVED", repairRecordId: null },
+    data: { repairRecordId: recordId },
+  });
+  if (linked.count !== 1)
+    throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "接待状态已变化，请刷新后重试");
   await appendAuditLog(tx, {
     actor,
     actorType: "USER",
@@ -469,9 +496,11 @@ export async function createServeDraftForActivity(
     after: {
       activityId: input.activityId,
       registrationId: input.registrationId,
-      categoryId: input.categoryId,
-      status: "DRAFT",
+      status: "PENDING",
     },
   });
-  return { repairRecordId: recordId };
+  return tx.repairRecord.findUniqueOrThrow({
+    where: { id: recordId },
+    include: repairDetailInclude,
+  });
 }

@@ -76,7 +76,7 @@ export const ApiErrorCode = [
   "ACTIVITY_EDIT_TOKEN_INVALID",
   "ACTIVITY_ATTENDANCE_REQUIRED",
   "ACTIVITY_REGISTRATION_STATE_INVALID",
-  "ACTIVITY_SERVE_DRAFT_PENDING",
+  "ACTIVITY_SERVE_PENDING",
   "ACTIVITY_CATEGORY_MISSING",
   "ACTIVITY_CONSENT_REQUIRED",
   // 邮箱验证与重置授权（issue #146）：未启用、验证码、占用、发信结果与限流 / 预算。
@@ -178,9 +178,9 @@ const defaultStatus: Record<ApiErrorCode, number> = {
   ACTIVITY_EDIT_TOKEN_INVALID: 403,
   ACTIVITY_ATTENDANCE_REQUIRED: 403,
   ACTIVITY_REGISTRATION_STATE_INVALID: 409,
-  // 全局接单拦截：已有未提交的接待草稿。409 而非 400 —— 是系统状态不允许，
+  // 全局接单拦截：存在已接待但未建单的客户。409 而非 400 —— 是系统状态不允许，
   // 不是请求本身缺项（同 ACTIVITY_NOT_OPEN）。
-  ACTIVITY_SERVE_DRAFT_PENDING: 409,
+  ACTIVITY_SERVE_PENDING: 409,
   ACTIVITY_CATEGORY_MISSING: 500,
   // 400 而不是 409：请求本身缺了「已同意」这一项，不是系统状态不允许。
   ACTIVITY_CONSENT_REQUIRED: 400,

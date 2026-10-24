@@ -136,7 +136,7 @@ export const memberRepairActivitiesCopy = {
     selectNone: "请先勾选至少一条报名。",
     serve: "接待",
     serving: "落单中…",
-    serveSuccess: "接待完成，请填写维修记录。",
+    serveSuccess: "已接待，请继续填写维修记录。",
     withdraw: "撤回",
     withdrawing: "撤回中…",
     withdrawSuccess: "已撤回排队。",
@@ -161,13 +161,22 @@ export const memberRepairActivitiesCopy = {
     servedEmpty: "本场还没有已接待的客户。",
     /** 成员视角（issue #207）：列表只含本人接待，空态要说清「你」。 */
     servedEmptySelf: "本场你还没有接待记录。",
+    /** 待补建（issue #221）：登记已接待，但维修单还没创建。 */
+    servedPendingTag: "待补建",
+    servedPendingHint: "客户已接待，维修单还没创建。",
+    continueFill: "继续填写",
+    /** 非接待者（如活动管理员）看到的占位：补建记录只由接待人本人完成。 */
+    servedPendingByOwner: "由接待人继续填写",
     fillRepair: "填写维修记录",
-    /** 撤销接待（issue #166）：仅接待者本人 / 活动管理员，且草稿未提交。 */
+    /** 撤销接待（issue #221）：仅未建单的接待，接待者本人 / 活动管理员可撤。 */
     revertServe: "撤销接待",
     revertingServe: "撤销中…",
     revertServeConfirmTitle: "确认撤销接待？",
     revertServeConfirmHint:
-      "撤销后该客户回到接待前的位置；这次接待自动创建的未提交维修草稿及其照片会被删除。已提交的维修记录不能撤销，操作会记录审计。",
+      "撤销后该客户回到接待前的位置；这次接待还没有创建维修单，不会删除任何维修记录或照片。已建单的接待不能撤销，操作会记录审计。",
+    /** 旧 serve 草稿（PR #221 之前）仍保留撤销入口：会删除未提交草稿及照片。 */
+    revertServeConfirmHintLegacy:
+      "撤销后该客户回到接待前的位置；这次接待生成的未提交维修草稿及其照片会被删除。已提交的维修记录不能撤销，操作会记录审计。",
     revertServeConfirm: "确认撤销",
     revertServeCancel: "取消",
     revertServeSuccess: "已撤销接待，客户回到接待前的位置。",
@@ -180,13 +189,13 @@ export const memberRepairActivitiesCopy = {
     attendanceCheckedInAt: "{time} 签到",
     attendanceNote: "按签到时间升序。",
     /**
-     * 全局接单拦截（issue #79 第 6 项）：存在未提交的接待草稿时不能接单，
-     * 客户端先行拦截（不发请求），服务端以 `ACTIVITY_SERVE_DRAFT_PENDING` 兜底。
+     * 全局接单拦截（issue #79 第 6 项，issue #221 起按登记行判定）：存在已接待但未建单的
+     * 客户时不能接单，客户端先行拦截（不发请求），服务端以 `ACTIVITY_SERVE_PENDING` 兜底。
      */
     pendingServeTitle: "有未完成的接待记录",
     pendingServeBody:
-      "机主「{owner}」（{activity}）的维修记录还没有填写提交。请先完成这条记录，再接待下一位客户。",
-    pendingServeFill: "去填写",
+      "机主「{owner}」（{activity}）已接待，但维修单还没有创建。请先完成这条记录，再接待下一位客户。",
+    pendingServeFill: "继续填写",
     pendingServeDismiss: "知道了",
   },
 } as const;
