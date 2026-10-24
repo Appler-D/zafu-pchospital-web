@@ -507,7 +507,7 @@ export const adminCopy = {
       all: "全部",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}`,
+      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}「全部」不含草稿；查看草稿请把「审核状态」选为「草稿」。`,
     },
     table: {
       repairDate: "维修日期",
@@ -700,7 +700,7 @@ export const adminCopy = {
       dateFrom: "起始日期",
       dateTo: "结束日期",
       all: "全部",
-      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}`,
+      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}「全部」不含草稿；需要导出草稿请把「审核状态」选为「草稿」。`,
     },
     format: {
       label: "导出格式",

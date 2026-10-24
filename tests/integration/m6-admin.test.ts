@@ -903,7 +903,47 @@ dbTest("管理端维修列表支持状态与关键字筛选，且可见范围不
     { page: 1, pageSize: 50, query: "M6 筛选" },
     ADMIN_ACTOR,
   );
-  assert.equal(all.items.length, 2, "管理员应看到草稿与待审核的全部记录");
+  assert.equal(
+    all.items.some((item) => item.id === draft.id),
+    false,
+    "「全部」默认不含草稿（issue #220）",
+  );
+  assert.equal(
+    all.items.some((item) => item.id === pending.id),
+    true,
+  );
+  const drafts = await repairQueryService.list(
+    { page: 1, pageSize: 50, query: "M6 筛选", status: "DRAFT" },
+    ADMIN_ACTOR,
+  );
+  assert.deepEqual(
+    drafts.items.map((item) => item.id),
+    [draft.id],
+    "显式选择草稿仍可查看",
+  );
+});
+
+dbTest("管理端导出默认不含草稿，显式草稿筛选可导出；成员侧不受影响（issue #220）", async () => {
+  const created = await createMember("默认排除");
+  const pending = await pendingRepair(created.owner);
+  const draft = await draftRepair(created.owner);
+  const query = "M6 默认排除";
+
+  const csvDefault = await repairExportService.export({ query }, "CSV", ADMIN_ACTOR);
+  const textDefault = new TextDecoder("utf-8", { ignoreBOM: true }).decode(csvDefault.body);
+  assert.equal(csvDefault.rowCount, 1, "默认导出不含草稿");
+  assert.equal(textDefault.includes("草稿"), false);
+
+  const csvDraft = await repairExportService.export({ query, status: "DRAFT" }, "CSV", ADMIN_ACTOR);
+  const textDraft = new TextDecoder("utf-8", { ignoreBOM: true }).decode(csvDraft.body);
+  assert.equal(csvDraft.rowCount, 1);
+  assert.equal(textDraft.includes("草稿"), true, "显式草稿筛选可导出草稿");
+
+  // 成员侧不变：本人列表仍能看到自己的草稿与待审记录。
+  const memberPage = await repairQueryService.list({ page: 1, pageSize: 50, query }, created.owner);
+  const memberIds = memberPage.items.map((item) => item.id);
+  assert.ok(memberIds.includes(draft.id), "成员仍能看到自己的草稿");
+  assert.ok(memberIds.includes(pending.id), "成员仍能看到自己的待审记录");
 });
 
 dbTest("成员列表支持状态与角色筛选、分页元数据正确", async () => {

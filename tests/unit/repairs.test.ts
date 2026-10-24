@@ -63,6 +63,31 @@ test("列表搜索词覆盖机主姓名（电话不参与搜索）", () => {
   );
 });
 
+test("管理端列表中「全部」默认排除草稿，显式草稿与成员视角不受影响（issue #220）", () => {
+  const reviewer = { userId: "a1", permissions: ["repair:review"] as const };
+  const member = { userId: "m1", permissions: ["repair:read"] as const };
+  assert.deepEqual(
+    listWhere({ page: 1, pageSize: 20 }, reviewer).status,
+    { not: "DRAFT" },
+    "管理员未选状态时默认排除草稿",
+  );
+  assert.equal(
+    listWhere({ page: 1, pageSize: 20, status: "DRAFT" }, reviewer).status,
+    "DRAFT",
+    "显式选择草稿仍可查看",
+  );
+  assert.equal(
+    listWhere({ page: 1, pageSize: 20, status: "PENDING" }, reviewer).status,
+    "PENDING",
+    "其它显式状态不加排除条件",
+  );
+  assert.equal(
+    listWhere({ page: 1, pageSize: 20 }, member).status,
+    undefined,
+    "成员视角不变：仍能读取自己的草稿",
+  );
+});
+
 test("案例库准入（issue #134）：flagged=any 解析为 ANY，缺省不过滤，非法值 400", () => {
   assert.equal(repairListInput(new URLSearchParams("flagged=any"), 1, 20).flagged, "ANY");
   assert.equal(
