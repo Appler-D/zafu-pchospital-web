@@ -57,14 +57,14 @@
 
    ```bash
    cd /opt/zafu-pchospital-web
-   corepack pnpm retire:repair-drafts
+   pnpm retire:repair-drafts
    ```
 
 ## 3. dry-run（只读）
 
 ```bash
 cd /opt/zafu-pchospital-web
-corepack pnpm retire:repair-drafts --json=/opt/zafu-pchospital-backups/draft-retire-report.json
+pnpm retire:repair-drafts --json=/opt/zafu-pchospital-backups/draft-retire-report.json
 ```
 
 输出按来源（活动接待 / 旧活动键 / 手工）、字段缺失与补全、作废原因、撤回草稿分组计数，
@@ -81,7 +81,7 @@ corepack pnpm retire:repair-drafts --json=/opt/zafu-pchospital-backups/draft-ret
 
 ```bash
 cd /opt/zafu-pchospital-web
-corepack pnpm retire:repair-drafts \
+pnpm retire:repair-drafts \
   --apply \
   --backup-dir=/opt/zafu-pchospital-backups \
   --expect-db=zafu_pchospital \
