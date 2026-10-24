@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useTableQuery } from "@/components/admin/useTableQuery";
+import { tableQueryOptions } from "@/config/table-queries";
+import { tableCopy } from "@/config/admin-tables";
+
+import { useCallback, useEffect, useState } from "react";
+import { AdminTableExport } from "@/components/admin/AdminTableExport";
+import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
 
 import { AdminTable } from "@/components/admin/AdminTable";
 import { repairTableSpec, type RepairTableContext } from "@/components/admin/repair-table-spec";
@@ -8,9 +14,8 @@ import { useColumnResize, type ColumnSpec } from "@/components/admin/useColumnRe
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared } from "@/config/admin";
-import { repairResultLabels, repairStatusLabels } from "@/config/repairs";
+import { repairStatusLabels } from "@/config/repairs";
 import { adminFetch } from "@/features/admin/admin-client";
-import { sortParam } from "@/lib/api/list-query";
 import { createIdempotencyKey } from "@/lib/idempotency-key";
 import { AdminBatchTools } from "@/components/admin/AdminBatchTools";
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
@@ -19,9 +24,7 @@ import { AdminToast } from "@/components/admin/AdminToast";
 import type { AdminToastMessage } from "@/components/admin/AdminToast";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { RepairAdminActions } from "@/components/admin/RepairAdminActions";
-import { RepairStatus, RepairResult } from "@/types/contracts";
 import type { RepairBatchReviewResult, RepairCategoryView, RepairView } from "@/types/contracts";
-import type { SortRule } from "@/types/table";
 
 type Filters = {
   query: string;
@@ -31,6 +34,8 @@ type Filters = {
   repairDateFrom: string;
   repairDateTo: string;
 };
+
+const QUERY_OPTIONS = tableQueryOptions("repairs");
 
 const EMPTY_FILTERS: Filters = {
   query: "",
@@ -61,11 +66,13 @@ export function RepairAdminPanel() {
   /** 一次性成功反馈：走顶部浮层，不占布局。 */
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
-  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
+  const query = useTableQuery(QUERY_OPTIONS, EMPTY_FILTERS);
+  const requestParams = query.params;
+  const sortRules = query.value.sort;
+  const setSortRules = query.setSort;
   const [selected, setSelected] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   /** 表头排序（三态循环由内核算好；空数组 = 服务端默认顺序：维修日期倒序）。 */
-  const [sortRules, setSortRules] = useState<SortRule[]>([]);
   const resize = useColumnResize({ storageKey: COLUMN_STORAGE_KEY, columns: COLUMNS });
   const [rejectNote, setRejectNote] = useState("");
   /** 批量退回的原因填在弹层里（顶栏只放动作按钮）。 */
@@ -77,71 +84,45 @@ export function RepairAdminPanel() {
   // 取数状态收在 `useAdminList`：往下滚动自动接下一页（邮箱式的连续列表）。
   const list = useAdminList<RepairView>(
     useCallback(
-      (targetPage: number) => {
-        const params = new URLSearchParams({ page: String(targetPage), pageSize: "20" });
-        for (const [key, value] of Object.entries(applied)) if (value) params.set(key, value);
-        // 排序字段必须在服务端白名单里（`REPAIR_SORTABLE`），否则后端 400 ——
-        // 表头只给白名单内的列渲染控件，两边同一份来源。
-        const sort = sortParam(sortRules);
-        if (sort) params.set("sort", sort);
-        return adminFetch<RepairView[]>(`/api/v1/admin/repairs?${params}`);
-      },
-      [applied, sortRules],
+      (targetPage: number, signal?: AbortSignal) =>
+        adminFetch<RepairView[]>(`/api/v1/admin/repairs?${requestParams(targetPage)}`, { signal }),
+      [requestParams],
     ),
+    { queryKey: query.ready ? query.signature : null },
   );
   const { items, pagination, state, problem, loadingMore } = list;
-  const shownProblem = actionProblem || problem;
-
-  /**
-   * 排序变化后回到第一页：`useAdminList` 不猜调用方意图，重置一律由页面负责
-   * （与筛选同一条约定）。用「上一次生效的排序」做闸门，挂载时不会多取一次；
-   * 排序不改记录集合，所以**不清空已选**。
-   */
-  const sortSignature = sortParam(sortRules) ?? "";
-  const appliedSort = useRef(sortSignature);
+  const selectionFilter = JSON.stringify([query.value.fixed, query.value.filters]);
   useEffect(() => {
-    if (appliedSort.current === sortSignature) return;
-    appliedSort.current = sortSignature;
-    void list.reload();
-  }, [sortSignature, list]);
+    setSelected([]);
+  }, [selectionFilter]);
+  useEffect(() => {
+    let alive = true;
+    void adminFetch<RepairCategoryView[]>("/api/v1/repair-categories").then((result) => {
+      if (alive && result.ok) setCategories(result.data);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const shownProblem = actionProblem || problem;
 
   /** 单元格渲染要用的运行时值：勾选状态、勾选回调、打开详情。 */
   const repairContext: RepairTableContext = {
     selected,
-    onToggleSelected: (recordId, checked) =>
+    onToggleSelected: (recordId, checked) => {
+      if (list.refreshing) return;
       setSelected((current) =>
         checked ? [...current, recordId] : current.filter((id) => id !== recordId),
-      ),
+      );
+    },
     onDetail: setActiveId,
   };
 
   const load = useCallback(async () => {
     // 换筛选后清空选择，避免「已选 N 条」与当前列表无关。
     setSelected([]);
-    // 分类下拉只在进页面时取一次；筛选变化时顺带刷新（幂等，代价很小）。
-    const categoryResult = await adminFetch<RepairCategoryView[]>("/api/v1/repair-categories");
-    if (categoryResult.ok) setCategories(categoryResult.data);
     await list.reload();
   }, [list]);
-
-  useEffect(() => {
-    void load();
-    // `applied` 变化才重新取第一页；`list` 是稳定引用（内部用 ref 取最新筛选）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
-
-  function submitFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    setApplied({
-      query: (data.query ?? "").trim(),
-      status: data.status ?? "",
-      result: data.result ?? "",
-      categoryId: data.categoryId ?? "",
-      repairDateFrom: data.repairDateFrom ?? "",
-      repairDateTo: data.repairDateTo ?? "",
-    });
-  }
 
   async function runBatch(decision: "APPROVED" | "REJECTED") {
     if (decision === "REJECTED" && !rejectNote.trim()) {
@@ -214,83 +195,30 @@ export function RepairAdminPanel() {
         </p>
       ) : null}
 
-      <form
-        method="post"
-        className="admin-filters"
-        onSubmit={submitFilters}
-        aria-label={copy.filter.submit}
-      >
-        <div className="admin-filters__row">
-          <label className="field">
-            <span className="field__label">{copy.filter.query}</span>
-            <input
-              className="field__input"
-              name="query"
-              defaultValue={applied.query}
-              maxLength={64}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.status}</span>
-            <select className="field__input" name="status" defaultValue={applied.status}>
-              <option value="">{copy.filter.all}</option>
-              {RepairStatus.map((status) => (
-                <option key={status} value={status}>
-                  {repairStatusLabels[status]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.result}</span>
-            <select className="field__input" name="result" defaultValue={applied.result}>
-              <option value="">{copy.filter.all}</option>
-              {RepairResult.map((result) => (
-                <option key={result} value={result}>
-                  {repairResultLabels[result]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.category}</span>
-            <select className="field__input" name="categoryId" defaultValue={applied.categoryId}>
-              <option value="">{copy.filter.all}</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.dateFrom}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="repairDateFrom"
-              defaultValue={applied.repairDateFrom}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.dateTo}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="repairDateTo"
-              defaultValue={applied.repairDateTo}
-            />
-          </label>
-          <Button type="submit" icon="check">
-            {copy.filter.submit}
-          </Button>
-          <Button variant="ghost" onClick={() => setApplied(EMPTY_FILTERS)}>
-            {copy.filter.reset}
-          </Button>
-        </div>
-        {/* 查询说明：常驻一行（不是展开才有），既不会被忽略也不会让下方的表跳一下。 */}
-        <p className="admin-filters__hint">{copy.filter.hint}</p>
-      </form>
+      <AdminTableQuery
+        ready={query.ready}
+        value={query.value}
+        options={QUERY_OPTIONS}
+        quick={[
+          { key: "query", label: copy.filter.query },
+          {
+            key: "status",
+            label: copy.filter.status,
+            options: Object.entries(repairStatusLabels).map(([value, label]) => ({ value, label })),
+          },
+          {
+            key: "categoryId",
+            label: copy.filter.category,
+            options: categories.map((item) => ({ value: item.id, label: item.name })),
+          },
+        ]}
+        onChange={query.setValue}
+        onClear={query.reset}
+        summary={list.summary}
+        refreshing={list.refreshing}
+        problem={list.problem}
+        onResetColumns={resize.reset}
+      />
 
       {state === "loading" ? (
         <p className="admin-status" role="status">
@@ -310,12 +238,19 @@ export function RepairAdminPanel() {
           {/* 顶栏常驻（邮箱式）：与成员管理共用 `AdminBatchTools`，结构完全一致。
               批量退回要填原因，原因输入框在弹层里（不塞进顶栏，顶栏就不会被撑高）。 */}
           <AdminListToolbar
-            count={copy.count.replace("{count}", String(pagination?.total ?? items.length))}
+            count={(list.refreshing
+              ? tableCopy.updating
+              : list.problem
+                ? tableCopy.previousCount
+                : tableCopy.count
+            ).replace("{count}", String(pagination?.total ?? items.length))}
           >
             <AdminBatchTools
               allSelected={allSelected}
               selectAllLabel={copy.table.selectAll}
-              onSelectAll={(checked) => setSelected(checked ? items.map((item) => item.id) : [])}
+              onSelectAll={(checked) => {
+                if (!list.refreshing) setSelected(checked ? items.map((item) => item.id) : []);
+              }}
               count={selected.length}
               selectedLabel={copy.batch.selected}
               noneLabel={copy.batch.none}
@@ -324,20 +259,27 @@ export function RepairAdminPanel() {
               actions={
                 <>
                   <Button
-                    disabled={busy || selected.length === 0}
+                    disabled={busy || list.refreshing || selected.length === 0}
                     icon="check"
                     onClick={() => void runBatch("APPROVED")}
                   >
                     {copy.batch.approve}
                   </Button>
                   <Button
-                    disabled={busy || selected.length === 0}
+                    disabled={busy || list.refreshing || selected.length === 0}
                     onClick={() => setRejecting(true)}
                   >
                     {copy.batch.reject}
                   </Button>
                 </>
               }
+            />
+            <AdminTableExport
+              path="/api/v1/admin/repairs/export"
+              params={() => query.params(1)}
+              disabled={busy || list.refreshing}
+              onError={setProblem}
+              onDone={(text) => setToast({ text, tone: "success" })}
             />
           </AdminListToolbar>
           {/* 列宽与渲染来自同一份 spec；复用成员表的竖线拖动、键盘调整与本地偏好。 */}

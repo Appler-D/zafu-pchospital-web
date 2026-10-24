@@ -17,7 +17,11 @@ export async function GET(request: Request) {
       repairListInput(params, page.page, page.pageSize),
       actor,
     );
-    return apiSuccess(result.items, requestId, { pagination: result.pagination });
+    return apiSuccess(result.items, requestId, {
+      pagination: result.pagination,
+      summary: result.summary,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (error) {
     return apiFailure(error, requestId);
   }

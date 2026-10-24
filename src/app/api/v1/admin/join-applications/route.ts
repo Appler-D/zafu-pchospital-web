@@ -1,6 +1,6 @@
 import { joinApplicationService } from "@/features/recruitment/join-application-service";
 import { AppError } from "@/lib/api/errors";
-import { parsePagination } from "@/lib/api/pagination";
+import { tableQueryInput } from "@/features/admin/table-http";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { authenticateRequest } from "@/lib/auth/request";
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const { actor } = await authenticateRequest(request, requestId);
     const query = new URL(request.url).searchParams;
-    const pagination = parsePagination(query);
+    const pagination = tableQueryInput(query, "join-applications");
     const result = await joinApplicationService.list(
       {
         ...pagination,
@@ -24,7 +24,11 @@ export async function GET(request: Request) {
       },
       actor,
     );
-    return apiSuccess(result.items, requestId, { pagination: result.pagination });
+    return apiSuccess(result.items, requestId, {
+      pagination: result.pagination,
+      summary: result.summary,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (error) {
     return apiFailure(error, requestId);
   }

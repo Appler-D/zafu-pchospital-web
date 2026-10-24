@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { Button } from "@/components/ui/Button";
@@ -63,9 +63,7 @@ export function AdminFilterTrigger({
       variant="outline"
       icon="filter"
       className={count > 0 ? "admin-filterbtn is-active" : "admin-filterbtn"}
-      aria-label={
-        count > 0 ? labels.openActive.replace("{count}", String(count)) : labels.open
-      }
+      aria-label={count > 0 ? labels.openActive.replace("{count}", String(count)) : labels.open}
       onClick={onClick}
     >
       {labels.open}
@@ -223,6 +221,19 @@ function FilterValueInput({
     );
   }
 
+  if (input.kind === "number")
+    return (
+      <input
+        className="field__input"
+        type="number"
+        min={0}
+        max={1000000}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+
   return (
     <input
       className="field__input"
@@ -240,11 +251,17 @@ export function AdminFilterDialog({
   rules,
   onApply,
   onClose,
+  title,
+  children,
+  keepOpenOnApply = false,
 }: {
   fields: readonly FilterFieldOption[];
   rules: readonly FilterRule[];
   onApply: (rules: FilterRule[]) => void;
   onClose: () => void;
+  title?: string;
+  children?: ReactNode;
+  keepOpenOnApply?: boolean;
 }) {
   const labels = adminShared.filters;
   // 打开时的生效条件就是草稿的初值；关闭即丢弃，重开又是一份干净的草稿。
@@ -252,7 +269,7 @@ export function AdminFilterDialog({
   const complete = isDraftComplete(draft);
 
   return (
-    <AdminModal title={labels.title} subtitle={labels.lead} onClose={onClose}>
+    <AdminModal title={title ?? labels.title} subtitle={labels.lead} onClose={onClose}>
       <AdminFilterDialogBody
         fields={fields}
         draft={draft}
@@ -268,6 +285,8 @@ export function AdminFilterDialog({
         }
       />
 
+      {children}
+
       <div className="admin-actions admin-conditions__actions">
         <Button
           variant="solid"
@@ -275,12 +294,16 @@ export function AdminFilterDialog({
           disabled={!complete}
           onClick={() => {
             onApply(draftToRules(draft));
-            onClose();
+            if (!keepOpenOnApply) onClose();
           }}
         >
           {labels.apply}
         </Button>
-        <Button variant="ghost" disabled={draft.length === 0} onClick={() => setDraft(emptyDraft())}>
+        <Button
+          variant="ghost"
+          disabled={draft.length === 0}
+          onClick={() => setDraft(emptyDraft())}
+        >
           {labels.reset}
         </Button>
         {complete ? null : (

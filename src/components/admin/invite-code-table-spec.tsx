@@ -42,6 +42,7 @@ export const inviteCodeTableSpec: TableViewSpec<InviteCodeAdminView, InviteCodeT
   fields: [
     {
       key: "prefix",
+      sortKey: "displayPrefix",
       label: copy.table.prefix,
       kind: "text",
       // 库里只有摘要，列表能拿到的就是明文前 8 位（`displayPrefix`）。
@@ -49,6 +50,7 @@ export const inviteCodeTableSpec: TableViewSpec<InviteCodeAdminView, InviteCodeT
     },
     {
       key: "status",
+      sortable: false,
       label: copy.table.status,
       kind: "select",
       render: (item) => (
@@ -65,6 +67,7 @@ export const inviteCodeTableSpec: TableViewSpec<InviteCodeAdminView, InviteCodeT
     },
     {
       key: "window",
+      sortable: false,
       label: copy.table.window,
       kind: "text",
       headClassName: "admin-table__grow",
@@ -73,16 +76,16 @@ export const inviteCodeTableSpec: TableViewSpec<InviteCodeAdminView, InviteCodeT
     },
     {
       key: "usage",
+      sortable: false,
       label: copy.table.usage,
       kind: "text",
       // 已用 / 上限：两个数字挨着写，读者不必再把两列对起来。
       render: (item) =>
-        copy.usage
-          .replace("{used}", String(item.usedCount))
-          .replace("{max}", String(item.maxUses)),
+        copy.usage.replace("{used}", String(item.usedCount)).replace("{max}", String(item.maxUses)),
     },
     {
       key: "binding",
+      sortable: false,
       label: copy.table.binding,
       kind: "text",
       // 绑定信息按 PII 规则脱敏后才到界面，因此这里显示的是 `138****1234` 这种值。
@@ -97,6 +100,7 @@ export const inviteCodeTableSpec: TableViewSpec<InviteCodeAdminView, InviteCodeT
     },
     {
       key: "actions",
+      sortable: false,
       label: copy.table.actions,
       kind: "readonly",
       render: (item, _index, { busy, onEditPolicy, onRevoke }) => (

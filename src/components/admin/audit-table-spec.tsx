@@ -53,12 +53,14 @@ export const auditTableSpec: TableViewSpec<AuditLogEntry, AuditTableContext> = {
     },
     {
       key: "actor",
+      sortable: false,
       label: copy.table.actor,
       kind: "text",
       render: (entry) => entry.actorName ?? copy.actorSystem,
     },
     {
       key: "target",
+      sortKey: "targetType",
       label: copy.table.target,
       kind: "text",
       // 完整 ID 放 `title`：格子里只显示短 ID，需要时也能复制。
@@ -97,6 +99,7 @@ export const auditTableSpec: TableViewSpec<AuditLogEntry, AuditTableContext> = {
     },
     {
       key: "actions",
+      sortable: false,
       label: copy.table.actions,
       kind: "readonly",
       // 只读表：唯一的动作是看摘要（before / after 是 JSON，塞进列里会把行高撑成几屏）。

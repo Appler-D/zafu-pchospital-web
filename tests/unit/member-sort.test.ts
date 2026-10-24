@@ -66,6 +66,7 @@ test("路由入参：sort 走白名单解析，其余筛选项行为不变", () 
   assert.deepEqual(input, {
     page: 2,
     pageSize: 20,
+    groupBy: undefined,
     query: "张三",
     status: "ACTIVE",
     role: undefined,
@@ -100,7 +101,7 @@ test("路由入参：没有 sort 时给空数组（由 Repository 决定默认�
 test("白名单与前端可选列一致：只包含可比较的标量列", () => {
   assert.deepEqual(
     [...MEMBER_SORTABLE],
-    ["realName", "nickname", "studentId", "className", "status", "joinedAt"],
+    ["realName", "nickname", "studentId", "className", "status", "department", "joinedAt"],
   );
   // 关联列与聚合列不得进入白名单：前者没有标量可比较，后者需要 JOIN 聚合。
   for (const unsupported of ["skills", "roles", "contacts", "approvedRepairCount"]) {

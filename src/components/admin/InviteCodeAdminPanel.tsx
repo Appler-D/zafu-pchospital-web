@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useTableQuery } from "@/components/admin/useTableQuery";
+import { tableQueryOptions } from "@/config/table-queries";
+import { tableCopy } from "@/config/admin-tables";
+
+import { useCallback, useState, type FormEvent } from "react";
+import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
 
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
 import { AdminToast } from "@/components/admin/AdminToast";
@@ -16,13 +21,13 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared, inviteCodeStatusLabels } from "@/config/admin";
 import { adminFetch } from "@/features/admin/admin-client";
-import { listQueryParams } from "@/lib/api/list-query";
 import {
-  InviteCodeEffectiveStatus,
   type CreateInviteCodeResult,
   type InviteCodeAdminView,
   type InviteCodeView,
 } from "@/types/contracts";
+
+const QUERY_OPTIONS = tableQueryOptions("invite-codes");
 
 const EMPTY_FILTERS = { query: "", status: "" };
 
@@ -42,26 +47,26 @@ export function InviteCodeAdminPanel() {
   /** 页面自己产生的错误（创建 / 调整 / 撤销失败）；取数错误走 `list.problem`。 */
   const [actionProblem, setProblem] = useState("");
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
-  const [applied, setApplied] = useState(EMPTY_FILTERS);
+  const query = useTableQuery(QUERY_OPTIONS, EMPTY_FILTERS);
+  const requestParams = query.params;
+  const sortRules = query.value.sort;
+  const setSortRules = query.setSort;
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [plainCode, setPlainCode] = useState("");
 
   // 取数状态收在 `useAdminList` 里：往下滚动自动接下一页（邮箱式的连续列表，
-  // 不再有「上一页 / 下一页」）。筛选变化时由下面的 effect 重置回第一页。
+  // 不再有「上一页 / 下一页」）。查询状态变化统一重载第一页。
   const list = useAdminList<InviteCodeAdminView>(
     useCallback(
-      (targetPage: number) => {
-        // 查询串统一由内核拼装（`listQueryParams`）：空值不写、关键字去空白，
-        // 六个面板不必各写一份 `new URLSearchParams`。
-        const params = listQueryParams(
-          { page: targetPage, pageSize: 20, query: applied.query, sort: [] },
-          { fixed: { status: applied.status } },
-        );
-        return adminFetch<InviteCodeAdminView[]>(`/api/v1/admin/invite-codes?${params}`);
-      },
-      [applied],
+      (targetPage: number, signal?: AbortSignal) =>
+        adminFetch<InviteCodeAdminView[]>(
+          `/api/v1/admin/invite-codes?${requestParams(targetPage)}`,
+          { signal },
+        ),
+      [requestParams],
     ),
+    { queryKey: query.ready ? query.signature : null },
   );
   const { items, pagination, state, problem, loadingMore } = list;
   const shownProblem = actionProblem || problem;
@@ -69,18 +74,6 @@ export function InviteCodeAdminPanel() {
   const load = useCallback(async () => {
     await list.reload();
   }, [list]);
-
-  useEffect(() => {
-    void load();
-    // `applied` 变化才重新取第一页；`list` 是稳定引用（内部用 ref 取最新筛选）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
-
-  function submitFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    setApplied({ query: data.query ?? "", status: data.status ?? "" });
-  }
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -242,43 +235,27 @@ export function InviteCodeAdminPanel() {
         </form>
       </Card>
 
-      <form
-        method="post"
-        className="admin-filters"
-        onSubmit={submitFilters}
-        aria-label={copy.filter.submit}
-      >
-        <div className="admin-filters__row">
-          <label className="field">
-            <span className="field__label">{copy.filter.query}</span>
-            <input
-              className="field__input"
-              name="query"
-              defaultValue={applied.query}
-              maxLength={64}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.status}</span>
-            <select className="field__input" name="status" defaultValue={applied.status}>
-              <option value="">{copy.filter.all}</option>
-              {InviteCodeEffectiveStatus.map((status) => (
-                <option key={status} value={status}>
-                  {inviteCodeStatusLabels[status]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="submit" icon="check">
-            {copy.filter.submit}
-          </Button>
-          <Button variant="ghost" onClick={() => setApplied(EMPTY_FILTERS)}>
-            {copy.filter.reset}
-          </Button>
-        </div>
-        {/* 查询说明：常驻一行（不是展开才有），既不会被忽略也不会让下方的表跳一下。 */}
-        <p className="admin-filters__hint">{copy.filter.hint}</p>
-      </form>
+      <AdminTableQuery
+        ready={query.ready}
+        value={query.value}
+        options={QUERY_OPTIONS}
+        quick={[
+          { key: "query", label: copy.filter.query },
+          {
+            key: "status",
+            label: copy.filter.status,
+            options: Object.entries(inviteCodeStatusLabels).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+        ]}
+        onChange={query.setValue}
+        onClear={query.reset}
+        summary={list.summary}
+        refreshing={list.refreshing}
+        problem={list.problem}
+      />
 
       {state === "loading" ? (
         <p className="admin-status" role="status">
@@ -297,7 +274,12 @@ export function InviteCodeAdminPanel() {
         <div className="admin-list">
           {/* 顶栏常驻（邮箱式）：左侧说明列表里只有前缀，右侧是总数。 */}
           <AdminListToolbar
-            count={copy.count.replace("{count}", String(pagination?.total ?? items.length))}
+            count={(list.refreshing
+              ? tableCopy.updating
+              : list.problem
+                ? tableCopy.previousCount
+                : tableCopy.count
+            ).replace("{count}", String(pagination?.total ?? items.length))}
           >
             <span className="admin-status">{copy.toolbar.status}</span>
           </AdminListToolbar>
@@ -309,6 +291,8 @@ export function InviteCodeAdminPanel() {
               接管的只是「这一行里有哪些格子」。 */}
           <AdminTable
             spec={inviteCodeTableSpec}
+            sort={sortRules}
+            onSortChange={setSortRules}
             items={items}
             emptyText={inviteCodeEmptyText}
             renderContext={{

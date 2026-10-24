@@ -1,10 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useTableQuery } from "@/components/admin/useTableQuery";
+import { tableQueryOptions } from "@/config/table-queries";
+import { tableCopy } from "@/config/admin-tables";
+
+import { useCallback, useEffect, useState } from "react";
+import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
 
 import { AdminBatchTools } from "@/components/admin/AdminBatchTools";
 import { AdminListEnd, useAdminList } from "@/components/admin/useAdminList";
-import { AdminFilterDialog, AdminFilterTrigger } from "@/components/admin/AdminFilterDialog";
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminTable } from "@/components/admin/AdminTable";
@@ -28,12 +32,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared, memberRoleLabels, memberStatusLabels } from "@/config/admin";
 import { adminFetch } from "@/features/admin/admin-client";
-import { filterSignature, type FilterRule } from "@/lib/api/list-filter";
-import { listQueryParams, sortParam } from "@/lib/api/list-query";
-import { filterFieldsOf } from "@/lib/table/field-spec";
-import { MemberStatus, RoleCode } from "@/types/contracts";
 import type { MemberBatchToggleResult, MemberListEntry, MemberUpdateView } from "@/types/contracts";
-import type { SortRule } from "@/types/table";
 
 type Filters = { query: string; status: string; role: string };
 
@@ -63,16 +62,9 @@ const COLUMNS: ColumnSpec[] = memberTableSpec.fields.map((field) => ({
  */
 const COLUMN_STORAGE_KEY = "zafu-pchospital:admin-columns:members:v2";
 
-const EMPTY_FILTERS: Filters = { query: "", status: "", role: "" };
+const QUERY_OPTIONS = tableQueryOptions("members");
 
-/**
- * 可加条件的列（来自 spec 的 `filter` 声明，模块级常量：弹层的选项不随渲染变化）。
- *
- * 与后端 `MEMBER_FILTERABLE` 是同一份口径 —— 界面上能选的列与运算符，
- * 后端一定收；反过来后端有的，界面按需要开放（`nickname` 就没有单独一列，
- * 它跟着姓名一起显示，用关键字搜索更快）。
- */
-const FILTER_FIELDS = filterFieldsOf(memberTableSpec);
+const EMPTY_FILTERS: Filters = { query: "", status: "", role: "" };
 
 /**
  * 成员管理（M6 §63）。
@@ -90,58 +82,29 @@ export function MemberAdminPanel() {
   const [message, setMessage] = useState("");
   /** 一次性成功反馈：走顶部浮层，不占布局。 */
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
-  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
+  const query = useTableQuery(QUERY_OPTIONS, EMPTY_FILTERS);
+  const requestParams = query.params;
+  const sortRules = query.value.sort;
+  const setSortRules = query.setSort;
   const [selected, setSelected] = useState<string[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [busy, setBusy] = useState(false);
-  /** 表头排序（三态循环由内核的 `cycleSortRule` 算好；空数组 = 按拖动顺序）。 */
-  const [sortRules, setSortRules] = useState<SortRule[]>([]);
-  /** 列级筛选的生效条件（弹层里改的是草稿，只有「应用」才落到这里）。 */
-  const [filterRules, setFilterRules] = useState<FilterRule[]>([]);
-  const [filtering, setFiltering] = useState(false);
-
   // 取数状态收在 `useAdminList` 里：往下滚动自动接下一页（邮箱式的连续列表，
-  // 不再有「上一页 / 下一页」）。筛选变化时由下面的 effect 重置回第一页。
+  // 不再有「上一页 / 下一页」）。查询状态变化统一重载第一页。
   const list = useAdminList<MemberListEntry>(
     useCallback(
-      (targetPage: number) => {
-        // 查询串由内核统一拼装：排序字段、固定筛选与列级条件各归各位，
-        // 六个面板不必各写一份 `new URLSearchParams`。排序字段必须在服务端白名单里
-        // （`MEMBER_SORTABLE`），否则后端 400 —— 表头只给白名单内的列渲染控件。
-        const params = listQueryParams(
-          { page: targetPage, pageSize: 20, query: applied.query, sort: sortRules },
-          {
-            // 快捷筛选条上的两个参数：各表自己的，不属于通用契约。
-            fixed: { status: applied.status, role: applied.role },
-            // 列级条件：**一条条件一个 `filter` 参数**（`filter=studentId:contains:2023`）。
-            // 不用逗号挤成一个参数：值是用户输入，可能自带逗号或冒号，
-            // 重复参数由 `URLSearchParams` 负责编码，不必自己发明转义规则。
-            filters: filterRules,
-          },
-        );
-        return adminFetch<MemberListEntry[]>(`/api/v1/admin/members?${params}`);
-      },
-      [applied, sortRules, filterRules],
+      (targetPage: number, signal?: AbortSignal) =>
+        adminFetch<MemberListEntry[]>(`/api/v1/admin/members?${requestParams(targetPage)}`, {
+          signal,
+        }),
+      [requestParams],
     ),
+    { queryKey: query.ready ? query.signature : null },
   );
   const { items, pagination, state, problem, loadingMore } = list;
-  /**
-   * 排序变化后回到第一页。`useAdminList` 不猜调用方意图，重置一律由页面负责
-   * （与筛选同一条约定）。用「上一次生效的排序」做闸门，因此挂载时不会多取一次。
-   *
-   * 与 `load()` 的差别：排序**不改成员集合**，所以这里不清空已选 ——
-   * 与拖动排序同一个判断（「换序不该顺手清掉已选」）。
-   */
-  const sortSignature = sortParam(sortRules) ?? "";
-  const appliedSort = useRef(sortSignature);
-  useEffect(() => {
-    if (appliedSort.current === sortSignature) return;
-    appliedSort.current = sortSignature;
-    void list.reload();
-  }, [sortSignature, list]);
   /** 行号从 1 开始，无限下翻时接着往下编（不是「第几页的第几行」）。 */
   const firstRowNumber = 1;
   // 列宽可拖拽（Excel 式全局竖线）：宽度是使用者才清楚的事，写死永远照顾不到所有人。
@@ -150,7 +113,9 @@ export function MemberAdminPanel() {
   const rows = useRowSelect({
     ids: items.map((item) => item.id),
     selected,
-    onChange: setSelected,
+    onChange: (ids) => {
+      if (!list.refreshing) setSelected(ids);
+    },
   });
   /* 拖动排序：六点手柄是整张表里唯一可拖的元素（`useRowDragSort`，与技能 / 分类同一套）。
      把 `selected` 传进去 —— 勾选多行时拖动其中任意一行，整块一起移动
@@ -170,7 +135,7 @@ export function MemberAdminPanel() {
     sort,
     firstRowNumber,
     onView: setDetailId,
-    sortingActive: sortRules.length > 0,
+    sortingActive: sortRules.length > 0 || list.refreshing,
     updateMember,
   };
   /**
@@ -178,6 +143,10 @@ export function MemberAdminPanel() {
    * 与 `list.problem`（取数失败）分开：取数失败要整体换成「重新加载」，动作失败只提示一次。
    */
   const [actionProblem, setProblem] = useState("");
+  const selectionFilter = JSON.stringify([query.value.fixed, query.value.filters]);
+  useEffect(() => {
+    setSelected([]);
+  }, [selectionFilter]);
   const shownProblem = actionProblem || problem;
 
   const load = useCallback(async () => {
@@ -186,48 +155,6 @@ export function MemberAdminPanel() {
     await list.reload();
   }, [list]);
 
-  useEffect(() => {
-    void load();
-    // `applied` 变化才重新取第一页；`list` 是稳定引用（内部用 ref 取最新筛选）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
-
-  /**
-   * 列级条件变化后回第一页并**清空已选**（走 `load()`，与上面排序的门控不同）：
-   * 条件换掉的是「列表里有哪些成员」，已勾选的那几个可能已经不在结果里，
-   * 留着它们做批量操作就是误伤。用「上一次生效的条件」做闸门，因此挂载时不会多取一次；
-   * 点开弹层又原样应用（条件没变）也不会白取一次。
-   */
-  const filterNow = filterSignature(filterRules);
-  const appliedFilterSignature = useRef(filterNow);
-  useEffect(() => {
-    if (appliedFilterSignature.current === filterNow) return;
-    appliedFilterSignature.current = filterNow;
-    void load();
-  }, [filterNow, load]);
-
-  function submitFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    setApplied({
-      query: (data.query ?? "").trim(),
-      status: data.status ?? "",
-      role: data.role ?? "",
-    });
-  }
-
-  /**
-   * 就地编辑的提交（学号 / 班级）。三件事都在这里做完：
-   *
-   * 1. 乐观锁用**列表里这一行的当前版本号**；冲突时服务端 409，文案由 `adminFetch` 统一成
-   *    可读提示；
-   * 2. 失败**抛回内核**（内核据此退出编辑态），同时用浮层提示一次 —— 浮层不参与布局，
-   *    不会把表格顶下去；
-   * 3. 成功把服务端返回的权威值**就地**合并进这一行（含新的 `version`）。
-   *    **不整表重取**：那会把下翻出来的几页缩回第一页（与拖动排序同一个判断）。
-   *
-   * 成功不弹提示：单元格当场换成新值，那本身就是反馈（新内容优先原地替换）。
-   */
   async function updateMember(memberId: string, fields: MemberEditableFields) {
     const current = items.find((item) => item.id === memberId);
     // 找不到说明列表刚被换过（筛选 / 重取）：不猜版本号，让用户重来。
@@ -340,54 +267,30 @@ export function MemberAdminPanel() {
         </p>
       ) : null}
 
-      <form
-        method="post"
-        className="admin-filters"
-        onSubmit={submitFilters}
-        aria-label={copy.filter.submit}
-      >
-        <div className="admin-filters__row">
-          <label className="field">
-            <span className="field__label">{copy.filter.query}</span>
-            <input
-              className="field__input"
-              name="query"
-              defaultValue={applied.query}
-              maxLength={64}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.status}</span>
-            <select className="field__input" name="status" defaultValue={applied.status}>
-              <option value="">{copy.filter.all}</option>
-              {MemberStatus.map((status) => (
-                <option key={status} value={status}>
-                  {memberStatusLabels[status]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.role}</span>
-            <select className="field__input" name="role" defaultValue={applied.role}>
-              <option value="">{copy.filter.all}</option>
-              {RoleCode.map((role) => (
-                <option key={role} value={role}>
-                  {memberRoleLabels[role]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="submit" icon="check">
-            {copy.filter.submit}
-          </Button>
-          <Button variant="ghost" onClick={() => setApplied(EMPTY_FILTERS)}>
-            {copy.filter.reset}
-          </Button>
-        </div>
-        {/* 查询说明：常驻一行（不是展开才有），既不会被忽略也不会让下方的表跳一下。 */}
-        <p className="admin-filters__hint">{copy.filter.hint}</p>
-      </form>
+      <AdminTableQuery
+        ready={query.ready}
+        value={query.value}
+        options={QUERY_OPTIONS}
+        quick={[
+          { key: "query", label: copy.filter.query },
+          {
+            key: "status",
+            label: copy.filter.status,
+            options: Object.entries(memberStatusLabels).map(([value, label]) => ({ value, label })),
+          },
+          {
+            key: "role",
+            label: copy.filter.role,
+            options: Object.entries(memberRoleLabels).map(([value, label]) => ({ value, label })),
+          },
+        ]}
+        onChange={query.setValue}
+        onClear={query.reset}
+        summary={list.summary}
+        refreshing={list.refreshing}
+        problem={list.problem}
+        onResetColumns={resize.reset}
+      />
 
       {state === "loading" ? (
         <p className="admin-status" role="status">
@@ -406,12 +309,19 @@ export function MemberAdminPanel() {
         <div className="admin-list">
           {/* 顶栏常驻（邮箱式）：未选中时动作按钮禁用，因此没有出现/消失，也就没有位移。 */}
           <AdminListToolbar
-            count={copy.count.replace("{count}", String(pagination?.total ?? items.length))}
+            count={(list.refreshing
+              ? tableCopy.updating
+              : list.problem
+                ? tableCopy.previousCount
+                : tableCopy.count
+            ).replace("{count}", String(pagination?.total ?? items.length))}
           >
             <AdminBatchTools
               allSelected={allSelected}
               selectAllLabel={copy.table.selectAll}
-              onSelectAll={(checked) => setSelected(checked ? items.map((item) => item.id) : [])}
+              onSelectAll={(checked) => {
+                if (!list.refreshing) setSelected(checked ? items.map((item) => item.id) : []);
+              }}
               count={selected.length}
               selectedLabel={copy.batch.selected}
               noneLabel={copy.batch.none}
@@ -420,13 +330,13 @@ export function MemberAdminPanel() {
               actions={
                 <>
                   <Button
-                    disabled={busy || selected.length === 0}
+                    disabled={busy || list.refreshing || selected.length === 0}
                     onClick={() => void runBatch(true)}
                   >
                     {copy.batch.enable}
                   </Button>
                   <Button
-                    disabled={busy || selected.length === 0}
+                    disabled={busy || list.refreshing || selected.length === 0}
                     onClick={() => void runBatch(false)}
                   >
                     {copy.batch.disable}
@@ -437,11 +347,6 @@ export function MemberAdminPanel() {
             <span className="admin-toolbar__sep" aria-hidden="true" />
             {/* 列级筛选常驻在工具栏里（与批量动作同一排）：它不因「有没有条件」出现或消失，
                 计数槽位宽度固定，因此数字变化时右边的按钮不会横移。 */}
-            <AdminFilterTrigger
-              fields={FILTER_FIELDS}
-              count={filterRules.length}
-              onClick={() => setFiltering(true)}
-            />
             <Button onClick={() => setEmailOpen(true)}>{accountEmailCopy.adminTitle}</Button>
             <Button icon="key" onClick={() => setRecovering(true)}>
               {copy.account.action}
@@ -517,16 +422,6 @@ export function MemberAdminPanel() {
       {/* 账号恢复（issue #113）：按 QQ 精确查询成员或管理员并签发临时密码。 */}
       {emailOpen ? <AdminAccountEmailDialog onClose={() => setEmailOpen(false)} /> : null}
       {recovering ? <AdminAccountResetDialog onClose={() => setRecovering(false)} /> : null}
-
-      {/* 列筛选弹层：草稿在弹层里，只有「应用」才落到 `filterRules`（进而重新取数）。 */}
-      {filtering ? (
-        <AdminFilterDialog
-          fields={FILTER_FIELDS}
-          rules={filterRules}
-          onApply={setFilterRules}
-          onClose={() => setFiltering(false)}
-        />
-      ) : null}
     </div>
   );
 }

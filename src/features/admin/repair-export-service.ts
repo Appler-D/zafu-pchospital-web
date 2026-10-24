@@ -1,3 +1,5 @@
+import { auditTableQuery } from "@/lib/table/audit-query";
+import { repairOrderBy } from "@/features/repairs/repair-sort";
 import { repairResultLabels, repairStatusLabels } from "@/config/repairs";
 import { listWhere } from "@/features/repairs/repair-query-service";
 import { AppError } from "@/lib/api/errors";
@@ -49,7 +51,7 @@ export const repairExportService: RepairExportServiceContract = {
         targetType: "RepairExport",
         targetId: actor.userId ?? "00000000-0000-0000-0000-000000000000",
         result: "SUCCESS",
-        after: { format, rowCount: rows.length, filter: input },
+        after: { format, rowCount: rows.length, filter: auditTableQuery(input) },
       });
     });
     return {
@@ -97,7 +99,7 @@ async function loadRows(
       category: { select: { name: true } },
       photos: { where: { deletedAt: null }, select: { id: true }, orderBy: { sortOrder: "asc" } },
     },
-    orderBy: [{ repairDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    orderBy: repairOrderBy(input.sort),
     // 多取一行用于判断是否超限，避免额外的 count 查询。
     take: EXPORT_MAX_ROWS + 1,
   });

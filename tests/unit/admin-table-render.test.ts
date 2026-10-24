@@ -298,7 +298,14 @@ test("排序控件：传了 onSortChange 时只给白名单内的列渲染按钮
   // 不可排序：技能标签与角色（关联）、维修记录（跨表聚合）、联系方式（脱敏拼接）。
   assert.deepEqual(
     buttons.map((match) => match[1]),
-    [table.realName, table.studentId, table.className, table.status, table.joinedAt],
+    [
+      table.realName,
+      modules.admin.adminCopy.members.department,
+      table.studentId,
+      table.className,
+      table.status,
+      table.joinedAt,
+    ],
   );
 });
 
@@ -620,6 +627,7 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
       copy.table.repairDate,
       copy.table.member,
       copy.table.category,
+      copy.table.deviceModel,
       copy.table.result,
       copy.table.duration,
       copy.table.status,

@@ -1,3 +1,5 @@
+import { checkedGroup } from "@/lib/table/group-summary";
+import { TABLE_GROUPS } from "@/features/admin/table-fields";
 import { AppError } from "@/lib/api/errors";
 import { parseFilters } from "@/lib/api/list-filter";
 import { sortRules } from "@/lib/api/list-query";
@@ -24,6 +26,7 @@ export function memberListInput(
   return {
     page,
     pageSize,
+    groupBy: checkedGroup(params.get("groupBy"), TABLE_GROUPS.members),
     query: params.get("query")?.trim() || undefined,
     status: oneOf(params.get("status"), MemberStatus, "status"),
     role: oneOf(params.get("role"), RoleCode, "role"),

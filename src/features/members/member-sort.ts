@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 
-import { AppError } from "@/lib/api/errors";
+import { tableOrderBy } from "@/lib/table/order-by";
 import type { SortRule } from "@/types/table";
 
 /**
@@ -25,6 +25,7 @@ export const MEMBER_SORTABLE = [
   "studentId",
   "className",
   "status",
+  "department",
   "joinedAt",
 ] as const;
 
@@ -45,6 +46,7 @@ const MEMBER_SORT_COLUMN: Record<
   studentId: "studentId",
   className: "className",
   status: "status",
+  department: "department",
   joinedAt: "joinedAt",
 };
 
@@ -78,12 +80,16 @@ export const MEMBER_DEFAULT_ORDER_BY: readonly Prisma.MemberProfileOrderByWithRe
 export function memberOrderBy(
   sort?: readonly SortRule[],
 ): Prisma.MemberProfileOrderByWithRelationInput[] {
-  if (!sort || sort.length === 0) return [...MEMBER_DEFAULT_ORDER_BY];
-  const orderBy = sort.map((rule) => {
-    const column = MEMBER_SORT_COLUMN[rule.field as MemberSortField];
-    if (!column) throw new AppError("VALIDATION_FAILED", `sort 字段无效：${rule.field}`);
-    return { [column]: rule.direction } as Prisma.MemberProfileOrderByWithRelationInput;
-  });
-  orderBy.push({ id: "desc" });
-  return orderBy;
+  return tableOrderBy(
+    sort,
+    Object.fromEntries(
+      Object.entries(MEMBER_SORT_COLUMN).map(([field, column]) => [
+        field,
+        (direction: SortRule["direction"]) =>
+          ({ [column]: direction }) as Prisma.MemberProfileOrderByWithRelationInput,
+      ]),
+    ),
+    MEMBER_DEFAULT_ORDER_BY,
+    { id: "desc" },
+  );
 }

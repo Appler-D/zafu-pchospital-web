@@ -1,3 +1,4 @@
+import { tableQueryInput } from "@/features/admin/table-http";
 import { queryOneOf, queryString } from "@/features/admin/admin-http";
 import { joinApplicationExportService } from "@/features/admin/join-application-export-service";
 import { AppError } from "@/lib/api/errors";
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
 /**
  * M6 批次 2：报名数据导出（需求 §4.4）。
  *
- * 筛选参数与 `GET /api/v1/admin/join-applications` 完全同源（复用 `joinApplicationListWhere`）。
+ * 筛选参数与 `GET /api/v1/admin/join-applications` 完全同源（复用 `joinQueryWhere`）。
  * 这条路径的产物带 QQ 与手机号明文，因此走 `data:export` 权限并写独立审计动作
  * `join.applications.exported`，不与维修导出混在一起。
  */
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
     }
     const result = await joinApplicationExportService.export(
       {
+        ...tableQueryInput(params, "join-applications"),
         recruitmentCycle: queryString(params, "recruitmentCycle"),
         status: queryOneOf(params, "status", JoinApplicationStatus),
         provisionStatus: queryOneOf(params, "provisionStatus", ProvisionStatus),

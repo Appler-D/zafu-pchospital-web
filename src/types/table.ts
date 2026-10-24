@@ -1,4 +1,5 @@
 import type { FilterOp } from "@/lib/api/list-filter";
+import type { FilterRule } from "@/lib/api/list-filter";
 import type { ReactNode } from "react";
 
 /**
@@ -22,6 +23,13 @@ export type SortDirection = "asc" | "desc";
 
 /** 一条排序规则。`field` 必须落在该表的可排序白名单里（服务端同样要校验）。 */
 export type SortRule = { field: string; direction: SortDirection };
+
+export type TableListOptions = { sort?: SortRule[]; filters?: FilterRule[]; groupBy?: string };
+export type TableGroupSummary = {
+  field: string;
+  counts: { value: string | null; count: number }[];
+};
+export type TableListExtras = { summary?: TableGroupSummary };
 
 /**
  * 列表查询契约：分页 + 关键字 + 排序。
@@ -192,7 +200,8 @@ export type FieldFilterSpec = {
   input:
     | { kind: "text"; placeholder?: string }
     | { kind: "enum"; options: readonly { value: string; label: string }[] }
-    | { kind: "date" };
+    | { kind: "date" }
+    | { kind: "number" };
 };
 
 /**

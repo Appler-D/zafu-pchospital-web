@@ -1,3 +1,4 @@
+import { tableCopy } from "@/config/admin-tables";
 import { Button } from "@/components/ui/Button";
 import {
   adminCopy,
@@ -68,12 +69,14 @@ export const joinApplicationTableSpec: TableViewSpec<
     },
     {
       key: "cycle",
+      sortKey: "recruitmentCycle",
       label: copy.table.cycle,
       kind: "text",
       render: (item) => item.recruitmentCycle,
     },
     {
       key: "contacts",
+      sortable: false,
       label: copy.table.contacts,
       kind: "text",
       // QQ 与手机号并排：它们都是「怎么联系这个人」，分成两列会把行撑宽一倍。
@@ -94,6 +97,7 @@ export const joinApplicationTableSpec: TableViewSpec<
     },
     {
       key: "provision",
+      sortKey: "provisionStatus",
       label: copy.table.provision,
       kind: "select",
       render: (item) => provisionStatusLabels[item.provisionStatus],
@@ -106,7 +110,23 @@ export const joinApplicationTableSpec: TableViewSpec<
       render: (item) => formatDateTime(item.submittedAt),
     },
     {
+      key: "lastReviewedAt",
+      label: tableCopy.interviewedAt,
+      kind: "datetime",
+      numeric: false,
+      render: (item) =>
+        item.lastReviewedAt ? formatDateTime(item.lastReviewedAt) : adminShared.none,
+    },
+    {
+      key: "approvedAt",
+      label: tableCopy.approvedAt,
+      kind: "datetime",
+      numeric: false,
+      render: (item) => (item.approvedAt ? formatDateTime(item.approvedAt) : adminShared.none),
+    },
+    {
       key: "actions",
+      sortable: false,
       label: copy.table.actions,
       kind: "readonly",
       render: (item, _index, { busy, onDetail, onApprove }) => (

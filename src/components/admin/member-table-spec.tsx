@@ -149,7 +149,7 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
       label: adminCopy.members.department,
       kind: "select",
       width: 84,
-      sortable: false,
+      sortable: true,
       // 部门列级筛选（issue #210）：枚举 eq/neq，选项与详情/新建表单同一份。
       filter: {
         ops: ["eq", "neq"],

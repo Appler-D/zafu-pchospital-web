@@ -86,7 +86,7 @@ export const repairTableSpec: TableViewSpec<RepairView, RepairTableContext> = {
       label: copy.table.deviceModel,
       kind: "text",
       width: 180,
-      sortable: false,
+      sortable: true,
       cellClassName: "repair-table__model",
       title: (record) => record.deviceModel || adminShared.none,
       render: (record) => <span>{record.deviceModel || adminShared.none}</span>,

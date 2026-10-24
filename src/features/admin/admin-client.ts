@@ -1,5 +1,6 @@
 import type { FieldErrors } from "@/lib/api/errors";
 import type { PaginationMeta } from "@/types/contracts";
+import type { TableGroupSummary } from "@/types/table";
 
 /**
  * 管理后台的客户端 API 调用封装（M6）。
@@ -15,7 +16,7 @@ import type { PaginationMeta } from "@/types/contracts";
  * 3. 网络异常不再泄漏成 `TypeError: Failed to fetch`。
  */
 export type AdminApiResult<T> =
-  | { ok: true; data: T; pagination?: PaginationMeta }
+  | { ok: true; data: T; pagination?: PaginationMeta; summary?: TableGroupSummary }
   | {
       ok: false;
       code: string;
@@ -52,7 +53,7 @@ export function clearAdminCache(): void {
 
 export async function adminFetch<T>(
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<AdminApiResult<T>> {
   const method = init.method ?? "GET";
   const isRead = method === "GET";
@@ -71,6 +72,7 @@ export async function adminFetch<T>(
   try {
     response = await fetch(path, {
       method,
+      signal: init.signal,
       headers: init.body === undefined ? undefined : { "Content-Type": "application/json" },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
@@ -96,7 +98,7 @@ export async function adminFetch<T>(
     success?: boolean;
     data?: T;
     error?: { code?: string; message?: string; fieldErrors?: FieldErrors };
-    meta?: { pagination?: PaginationMeta };
+    meta?: { pagination?: PaginationMeta; summary?: TableGroupSummary };
   };
 
   if (envelope.success === true) {
@@ -104,9 +106,10 @@ export async function adminFetch<T>(
       ok: true,
       data: envelope.data as T,
       pagination: envelope.meta?.pagination,
+      ...(envelope.meta?.summary ? { summary: envelope.meta.summary } : {}),
     };
     // 删除等写操作之前开始的 GET 可能迟到，不能把已失效的分页重新写回缓存。
-    if (isRead && requestCacheVersion === cacheVersion) {
+    if (isRead && !init.signal?.aborted && requestCacheVersion === cacheVersion) {
       getCache.set(path, { at: Date.now(), value: ok });
     }
     return ok;

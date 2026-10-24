@@ -1,3 +1,5 @@
+import { checkedFilters } from "@/lib/table/filter-value";
+import { MEMBER_FILTERABLE } from "./member-filter-fields";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { parseUtcDateFilter } from "@/lib/api/date-filter";
@@ -30,7 +32,7 @@ import { MemberStatus } from "@/types/contracts";
  * 「筛同一天得到 0 条」）。
  */
 export function memberFilterWhere(rules: readonly FilterRule[]): Prisma.MemberProfileWhereInput[] {
-  return rules.map((rule) => {
+  return checkedFilters(rules, MEMBER_FILTERABLE).map((rule) => {
     switch (rule.field) {
       case "status": {
         const value = memberStatus(rule.value);

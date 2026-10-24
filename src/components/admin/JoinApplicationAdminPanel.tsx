@@ -1,6 +1,13 @@
 "use client";
 
+import { useTableQuery } from "@/components/admin/useTableQuery";
+import { tableQueryOptions } from "@/config/table-queries";
+import { tableCopy } from "@/config/admin-tables";
+
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { AdminTableExport } from "@/components/admin/AdminTableExport";
+import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
+
 import { flushSync } from "react-dom";
 
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
@@ -27,10 +34,8 @@ import {
   joinApplicationTableSpec,
 } from "@/components/admin/join-application-table-spec";
 import { adminFetch } from "@/features/admin/admin-client";
-import { listQueryParams } from "@/lib/api/list-query";
 import {
   InterviewResult,
-  JoinApplicationStatus,
   ProvisionStatus,
   type JoinApplicationDetail,
   type JoinApplicationSummary,
@@ -40,6 +45,8 @@ import {
   type MemberDepartment,
 } from "@/types/contracts";
 import { EMAIL_MAX_LENGTH } from "@/lib/security/normalization";
+
+const QUERY_OPTIONS = tableQueryOptions("join-applications");
 
 const EMPTY_FILTERS = {
   recruitmentCycle: "",
@@ -68,8 +75,10 @@ export function JoinApplicationAdminPanel() {
   /** 页面自己产生的错误（导出失败等）；取数错误走 `list.problem`。 */
   const [actionProblem, setProblem] = useState("");
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
-  const [applied, setApplied] = useState(EMPTY_FILTERS);
-  const [cycleDraft, setCycleDraft] = useState("");
+  const query = useTableQuery(QUERY_OPTIONS, EMPTY_FILTERS);
+  const requestParams = query.params;
+  const sortRules = query.value.sort;
+  const setSortRules = query.setSort;
   const [detailId, setDetailId] = useState<string | null>(null);
   /** 行内「通过」待确认的报名（issue #95）：非空即弹二次确认。 */
   const [approving, setApproving] = useState<JoinApplicationSummary | null>(null);
@@ -78,17 +87,17 @@ export function JoinApplicationAdminPanel() {
   const [busy, setBusy] = useState(false);
 
   // 取数状态收在 `useAdminList` 里：往下滚动自动接下一页（邮箱式的连续列表，
-  // 不再有「上一页 / 下一页」）。筛选变化时由下面的 effect 重置回第一页。
+  // 不再有「上一页 / 下一页」）。查询状态变化统一重载第一页。
   const list = useAdminList<JoinApplicationSummary>(
     useCallback(
-      (targetPage: number) => {
-        const params = filterParams(applied, targetPage);
-        return adminFetch<JoinApplicationSummary[]>(
-          `/api/v1/admin/join-applications?${params.toString()}`,
-        );
-      },
-      [applied],
+      (targetPage: number, signal?: AbortSignal) =>
+        adminFetch<JoinApplicationSummary[]>(
+          `/api/v1/admin/join-applications?${requestParams(targetPage)}`,
+          { signal },
+        ),
+      [requestParams],
     ),
+    { queryKey: query.ready ? query.signature : null },
   );
   const { items, pagination, state, problem, loadingMore } = list;
   const shownProblem = actionProblem || problem;
@@ -97,70 +106,6 @@ export function JoinApplicationAdminPanel() {
     await list.reload();
   }, [list]);
 
-  useEffect(() => {
-    void load();
-    // `applied` 变化才重新取第一页；`list` 是稳定引用（内部用 ref 取最新筛选）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
-
-  function submitFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    setApplied({
-      recruitmentCycle: data.recruitmentCycle ?? "",
-      query: data.query ?? "",
-      status: data.status ?? "",
-      provisionStatus: data.provisionStatus ?? "",
-      submittedFrom: data.submittedFrom ?? "",
-      submittedTo: data.submittedTo ?? "",
-    });
-  }
-
-  async function exportData(format: "csv" | "xlsx") {
-    setBusy(true);
-    setProblem("");
-    setToast(null);
-    const params = filterParams(applied, 1);
-    params.set("format", format);
-    let response: Response;
-    try {
-      response = await fetch(`/api/v1/admin/join-applications/export?${params.toString()}`);
-    } catch {
-      setBusy(false);
-      setProblem("网络异常，请检查连接后重试");
-      return;
-    }
-    if (!response.ok) {
-      const message = await errorMessage(response);
-      setBusy(false);
-      setProblem(message);
-      return;
-    }
-    const rowCount = Number(response.headers.get("X-Export-Row-Count") ?? "0");
-    if (rowCount === 0) {
-      setBusy(false);
-      setProblem(copy.export.empty);
-      return;
-    }
-    // 与维修导出同一处理：`revokeObjectURL` 不能紧跟 `click()`，否则部分浏览器会把
-    // 刚开始的下载掐断（表现为 0 字节文件）。
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileNameOf(response) ?? `join-applications.${format}`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setBusy(false);
-    setToast({
-      text: copy.export.done.replace("{count}", String(rowCount)),
-      tone: "success",
-    });
-  }
-
-  /** 行内快速通过（issue #95）：二次确认后提交审核，服务端随即自动创建账号并发放。 */
   async function confirmApprove() {
     if (!approving) return;
     setBusy(true);
@@ -215,93 +160,36 @@ export function JoinApplicationAdminPanel() {
         </p>
       ) : null}
 
-      <form
-        method="post"
-        className="admin-filters"
-        onSubmit={submitFilters}
-        aria-label={copy.filter.submit}
-      >
-        <div className="admin-filters__row">
-          <label className="field">
-            <span className="field__label">{copy.filter.recruitmentCycle}</span>
-            <input
-              className="field__input"
-              name="recruitmentCycle"
-              value={cycleDraft}
-              onChange={(event) => setCycleDraft(event.target.value)}
-              maxLength={32}
-              placeholder={copy.filter.cyclePlaceholder}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.query}</span>
-            <input
-              className="field__input"
-              name="query"
-              defaultValue={applied.query}
-              maxLength={64}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.status}</span>
-            <select className="field__input" name="status" defaultValue={applied.status}>
-              <option value="">全部</option>
-              {JoinApplicationStatus.map((status) => (
-                <option key={status} value={status}>
-                  {joinApplicationStatusLabels[status]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.provisionStatus}</span>
-            <select
-              className="field__input"
-              name="provisionStatus"
-              defaultValue={applied.provisionStatus}
-            >
-              <option value="">全部</option>
-              {ProvisionStatus.map((status) => (
-                <option key={status} value={status}>
-                  {provisionStatusLabels[status]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.submittedFrom}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="submittedFrom"
-              defaultValue={applied.submittedFrom}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.submittedTo}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="submittedTo"
-              defaultValue={applied.submittedTo}
-            />
-          </label>
-          <Button type="submit" icon="check">
-            {copy.filter.submit}
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setApplied(EMPTY_FILTERS);
-              setCycleDraft("");
-            }}
-          >
-            {copy.filter.reset}
-          </Button>
-        </div>
-        {/* 查询说明：常驻一行（不是展开才有），既不会被忽略也不会让下方的表跳一下。 */}
-        <p className="admin-filters__hint">{copy.filter.hint}</p>
-      </form>
+      <AdminTableQuery
+        ready={query.ready}
+        value={query.value}
+        options={QUERY_OPTIONS}
+        quick={[
+          { key: "recruitmentCycle", label: copy.filter.recruitmentCycle, maxLength: 32 },
+          { key: "query", label: copy.filter.query },
+          {
+            key: "status",
+            label: copy.filter.status,
+            options: Object.entries(joinApplicationStatusLabels).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+          {
+            key: "provisionStatus",
+            label: copy.filter.provisionStatus,
+            options: Object.entries(provisionStatusLabels).map(([value, label]) => ({
+              value,
+              label,
+            })),
+          },
+        ]}
+        onChange={query.setValue}
+        onClear={query.reset}
+        summary={list.summary}
+        refreshing={list.refreshing}
+        problem={list.problem}
+      />
 
       {state === "loading" ? (
         <p className="admin-status" role="status">
@@ -320,31 +208,27 @@ export function JoinApplicationAdminPanel() {
         <div className="admin-list">
           {/* 顶栏常驻（邮箱式）：左侧是导出动作，右侧是总数。 */}
           <AdminListToolbar
-            count={copy.count.replace("{count}", String(pagination?.total ?? items.length))}
+            count={(list.refreshing
+              ? tableCopy.updating
+              : list.problem
+                ? tableCopy.previousCount
+                : tableCopy.count
+            ).replace("{count}", String(pagination?.total ?? items.length))}
           >
-            <span className="admin-actions">
-              <Button
-                type="button"
-                icon="download"
-                disabled={busy}
-                onClick={() => void exportData("csv")}
-              >
-                {copy.export.csv}
-              </Button>
-              <Button
-                type="button"
-                icon="download"
-                disabled={busy}
-                onClick={() => void exportData("xlsx")}
-              >
-                {copy.export.xlsx}
-              </Button>
-            </span>
+            <AdminTableExport
+              path="/api/v1/admin/join-applications/export"
+              params={() => query.params(1)}
+              disabled={busy || list.refreshing}
+              onError={setProblem}
+              onDone={(text) => setToast({ text, tone: "success" })}
+            />
           </AdminListToolbar>
           {/* 表格本体由内核渲染（`AdminTable`）：列宽、表头、单元格内容全部来自
               `joinApplicationTableSpec` 这一份定义。 */}
           <AdminTable
             spec={joinApplicationTableSpec}
+            sort={sortRules}
+            onSortChange={setSortRules}
             items={items}
             emptyText={joinApplicationEmptyText}
             renderContext={{
@@ -354,7 +238,7 @@ export function JoinApplicationAdminPanel() {
                 setApproveProblem("");
                 setApproving(application);
               },
-              busy,
+              busy: busy || list.refreshing,
             }}
           />
           <AdminListEnd
@@ -1010,36 +894,6 @@ function EmailCorrectionForm({
  * 这一个函数。拼装本身交给内核的 `listQueryParams`：空值不写、关键字去空白，
  * 参数顺序与迁移前一致。
  */
-function filterParams(filters: typeof EMPTY_FILTERS, page: number): URLSearchParams {
-  return listQueryParams(
-    { page, pageSize: 20, query: filters.query, sort: [] },
-    {
-      fixed: {
-        recruitmentCycle: filters.recruitmentCycle,
-        status: filters.status,
-        provisionStatus: filters.provisionStatus,
-        submittedFrom: filters.submittedFrom,
-        submittedTo: filters.submittedTo,
-      },
-    },
-  );
-}
-
-function fileNameOf(response: Response): string | null {
-  const header = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(header);
-  return match ? match[1] : null;
-}
-
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const json = (await response.json()) as { error?: { message?: string } };
-    return json.error?.message ?? "导出失败，请稍后重试";
-  } catch {
-    return "导出失败，请稍后重试";
-  }
-}
-
 /** 列表里的时间：`Asia/Shanghai` 的 `YYYY-MM-DD HH:mm`。报名资料需要完整日期。 */
 function toLocalInput(iso: string): string {
   const date = new Date(iso);

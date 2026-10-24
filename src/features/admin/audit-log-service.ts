@@ -1,3 +1,8 @@
+import { auditOrderBy } from "./table-order";
+import { AUDIT_FILTERABLE, TABLE_GROUPS } from "./table-fields";
+import { checkedFilters, dateFilter, textFilter, enumFilter } from "@/lib/table/filter-value";
+import { checkedGroup, groupSummary } from "@/lib/table/group-summary";
+import { AuditActorType as ActorTypes, AuditResult as Results } from "@/types/contracts";
 import type { Prisma } from "@/generated/prisma/client";
 import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
 import { paginationMeta } from "@/lib/api/pagination";
@@ -49,6 +54,18 @@ export const auditLogService: AuditLogServiceContract = {
     requirePermission(actor, "audit:read");
     const created = parseUtcDateFilter(input.createdFrom, input.createdTo, "操作时间");
     const where: Prisma.AuditLogWhereInput = {
+      AND: checkedFilters(input.filters, AUDIT_FILTERABLE).map(
+        (rule): Prisma.AuditLogWhereInput => ({
+          [rule.field]:
+            rule.field === "createdAt"
+              ? dateFilter(rule)
+              : rule.field === "result"
+                ? enumFilter(rule, Results)
+                : rule.field === "actorType"
+                  ? enumFilter(rule, ActorTypes)
+                  : textFilter(rule),
+        }),
+      ),
       action: input.action,
       actorUserId: input.actorUserId,
       targetType: input.targetType,
@@ -57,17 +74,35 @@ export const auditLogService: AuditLogServiceContract = {
       result: input.result,
       createdAt: dateRangeWhere(created),
     };
-    const [rows, total] = await Promise.all([
+    const group = checkedGroup(input.groupBy, TABLE_GROUPS.audit);
+    const [rows, total, summary] = await Promise.all([
       getDb().auditLog.findMany({
         where,
         include: auditInclude,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy: auditOrderBy(input.sort),
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
       }),
       getDb().auditLog.count({ where }),
+      group
+        ? getDb()
+            .auditLog.groupBy({
+              by: [group as "result" | "actorType"],
+              where,
+              _count: { _all: true },
+            })
+            .then((rows) =>
+              groupSummary(
+                group,
+                rows.map((row) => ({
+                  value: group === "result" ? row.result : row.actorType,
+                  count: row._count._all,
+                })),
+              ),
+            )
+        : undefined,
     ]);
-    return { items: rows.map(toEntry), pagination: paginationMeta(input, total) };
+    return { items: rows.map(toEntry), summary, pagination: paginationMeta(input, total) };
   },
 
   async listActions(actor: AuthorizedActor): Promise<AuditActionOption[]> {

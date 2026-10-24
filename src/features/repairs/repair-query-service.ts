@@ -1,3 +1,13 @@
+import {
+  checkedFilters,
+  dateFilter,
+  textFilter,
+  numberFilter,
+  enumFilter,
+} from "@/lib/table/filter-value";
+import { checkedGroup, groupSummary } from "@/lib/table/group-summary";
+import { REPAIR_FILTERABLE, TABLE_GROUPS } from "@/features/admin/table-fields";
+import { RepairStatus, RepairResult } from "@/types/contracts";
 import type { Prisma } from "@/generated/prisma/client";
 import { AppError } from "@/lib/api/errors";
 import { paginationMeta } from "@/lib/api/pagination";
@@ -23,6 +33,7 @@ import type {
 export const repairQueryService: RepairQueryServiceContract = {
   async list(input, actor) {
     requirePermission(actor, "repair:read");
+    if (input.groupBy) requirePermission(actor, "repair:review");
     // 只有成员视角才需要「我自己是谁」——`listWhere` 会按 `repair:review` 决定可见范围。
     // 纯管理员账号（有 ADMIN 角色但没有成员档案）必须能进管理端列表，
     // 否则 `GET /api/v1/admin/repairs` 会对它永久返回 403 MEMBER_REQUIRED。
@@ -30,7 +41,8 @@ export const repairQueryService: RepairQueryServiceContract = {
       await repairRepository.activeMemberForUser(actor.userId);
     }
     const where = listWhere(input, actor);
-    const [total, rows] = await Promise.all([
+    const group = checkedGroup(input.groupBy, TABLE_GROUPS.repairs);
+    const [total, rows, summary] = await Promise.all([
       getDb().repairRecord.count({ where }),
       getDb().repairRecord.findMany({
         where,
@@ -42,6 +54,23 @@ export const repairQueryService: RepairQueryServiceContract = {
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
       }),
+      group
+        ? getDb()
+            .repairRecord.groupBy({
+              by: [group as "status" | "result"],
+              where,
+              _count: { _all: true },
+            })
+            .then((rows) =>
+              groupSummary(
+                group,
+                rows.map((row) => ({
+                  value: group === "status" ? row.status : row.result,
+                  count: row._count._all,
+                })),
+              ),
+            )
+        : undefined,
     ]);
     // ❗ 管理端列表（`/admin/repairs` 走同一入口）必须对 `repair:review` 下发完整机主电话：
     // 管理弹窗编辑表单以列表行数据为 `defaultValue`，列表不下发就会在保存其它字段时把号码清空。
@@ -49,6 +78,7 @@ export const repairQueryService: RepairQueryServiceContract = {
       items: rows.map((row) =>
         toRepairView(row, { canViewOwnerPhone: actor.permissions.includes("repair:review") }),
       ),
+      summary,
       pagination: paginationMeta(input, total),
     };
   },
@@ -303,14 +333,60 @@ export function listWhere(
   // 管理端默认不显示草稿（issue #220）：未显式选择状态时，「全部」= 非草稿；
   // 显式 status=DRAFT 仍可查看 / 导出草稿。成员视角不变（成员必须看到自己的草稿）。
   const status =
-    !input.status && actor.permissions.includes("repair:review")
+    !input.status &&
+    !input.filters?.some(
+      (rule) => rule.field === "status" && rule.op === "eq" && rule.value === "DRAFT",
+    ) &&
+    actor.permissions.includes("repair:review")
       ? ({ not: "DRAFT" } as const)
       : input.status;
   const query = input.query?.trim();
   // 案例库准入（issue #134）：并集条件必须经 AND 数组注入 —— 返回值已有顶层 `OR`
   // 承载关键词搜索，Prisma 同一对象内两个同名键后者覆盖前者，另开顶层 `OR`
   // 会把关键词搜索静默顶掉。单条记录维度过滤，双标记录天然只命中一次。
-  const conditions: Prisma.RepairRecordWhereInput[] = [visibility];
+  const conditions: Prisma.RepairRecordWhereInput[] = [
+    visibility,
+    ...checkedFilters(input.filters, REPAIR_FILTERABLE).map(
+      (rule): Prisma.RepairRecordWhereInput => {
+        if (rule.field === "repairDate")
+          return {
+            repairDate:
+              rule.op === "gte"
+                ? { gte: requireDateOnly(rule.value, "维修日期") }
+                : { lt: nextDay(requireDateOnly(rule.value, "维修日期")) },
+          };
+        if (rule.field === "memberName")
+          return {
+            participants: {
+              some: {
+                memberProfile: {
+                  OR: [{ realName: textFilter(rule) }, { nickname: textFilter(rule) }],
+                },
+              },
+            },
+          };
+        if (rule.field === "isDifficult" || rule.field === "isTypical") {
+          if (rule.value !== "true" && rule.value !== "false")
+            throw new AppError("VALIDATION_FAILED", "标记筛选无效");
+          const value = rule.value === "true";
+          return { [rule.field]: rule.op === "neq" ? !value : value };
+        }
+        if (rule.field === "categoryName") return { category: { name: textFilter(rule) } };
+        return {
+          [rule.field]:
+            rule.field === "createdAt"
+              ? dateFilter(rule)
+              : rule.field === "status"
+                ? enumFilter(rule, RepairStatus)
+                : rule.field === "result"
+                  ? enumFilter(rule, RepairResult)
+                  : rule.field === "durationMinutes"
+                    ? numberFilter(rule)
+                    : textFilter(rule),
+        };
+      },
+    ),
+  ];
   if (input.flagged === "ANY") {
     conditions.push({ OR: [{ isTypical: true }, { isDifficult: true }] });
   }

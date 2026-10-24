@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useTableQuery } from "@/components/admin/useTableQuery";
+import { tableQueryOptions } from "@/config/table-queries";
+import { tableCopy } from "@/config/admin-tables";
+
+import { useCallback, useEffect, useState } from "react";
+import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
@@ -12,7 +17,9 @@ import { Card } from "@/components/ui/Card";
 import { adminCopy, adminShared } from "@/config/admin";
 import { formatAuditDateTime } from "@/config/audit";
 import { adminFetch } from "@/features/admin/admin-client";
-import { AuditResult, type AuditActionOption, type AuditLogEntry } from "@/types/contracts";
+import { type AuditActionOption, type AuditLogEntry } from "@/types/contracts";
+
+const QUERY_OPTIONS = tableQueryOptions("audit");
 
 const EMPTY_FILTERS = {
   action: "",
@@ -41,21 +48,22 @@ const EMPTY_FILTERS = {
 export function AuditLogPanel() {
   const copy = adminCopy.audit;
   const [actions, setActions] = useState<AuditActionOption[]>([]);
-  const [applied, setApplied] = useState(EMPTY_FILTERS);
+  const query = useTableQuery(QUERY_OPTIONS, EMPTY_FILTERS);
+  const requestParams = query.params;
+  const sortRules = query.value.sort;
+  const setSortRules = query.setSort;
   const [detail, setDetail] = useState<AuditLogEntry | null>(null);
 
   // 取数状态收在 `useAdminList`：审计这里行数最多，往下滚动自动接下一页尤其必要。
   const list = useAdminList<AuditLogEntry>(
     useCallback(
-      (targetPage: number) => {
-        const params = new URLSearchParams({ page: String(targetPage), pageSize: "20" });
-        for (const [key, value] of Object.entries(applied)) {
-          if (value) params.set(key, value);
-        }
-        return adminFetch<AuditLogEntry[]>(`/api/v1/admin/audit-logs?${params.toString()}`);
-      },
-      [applied],
+      (targetPage: number, signal?: AbortSignal) =>
+        adminFetch<AuditLogEntry[]>(`/api/v1/admin/audit-logs?${requestParams(targetPage)}`, {
+          signal,
+        }),
+      [requestParams],
     ),
+    { queryKey: query.ready ? query.signature : null },
   );
   const { items, pagination, state, problem, loadingMore } = list;
   /** 单元格渲染要用的运行时值（打开变更摘要窗口）。 */
@@ -66,35 +74,12 @@ export function AuditLogPanel() {
   }, [list]);
 
   useEffect(() => {
-    void load();
-    // `applied` 变化才重新取第一页；`list` 是稳定引用（内部用 ref 取最新筛选）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied]);
-
-  useEffect(() => {
     // 动作清单只在进页面时取一次：它是「有哪些动作出现过」，不随筛选变化。
     void (async () => {
       const result = await adminFetch<AuditActionOption[]>("/api/v1/admin/audit-logs/actions");
       if (result.ok) setActions(result.data);
     })();
   }, []);
-
-  function submitFilters(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
-    setApplied({
-      action: data.action ?? "",
-      actorUserId: data.actorUserId ?? "",
-      targetType: data.targetType ?? "",
-      targetId: data.targetId ?? "",
-      requestId: data.requestId ?? "",
-      result: data.result ?? "",
-      createdFrom: data.createdFrom ?? "",
-      createdTo: data.createdTo ?? "",
-    });
-  }
-
-  const totalActions = actions.reduce((sum, item) => sum + item.count, 0);
 
   return (
     <div className="admin-workspace__content">
@@ -113,101 +98,28 @@ export function AuditLogPanel() {
         </p>
       ) : null}
 
-      <form
-        method="post"
-        className="admin-filters"
-        onSubmit={submitFilters}
-        aria-label={copy.filter.submit}
-      >
-        <div className="admin-filters__row">
-          <label className="field">
-            <span className="field__label">{copy.filter.action}</span>
-            <select className="field__input" name="action" defaultValue={applied.action}>
-              <option value="">{copy.actionAll.replace("{count}", String(totalActions))}</option>
-              {actions.map((option) => (
-                <option key={option.action} value={option.action}>
-                  {copy.actionOption
-                    .replace("{action}", option.action)
-                    .replace("{count}", String(option.count))}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.result}</span>
-            <select className="field__input" name="result" defaultValue={applied.result}>
-              <option value="">全部</option>
-              {AuditResult.map((value) => (
-                <option key={value} value={value}>
-                  {copy.resultLabels[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.targetType}</span>
-            <input
-              className="field__input"
-              name="targetType"
-              defaultValue={applied.targetType}
-              maxLength={80}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.actorUserId}</span>
-            <input
-              className="field__input"
-              name="actorUserId"
-              defaultValue={applied.actorUserId}
-              maxLength={36}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.targetId}</span>
-            <input
-              className="field__input"
-              name="targetId"
-              defaultValue={applied.targetId}
-              maxLength={36}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.requestId}</span>
-            <input
-              className="field__input"
-              name="requestId"
-              defaultValue={applied.requestId}
-              maxLength={64}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.createdFrom}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="createdFrom"
-              defaultValue={applied.createdFrom}
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">{copy.filter.createdTo}</span>
-            <input
-              className="field__input"
-              type="date"
-              name="createdTo"
-              defaultValue={applied.createdTo}
-            />
-          </label>
-          <Button type="submit" icon="check">
-            {copy.filter.submit}
-          </Button>
-          <Button variant="ghost" onClick={() => setApplied(EMPTY_FILTERS)}>
-            {copy.filter.reset}
-          </Button>
-        </div>
-        {/* 查询说明：常驻一行（不是展开才有），既不会被忽略也不会让下方的表跳一下。 */}
-        <p className="admin-filters__hint">{copy.filter.hint}</p>
-      </form>
+      <AdminTableQuery
+        ready={query.ready}
+        value={query.value}
+        options={QUERY_OPTIONS}
+        quick={[
+          {
+            key: "action",
+            label: copy.filter.action,
+            options: actions.map((item) => ({ value: item.action, label: item.action })),
+          },
+          {
+            key: "result",
+            label: copy.filter.result,
+            options: Object.entries(copy.resultLabels).map(([value, label]) => ({ value, label })),
+          },
+        ]}
+        onChange={query.setValue}
+        onClear={query.reset}
+        summary={list.summary}
+        refreshing={list.refreshing}
+        problem={list.problem}
+      />
 
       {state === "loading" ? (
         <p className="admin-status" role="status">
@@ -226,7 +138,12 @@ export function AuditLogPanel() {
         <div className="admin-list">
           {/* 只读列表没有批量动作，顶栏只放一句状态说明与总数。 */}
           <AdminListToolbar
-            count={copy.count.replace("{count}", String(pagination?.total ?? items.length))}
+            count={(list.refreshing
+              ? tableCopy.updating
+              : list.problem
+                ? tableCopy.previousCount
+                : tableCopy.count
+            ).replace("{count}", String(pagination?.total ?? items.length))}
           >
             <span className="admin-status">{copy.readonlyNote}</span>
           </AdminListToolbar>
@@ -236,6 +153,8 @@ export function AuditLogPanel() {
               内核在不传时不渲染任何排序控件。 */}
           <AdminTable
             spec={auditTableSpec}
+            sort={sortRules}
+            onSortChange={setSortRules}
             items={items}
             renderContext={auditContext}
             emptyText={adminShared.empty}

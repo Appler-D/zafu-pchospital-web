@@ -187,9 +187,10 @@ export class MemberService implements MemberServiceContract {
   /** M6 `GET /api/v1/admin/members` —— 分页 + 关键字 + 状态/角色筛选，联系方式一律脱敏。 */
   async list(input: MemberListInput, actor: AuthorizedActor): Promise<MemberListResult> {
     requirePermission(actor, "member:manage");
-    const { rows, total } = await memberRepository.list(input);
+    const { rows, total, summary } = await memberRepository.list(input);
     return {
       items: rows,
+      summary,
       pagination: {
         page: input.page,
         pageSize: input.pageSize,

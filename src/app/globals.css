@@ -5727,6 +5727,45 @@ html[data-theme="black-yellow"] {
   }
 
   /* 条件编辑区：一条条件一行，窄屏堆成四层。 */
+  .admin-query__fields {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-inline-size: 0;
+  }
+  .admin-query__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+  }
+  .admin-query__chips:empty {
+    display: none;
+  }
+  .admin-query__section {
+    display: grid;
+    gap: var(--s-3);
+    padding-block: var(--s-4);
+    border-block-start: 1px solid var(--line);
+  }
+  .admin-query__sortrow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: var(--s-3);
+    align-items: end;
+  }
+  .admin-query__groups {
+    display: grid;
+    gap: var(--s-2);
+  }
+  .admin-query__groups > div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-4);
+  }
+  .admin-query__groups dd {
+    font-variant-numeric: tabular-nums;
+  }
+
   .admin-conditions {
     display: grid;
     gap: var(--s-3);
