@@ -35,6 +35,8 @@ import type {
   StaffRegistrationView,
   StaffServedRow,
   StaffPendingServe,
+  ServeResultView,
+  RevertServeResultView,
 } from "@/features/repair-activities/repair-activity-staff-service";
 
 type Props = { activityId: string };
@@ -401,7 +403,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     setBusy(`serve:${registrationId}`);
     setToast(null);
     setMessage("");
-    const result = await postJson<{ repairRecordId: string }>(
+    const result = await postJson<ServeResultView>(
       `/api/v1/member/repair-activities/${activityId}/serve`,
       { registrationId },
     );
@@ -427,7 +429,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     if (!revertTarget || revertBusy) return;
     setRevertBusy(true);
     setToast(null);
-    const result = await postJson<{ deletedRecordId: string }>(
+    const result = await postJson<RevertServeResultView>(
       `/api/v1/member/repair-activities/${activityId}/revert-serve`,
       { registrationId: revertTarget.id },
     );
