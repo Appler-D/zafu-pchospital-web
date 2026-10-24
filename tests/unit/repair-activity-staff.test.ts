@@ -161,10 +161,10 @@ test("出勤闸门语义：未出勤操作码为 ACTIVITY_ATTENDANCE_REQUIRED（
   assert.equal(defaultStatusFor("ACTIVITY_REGISTRATION_STATE_INVALID"), 409);
 });
 
-test("全局接单拦截错误码 ACTIVITY_SERVE_DRAFT_PENDING（409）", async () => {
+test("全局接单拦截错误码 ACTIVITY_SERVE_PENDING（409，issue #221）", async () => {
   const { ApiErrorCode, defaultStatusFor } = await importErrorStatus();
-  assert.ok((ApiErrorCode as readonly string[]).includes("ACTIVITY_SERVE_DRAFT_PENDING"));
-  assert.equal(defaultStatusFor("ACTIVITY_SERVE_DRAFT_PENDING"), 409);
+  assert.ok((ApiErrorCode as readonly string[]).includes("ACTIVITY_SERVE_PENDING"));
+  assert.equal(defaultStatusFor("ACTIVITY_SERVE_PENDING"), 409);
 });
 
 test("activityAt 转上海日历日", () => {

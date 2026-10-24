@@ -84,6 +84,36 @@ function localDraftRecord(input: {
   };
 }
 
+/**
+ * 活动接待「继续填写」的本地初始记录（issue #221）：
+ * 本机暂存优先，其余字段从登记行 / 活动预填。
+ */
+function serveDraftRecord(input: {
+  creator: { id: string; name: string };
+  categories: RepairCategoryView[];
+  participants: RepairParticipantView[];
+  stored: CreateDraftSnapshot | null;
+  prefill: {
+    name: string;
+    phone: string;
+    deviceModel: string | null;
+    categoryId: string | null;
+    repairDate: string;
+  };
+}): RepairDetailView {
+  const merged: CreateDraftSnapshot = {
+    repairDate: input.stored?.repairDate ?? input.prefill.repairDate,
+    durationMinutes: input.stored?.durationMinutes ?? null,
+    categoryId: input.stored?.categoryId ?? input.prefill.categoryId,
+    ownerName: input.stored?.ownerName ?? input.prefill.name,
+    ownerPhone: input.stored?.ownerPhone ?? input.prefill.phone,
+    deviceModel: input.stored?.deviceModel ?? input.prefill.deviceModel,
+    remark: input.stored?.remark ?? null,
+    participantIds: input.stored?.participantIds ?? [],
+  };
+  return localDraftRecord({ ...input, stored: merged });
+}
+
 /** 只把非图片字段写进暂存；参与人排除创建人本人。 */
 function snapshotOf(record: RepairDetailView): CreateDraftSnapshot {
   return {
@@ -104,6 +134,7 @@ export function RepairEditor({
   recordId,
   allowSaveDraft = true,
   returnActivityId,
+  serveContext,
 }: {
   /**
    * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，首次传图或提交时才建档（issue #162）。
@@ -113,9 +144,13 @@ export function RepairEditor({
   allowSaveDraft?: boolean;
   /** 从活动看板进入时，提交成功后返回该看板继续接待。 */
   returnActivityId?: string;
+  /** 活动接待「继续填写」（issue #221）：预填来自登记行，提交时创建维修单并关联接待。 */
+  serveContext?: { activityId: string; registrationId: string };
 }) {
   const router = useRouter();
   const createMode = !recordId;
+  /** 活动接待补单的本地暂存按报名分桶（issue #221）。 */
+  const draftScope = serveContext?.registrationId;
   const [serverId, setServerId] = useState(recordId ?? "");
   /** 新建会话的幂等键：重复点提交 / 上传重试都不会多建草稿。 */
   const [createRequestKey] = useState(createIdempotencyKey);
@@ -123,7 +158,9 @@ export function RepairEditor({
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
   /** 参与维修人员（issue #114）的候选名单：全部活跃成员，从中挑选添加。 */
   const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden" | "serveError">(
+    "loading",
+  );
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -155,6 +192,40 @@ export function RepairEditor({
         const categories: RepairCategoryView[] = cats.success ? cats.data : [];
         setMemberOptions(options);
         setCategories(categories);
+        if (serveContext) {
+          const prefillResponse = await fetch(
+            `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`,
+            { cache: "no-store" },
+          );
+          const prefillJson = await prefillResponse.json();
+          if (!prefillJson.success) {
+            setMessage(prefillJson.error?.message ?? "无法读取这条接待的预填信息。");
+            setState("serveError");
+            return;
+          }
+          const stored = readCreateDraft(draftScope);
+          const wanted = new Set(stored?.participantIds ?? []);
+          const creator = {
+            id: me.data.memberProfileId as string,
+            name: (me.data.displayName as string | null) ?? "我",
+          };
+          const participants = options
+            .filter((option) => wanted.has(option.id) && option.id !== creator.id)
+            .map((option) => ({ id: option.id, name: option.name }));
+          setRecord(
+            serveDraftRecord({
+              creator,
+              categories,
+              participants,
+              stored,
+              prefill: prefillJson.data,
+            }),
+          );
+          if (stored && hasCreateDraftContent(stored))
+            setMessage(repairEditorCopy.createDraftRestored);
+          setState("ready");
+          return;
+        }
         const stored = readCreateDraft();
         const wanted = new Set(stored?.participantIds ?? []);
         const creator = {
@@ -203,7 +274,7 @@ export function RepairEditor({
     } catch {
       setState("error");
     }
-  }, [serverId]);
+  }, [serverId, serveContext, draftScope]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -211,9 +282,9 @@ export function RepairEditor({
   useEffect(() => {
     if (!createMode || serverId || !record) return;
     const snapshot = snapshotOf(record);
-    if (hasCreateDraftContent(snapshot)) writeCreateDraft(snapshot);
-    else clearCreateDraft();
-  }, [createMode, serverId, record]);
+    if (hasCreateDraftContent(snapshot)) writeCreateDraft(snapshot, draftScope);
+    else clearCreateDraft(draftScope);
+  }, [createMode, serverId, record, draftScope]);
   useEffect(() => {
     if (!createMode || serverId || !record) return;
     if (!hasCreateDraftContent(snapshotOf(record))) return;
@@ -228,24 +299,29 @@ export function RepairEditor({
     setRecord((current) => (current ? { ...current, [key]: value } : current));
   }
   /** 保存当前表单，返回服务端视图 —— `PATCH` 返回的是列表视图（无 `reviews` / `timeline`），故用合并。 */
-  async function persist(): Promise<RepairDetailView> {
-    if (!record) throw new Error("记录尚未加载");
-    const fields = {
-      repairDate: record.repairDate,
-      durationMinutes: record.durationMinutes ?? null,
-      categoryId: record.category?.id ?? null,
-      ownerName: record.ownerName,
-      ownerPhone: record.ownerPhone,
-      deviceModel: record.deviceModel,
+  /** 表单字段 → 新建 / 补单请求体（issue #221 起两处共用）。 */
+  function draftFieldsOf(current: RepairDetailView) {
+    return {
+      repairDate: current.repairDate,
+      durationMinutes: current.durationMinutes ?? null,
+      categoryId: current.category?.id ?? null,
+      ownerName: current.ownerName,
+      ownerPhone: current.ownerPhone,
+      deviceModel: current.deviceModel,
       // 不再发送 `content`：字段已从表单退场，`undefined` 即「不动」——
       // 老记录的正文不会被这里清空（issue #79 第 6 项）。
-      remark: record.remark,
-      result: record.result ?? defaultRepairResult,
+      remark: current.remark,
+      result: current.result ?? defaultRepairResult,
       // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
-      participantIds: record.participants
-        .filter((participant) => participant.id !== record.member.id)
+      participantIds: current.participants
+        .filter((participant) => participant.id !== current.member.id)
         .map((participant) => participant.id),
     };
+  }
+  async function persist(): Promise<RepairDetailView> {
+    if (!record) throw new Error("记录尚未加载");
+    if (serveContext) throw new Error("接待补单请直接提交，不保存草稿。");
+    const fields = draftFieldsOf(record);
     if (!serverId) {
       // 新建页首次落库：把当前全部内容一次性带上（不再先建空草稿）。
       const response = await fetch("/api/v1/repairs", {
@@ -255,7 +331,7 @@ export function RepairEditor({
       });
       const json = await response.json();
       if (!json.success) throw new Error(json.error.message);
-      clearCreateDraft();
+      clearCreateDraft(draftScope);
       setServerId(json.data.id);
       setRecord((current) => (current ? { ...current, ...json.data } : json.data));
       return { ...record, ...json.data } as RepairDetailView;
@@ -283,6 +359,36 @@ export function RepairEditor({
       setBusy(false);
     }
   }
+  /** 接待补单提交（issue #221）：直接建 PENDING 记录并关联登记，不落草稿。 */
+  async function submitServe() {
+    if (!record || !serveContext) throw new Error("接待信息缺失，请返回活动重试");
+    const response = await fetch(
+      `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/record`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": createRequestKey },
+        body: JSON.stringify(draftFieldsOf(record)),
+      },
+    );
+    const json = await response.json();
+    if (!json.success) {
+      const fieldErrors = json.error.fieldErrors
+        ? Object.values(json.error.fieldErrors).flat().join("；")
+        : "";
+      throw new Error(fieldErrors || json.error.message);
+    }
+    clearCreateDraft(draftScope);
+    setToast({ text: repairEditorCopy.activitySubmitSuccess, tone: "success" });
+    setSubmitted(true);
+  }
+
+  /** 「暂存返回」（issue #221）：只存本机 sessionStorage，不创建服务端草稿。 */
+  function saveAndReturn() {
+    if (!record || !serveContext) return;
+    writeCreateDraft(snapshotOf(record), draftScope);
+    router.push(`/member/repair-activities/${encodeURIComponent(serveContext.activityId)}`);
+  }
+
   async function submit() {
     if (busy) return;
     // 机型提交必填（issue #218）：先在客户端给出可读提示，服务端还会再校验一次。
@@ -293,6 +399,10 @@ export function RepairEditor({
     setBusy(true);
     setMessage("");
     try {
+      if (serveContext) {
+        await submitServe();
+        return;
+      }
       // 先把当前表单存一次再提交：否则「填了但没保存」会被服务端的完整性校验拦下。
       const idempotencyKey = createIdempotencyKey();
       const saved = await persist();
@@ -308,7 +418,7 @@ export function RepairEditor({
           : "";
         throw new Error(fields || json.error.message);
       }
-      clearCreateDraft();
+      clearCreateDraft(draftScope);
       if (returnActivityId) {
         setToast({ text: repairEditorCopy.activitySubmitSuccess, tone: "success" });
         setSubmitted(true);
@@ -353,6 +463,8 @@ export function RepairEditor({
     setRecord((current) => (current ? { ...current, photos: json.data.photos } : current));
   }
   async function upload(files: File[]) {
+    // 接待补单不落草稿，照片上传入口已在界面隐藏（issue #221）。
+    if (serveContext) return;
     if (!files.length || !record) return;
     const selected = files;
     setBusy(true);
@@ -446,10 +558,26 @@ export function RepairEditor({
         <Button href="/member/repairs">返回列表</Button>
       </Card>
     );
+  if (state === "serveError")
+    return (
+      <Card variant="notice">
+        <p>{message || "无法读取这条接待的预填信息。"}</p>
+        <Button
+          href={
+            serveContext
+              ? `/member/repair-activities/${serveContext.activityId}`
+              : "/member/repairs"
+          }
+        >
+          返回活动
+        </Button>
+      </Card>
+    );
   if (!record) return null;
   const rejection = [...record.reviews].reverse().find((item) => item.decision === "REJECTED");
-  const photoHint =
-    createMode && !serverId
+  const photoHint = serveContext
+    ? repairEditorCopy.servePhotoUnavailable
+    : createMode && !serverId
       ? repairEditorCopy.photoHintCreate
       : repairEditorCopy.photoHint
           .replace("{size}", formatBytes(record.photoLimits.maxBytes))
@@ -605,6 +733,7 @@ export function RepairEditor({
           <p className="field__hint">
             {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}
           </p>
+          {serveContext ? <p className="field__hint">{repairEditorCopy.serveSubmitNote}</p> : null}
           <p className="field__hint">
             维修结果默认为「{repairResultLabels[defaultRepairResult]}」，保存与提交都会按此记录。
           </p>
@@ -613,6 +742,11 @@ export function RepairEditor({
             {allowSaveDraft ? (
               <Button type="submit" disabled={busy}>
                 保存草稿
+              </Button>
+            ) : null}
+            {serveContext ? (
+              <Button type="button" disabled={busy} onClick={saveAndReturn}>
+                {repairEditorCopy.serveStageAndBack}
               </Button>
             ) : null}
             <Button type="button" variant="solid" disabled={busy} onClick={() => void submit()}>
@@ -643,55 +777,61 @@ export function RepairEditor({
             {repairEditorCopy.remarkHint}
           </span>
         </label>
-        <label className="field">
-          <span className="field__label">选择照片</span>
-          <input
-            className="field__input"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            disabled={busy}
-            onChange={(e) => {
-              // 先拷成数组再清空 input：Blink 的 FileList 是活视图，清空 value 会把它一起清空，
-              // 存引用再清空等于传了个空列表；拷成数组后「同一张图片再选一次」也能触发 change。
-              const files = Array.from(e.target.files ?? []);
-              e.target.value = "";
-              void upload(files);
-            }}
-          />
-          <span className="field__hint">{photoHint}</span>
-        </label>
-        <div className="gap-s-4 grid md:grid-cols-2">
-          {record.photos.map((photo, index) => (
-            <figure className="gap-s-2 grid" key={photo.id}>
-              <Image
-                className="rounded-mid border-line h-56 w-full border object-cover"
-                src={photo.contentUrl}
-                alt={`维修照片 ${index + 1}`}
-                width={720}
-                height={480}
-                unoptimized
+        {serveContext ? (
+          <p className="field__hint">{repairEditorCopy.servePhotoUnavailable}</p>
+        ) : (
+          <>
+            <label className="field">
+              <span className="field__label">选择照片</span>
+              <input
+                className="field__input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                disabled={busy}
+                onChange={(e) => {
+                  // 先拷成数组再清空 input：Blink 的 FileList 是活视图，清空 value 会把它一起清空，
+                  // 存引用再清空等于传了个空列表；拷成数组后「同一张图片再选一次」也能触发 change。
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  void upload(files);
+                }}
               />
-              <figcaption className="gap-s-2 flex flex-wrap">
-                <Button
-                  disabled={index === 0 || busy}
-                  onClick={() => void reorder(photo.id, index - 1)}
-                >
-                  前移
-                </Button>
-                <Button
-                  disabled={index === record.photos.length - 1 || busy}
-                  onClick={() => void reorder(photo.id, index + 1)}
-                >
-                  后移
-                </Button>
-                <Button disabled={busy} onClick={() => void remove(photo.id)}>
-                  移除
-                </Button>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
+              <span className="field__hint">{photoHint}</span>
+            </label>
+            <div className="gap-s-4 grid md:grid-cols-2">
+              {record.photos.map((photo, index) => (
+                <figure className="gap-s-2 grid" key={photo.id}>
+                  <Image
+                    className="rounded-mid border-line h-56 w-full border object-cover"
+                    src={photo.contentUrl}
+                    alt={`维修照片 ${index + 1}`}
+                    width={720}
+                    height={480}
+                    unoptimized
+                  />
+                  <figcaption className="gap-s-2 flex flex-wrap">
+                    <Button
+                      disabled={index === 0 || busy}
+                      onClick={() => void reorder(photo.id, index - 1)}
+                    >
+                      前移
+                    </Button>
+                    <Button
+                      disabled={index === record.photos.length - 1 || busy}
+                      onClick={() => void reorder(photo.id, index + 1)}
+                    >
+                      后移
+                    </Button>
+                    <Button disabled={busy} onClick={() => void remove(photo.id)}>
+                      移除
+                    </Button>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

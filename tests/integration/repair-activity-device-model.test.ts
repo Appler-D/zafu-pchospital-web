@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { POST } from "../../src/app/api/v1/repair-activities/[id]/registrations/route";
@@ -6,6 +7,7 @@ import { repairActivityService } from "../../src/features/repair-activities/repa
 import { repairActivityStaffService } from "../../src/features/repair-activities/repair-activity-staff-service";
 import { REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH } from "../../src/features/repair-activities/repair-activity-validation";
 import { resetRateLimitsForTests } from "../../src/lib/api/rate-limit";
+import { shanghaiToday } from "../../src/lib/shanghai-date";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
 import { disconnectDb, getDb } from "../../src/lib/db/client";
 import type { AuthorizedActor } from "../../src/types/contracts";
@@ -207,32 +209,39 @@ async function registerCheckInAndServe(input: {
   try {
     await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
     await repairActivityStaffService.checkIn(ACTIVITY_ID, [registrationId], staffActor);
-    const served = await repairActivityStaffService.serve(ACTIVITY_ID, registrationId, staffActor);
-    return { registrationId, repairRecordId: served.repairRecordId };
+    await repairActivityStaffService.serve(ACTIVITY_ID, registrationId, staffActor);
+    // issue #221：接待只占登记行；机型从预填进入「提交即建单」的维修记录。
+    const prefill = await repairActivityStaffService.getServePrefill(
+      ACTIVITY_ID,
+      registrationId,
+      staffActor,
+    );
+    const record = await repairActivityStaffService.createServeRecord(
+      ACTIVITY_ID,
+      registrationId,
+      {
+        idempotencyKey: randomUUID(),
+        fields: {
+          repairDate: shanghaiToday(),
+          durationMinutes: 30,
+          categoryId: prefill.categoryId ?? SYSTEM_CATEGORY_ID,
+          ownerName: prefill.name,
+          ownerPhone: prefill.phone,
+          deviceModel: prefill.deviceModel,
+          remark: "REG68 补单",
+          result: "COMPLETED",
+          participantIds: [],
+        },
+      },
+      staffActor,
+    );
+    return { registrationId, repairRecordId: record.id };
   } finally {
     await getDb().repairActivity.update({
       where: { id: ACTIVITY_ID },
       data: { signupClosesAt: activity.signupClosesAt },
     });
   }
-}
-
-/**
- * 软删除本文件产生的落单草稿。
- *
- * 接待落单现在生成 DRAFT（issue #79 第 6 项），未提交的草稿会触发全局接单拦截 ——
- * 同一文件里连续接待第二位客户前必须先清掉上一条草稿。
- */
-async function discardServeDrafts(): Promise<void> {
-  await getDb().repairRecord.updateMany({
-    where: {
-      memberProfileId: STAFF_PROFILE_ID,
-      createRequestKey: { startsWith: "activity-serve:" },
-      status: "DRAFT",
-      deletedAt: null,
-    },
-    data: { deletedAt: new Date() },
-  });
 }
 
 before(async () => {
@@ -333,7 +342,7 @@ dbTest("机型超长或不是字符串：400 且指向 deviceModel 字段", asyn
   );
 });
 
-dbTest("接待落单把机型复制进维修记录", async () => {
+dbTest("接待补单（提交即建单）把机型写入维修记录", async () => {
   const { registrationId, repairRecordId } = await registerCheckInAndServe({
     name: "REG68 己",
     phone: "13900000016",
@@ -342,10 +351,10 @@ dbTest("接待落单把机型复制进维修记录", async () => {
 
   const record = await getDb().repairRecord.findUniqueOrThrow({ where: { id: repairRecordId } });
   assert.equal(record.deviceModel, "ThinkPad X1 Carbon");
-  // 接待落单改为生成草稿（issue #79 第 6 项）：正文 / 时长留空，由成员在表单里补齐。
-  assert.equal(record.status, "DRAFT");
+  // issue #221：提交即建单，直接进入待审核；内容 / 时长来自成员填写。
+  assert.equal(record.status, "PENDING");
   assert.equal(record.content, null);
-  assert.equal(record.durationMinutes, null);
+  assert.equal(record.durationMinutes, 30);
   assert.equal(record.ownerName, "REG68 己");
   assert.equal(record.ownerPhone, "13900000016");
 
@@ -357,14 +366,78 @@ dbTest("接待落单把机型复制进维修记录", async () => {
   assert.equal(registration.deviceModel, "ThinkPad X1 Carbon", "落单后报名行仍保留机型");
 });
 
-dbTest("报名没填机型时，落单记录里也是 null", async () => {
-  // 上一条用例留下的接待草稿会触发全局接单拦截（issue #79 第 6 项）：先软删除再接待。
-  await discardServeDrafts();
-  const { repairRecordId } = await registerCheckInAndServe({
+dbTest("报名没填机型：预填为 null，提交即建单要求成员补齐机型（issue #218/#221）", async () => {
+  const created = await signup({
     name: "REG68 庚",
     phone: "13900000017",
+    issueType: "CLEAN_ONLY",
+    consentAccepted: true,
   });
-
-  const record = await getDb().repairRecord.findUniqueOrThrow({ where: { id: repairRecordId } });
-  assert.equal(record.deviceModel, null);
+  assert.equal(created.status, 201);
+  const registrationId = (created.json.data as { id: string }).id;
+  const activity = await getDb().repairActivity.findUniqueOrThrow({ where: { id: ACTIVITY_ID } });
+  await getDb().repairActivity.update({
+    where: { id: ACTIVITY_ID },
+    data: { signupClosesAt: new Date(Date.now() - 1_000) },
+  });
+  try {
+    await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
+    await repairActivityStaffService.checkIn(ACTIVITY_ID, [registrationId], staffActor);
+    await repairActivityStaffService.serve(ACTIVITY_ID, registrationId, staffActor);
+    const prefill = await repairActivityStaffService.getServePrefill(
+      ACTIVITY_ID,
+      registrationId,
+      staffActor,
+    );
+    assert.equal(prefill.deviceModel, null, "报名没填机型时预填也是 null");
+    await assert.rejects(
+      () =>
+        repairActivityStaffService.createServeRecord(
+          ACTIVITY_ID,
+          registrationId,
+          {
+            idempotencyKey: randomUUID(),
+            fields: {
+              repairDate: shanghaiToday(),
+              durationMinutes: 30,
+              categoryId: prefill.categoryId ?? SYSTEM_CATEGORY_ID,
+              ownerName: prefill.name,
+              ownerPhone: prefill.phone,
+              deviceModel: null,
+              remark: null,
+              result: "COMPLETED",
+              participantIds: [],
+            },
+          },
+          staffActor,
+        ),
+      { code: "REPAIR_SUBMISSION_INCOMPLETE" },
+      "机型已是提交必填，不能沿用空的预填值",
+    );
+    const record = await repairActivityStaffService.createServeRecord(
+      ACTIVITY_ID,
+      registrationId,
+      {
+        idempotencyKey: randomUUID(),
+        fields: {
+          repairDate: shanghaiToday(),
+          durationMinutes: 30,
+          categoryId: prefill.categoryId ?? SYSTEM_CATEGORY_ID,
+          ownerName: prefill.name,
+          ownerPhone: prefill.phone,
+          deviceModel: "成员补填的机型",
+          remark: null,
+          result: "COMPLETED",
+          participantIds: [],
+        },
+      },
+      staffActor,
+    );
+    assert.equal(record.deviceModel, "成员补填的机型");
+  } finally {
+    await getDb().repairActivity.update({
+      where: { id: ACTIVITY_ID },
+      data: { signupClosesAt: activity.signupClosesAt },
+    });
+  }
 });

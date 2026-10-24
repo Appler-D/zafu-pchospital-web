@@ -20,18 +20,23 @@ export type CreateDraftSnapshot = {
 const STORAGE_KEY = "pc:repair-create-draft:v1";
 const TTL_MS = 12 * 60 * 60 * 1000;
 
+/** issue #221：接待补单按报名 id 分桶暂存，不会和普通新建流程互相覆盖。 */
+function storageKey(scope?: string): string {
+  return scope ? `${STORAGE_KEY}:${scope}` : STORAGE_KEY;
+}
+
 function text(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-export function readCreateDraft(): CreateDraftSnapshot | null {
+export function readCreateDraft(scope?: string): CreateDraftSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(storageKey(scope));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { savedAt?: unknown; fields?: Record<string, unknown> };
     if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > TTL_MS) {
-      clearCreateDraft();
+      clearCreateDraft(scope);
       return null;
     }
     const fields = parsed.fields ?? {};
@@ -52,19 +57,22 @@ export function readCreateDraft(): CreateDraftSnapshot | null {
   }
 }
 
-export function writeCreateDraft(fields: CreateDraftSnapshot): void {
+export function writeCreateDraft(fields: CreateDraftSnapshot, scope?: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), fields }));
+    window.sessionStorage.setItem(
+      storageKey(scope),
+      JSON.stringify({ savedAt: Date.now(), fields }),
+    );
   } catch {
     // 隐私模式 / 存储被禁用：暂存失败不影响填写与提交。
   }
 }
 
-export function clearCreateDraft(): void {
+export function clearCreateDraft(scope?: string): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.removeItem(STORAGE_KEY);
+    window.sessionStorage.removeItem(storageKey(scope));
   } catch {
     // 同上：清理失败不影响主流程。
   }

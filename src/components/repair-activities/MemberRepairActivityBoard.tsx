@@ -34,7 +34,7 @@ import type {
   StaffBoardView,
   StaffRegistrationView,
   StaffServedRow,
-  StaffServeDraft,
+  StaffPendingServe,
 } from "@/features/repair-activities/repair-activity-staff-service";
 
 type Props = { activityId: string };
@@ -90,7 +90,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const scrollPosition = useRef<{ x: number; y: number } | null>(null);
   const request = useRef<{ background: boolean } | null>(null);
   /** 全局接单拦截弹层（issue #79 第 6 项）：点击「接待」命中未完成草稿时出现，不发请求。 */
-  const [pendingNotice, setPendingNotice] = useState<StaffServeDraft | null>(null);
+  const [pendingNotice, setPendingNotice] = useState<StaffPendingServe | null>(null);
   /** 出勤成员弹层（issue #107）：仅活动管理员，只读名单。 */
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   /**
@@ -407,11 +407,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     );
     setBusy(null);
     if (!result.ok) {
-      if (result.code === "ACTIVITY_SERVE_DRAFT_PENDING") {
-        // 服务端兜底（多标签 / 并发）：先刷新看板，再按最新的 pendingServeDraft 弹层；
-        // 刷新后若无草稿（例如另一标签已提交），退回内联提示。
+      if (result.code === "ACTIVITY_SERVE_PENDING") {
+        // 服务端兜底（多标签 / 并发）：先刷新看板，再按最新的未建单接待弹层；
+        // 刷新后若已无待补建（例如另一标签刚提交），退回内联提示。
         const fresh = await load();
-        if (fresh?.pendingServeDraft) setPendingNotice(fresh.pendingServeDraft);
+        if (fresh?.pendingServeRegistration) setPendingNotice(fresh.pendingServeRegistration);
         else setMessage(result.message);
         return;
       }
@@ -441,11 +441,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     await load();
   }
 
-  /** 点击「接待」：先看客户端已加载的 pendingServeDraft，非空则弹层且**不发请求**。 */
+  /** 点击「接待」：先看客户端已加载的待补建接待，非空则弹层且**不发请求**（issue #221）。 */
   function requestServe(registrationId: string) {
     if (!allowStaffAction()) return;
-    if (board?.pendingServeDraft) {
-      setPendingNotice(board.pendingServeDraft);
+    if (board?.pendingServeRegistration) {
+      setPendingNotice(board.pendingServeRegistration);
       return;
     }
     void serve(registrationId);
@@ -780,17 +780,24 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <ul className="activity-board__list">
               {board.served.map((row) => {
                 const recordId = row.repairRecordId;
+                // 待补建（issue #221）：接待已占位、维修单还没创建。
+                const pendingRecord = recordId === null;
                 return (
                   <li key={row.id} className="activity-board__row">
                     <div className="activity-board__queue-main">
                       <div>
                         <strong>{row.name}</strong>{" "}
-                        {row.recordStatus ? (
+                        {pendingRecord ? (
+                          <span className="admin-tag">{copy.servedPendingTag}</span>
+                        ) : row.recordStatus ? (
                           <span className="admin-tag">
                             {row.recordWithdrawn
                               ? repairWithdrawnLabel
                               : repairStatusLabels[row.recordStatus]}
                           </span>
+                        ) : null}
+                        {pendingRecord ? (
+                          <p className="muted m-0">{copy.servedPendingHint}</p>
                         ) : null}
                         <div className="activity-board__queue-line">
                           <span className="activity-board__queue-label">{copy.phone}</span>
@@ -810,8 +817,18 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                           {copy.revertServe}
                         </Button>
                       ) : null}
-                      {/* 记录缺失或已软删除：占位文案，不出链接。 */}
-                      {!recordId || !row.recordStatus ? (
+                      {pendingRecord ? (
+                        row.canFill ? (
+                          <Button
+                            href={`/member/repairs/new?activityId=${encodeURIComponent(activityId)}&registrationId=${encodeURIComponent(row.id)}`}
+                          >
+                            {copy.continueFill}
+                          </Button>
+                        ) : (
+                          <span className="muted">{copy.servedPendingByOwner}</span>
+                        )
+                      ) : !recordId || !row.recordStatus ? (
+                        // 记录缺失或已软删除：占位文案，不出链接。
                         <span className="muted">{copy.recordMissing}</span>
                       ) : row.recordStatus === "DRAFT" || row.recordStatus === "REJECTED" ? (
                         <Button
@@ -938,13 +955,13 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           onClose={() => setPendingNotice(null)}
           onConfirm={() => {
             router.push(
-              `/member/repairs/${pendingNotice.repairRecordId}/edit?returnActivityId=${encodeURIComponent(activityId)}`,
+              `/member/repairs/new?activityId=${encodeURIComponent(pendingNotice.activityId)}&registrationId=${encodeURIComponent(pendingNotice.registrationId)}`,
             );
           }}
         >
           <p>
             {copy.pendingServeBody
-              .replace("{owner}", pendingNotice.ownerName)
+              .replace("{owner}", pendingNotice.name)
               .replace("{activity}", pendingNotice.activityTitle)}
           </p>
           <p className="admin-note">{copy.pendingServeUndoHint}</p>
