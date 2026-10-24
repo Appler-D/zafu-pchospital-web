@@ -57,6 +57,7 @@ function application(
   overrides: Partial<JoinApplicationSummary> = {},
 ): JoinApplicationSummary {
   return {
+    approvedAt: null,
     admittedDepartment: null,
     id,
     status,
@@ -86,7 +87,7 @@ async function render(items: JoinApplicationSummary[], busy = false): Promise<st
   );
 }
 
-test("表头：8 列，顺序与文案照抄迁移前；「报名编号」是内容列", async () => {
+test("表头：10 列，顺序与文案照抄迁移前；「报名编号」是内容列", async () => {
   const { admin } = await load();
   const copy = admin.adminCopy.recruitment;
   const html = await render([application("A", "SUBMITTED")]);
@@ -102,6 +103,8 @@ test("表头：8 列，顺序与文案照抄迁移前；「报名编号」是内
       copy.table.status,
       copy.table.provision,
       copy.table.submittedAt,
+      "面试时间",
+      "通过时间",
       copy.table.actions,
     ],
   );
@@ -110,7 +113,7 @@ test("表头：8 列，顺序与文案照抄迁移前；「报名编号」是内
   assert.equal(html.split("admin-table__grow").length - 1, 2);
 });
 
-test("没有声明列宽 → 不输出 colgroup；空列表整行合并 8 列", async () => {
+test("没有声明列宽 → 不输出 colgroup；空列表整行合并 10 列", async () => {
   const { admin } = await load();
   const html = await render([application("A", "SUBMITTED")]);
   assert.equal(html.includes("<colgroup"), false);
@@ -118,7 +121,7 @@ test("没有声明列宽 → 不输出 colgroup；空列表整行合并 8 列", 
 
   const empty = await render([]);
   // 大小写由 React 决定，断言不去管它。
-  assert.match(empty, /<td class="admin-table__empty" colspan="8">/i);
+  assert.match(empty, /<td class="admin-table__empty" colspan="10">/i);
   assert.ok(empty.includes(admin.adminShared.empty));
 });
 
@@ -178,11 +181,7 @@ test("「通过」按钮常驻：不可审核状态置灰、提交中（busy）�
     3,
     "三个不可审核状态都应有置灰的「通过」按钮",
   );
-  assert.equal(
-    decided.includes(`<span>${copy.action.approve}</span>`),
-    true,
-    "按钮本身应常驻",
-  );
+  assert.equal(decided.includes(`<span>${copy.action.approve}</span>`), true, "按钮本身应常驻");
 
   // 有请求在途：可审核状态也置灰，防连点。
   const busyHtml = await render([application("S", "SUBMITTED")], true);
@@ -217,7 +216,9 @@ test("状态标签三档：已通过 / 未通过与撤回（中性灰）/ 其余
     html.includes(`<span class="admin-tag admin-tag--muted">${labels.INTERVIEW_REJECTED}</span>`),
   );
   assert.ok(html.includes(`<span class="admin-tag admin-tag--muted">${labels.WITHDRAWN}</span>`));
-  assert.ok(html.includes(`<span class="repair-tag repair-tag--pending">${labels.SUBMITTED}</span>`));
+  assert.ok(
+    html.includes(`<span class="repair-tag repair-tag--pending">${labels.SUBMITTED}</span>`),
+  );
 });
 
 test("账号发放的四种状态都按既有文案显示", async () => {

@@ -18,6 +18,7 @@
     "start": "next start",
     "lint": "eslint . && node tools/check-theme-palette.mjs",
     "check:palette": "node tools/check-theme-palette.mjs",
+    "table:capabilities": "tsx tools/generate-table-capabilities.ts --check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "prisma generate",

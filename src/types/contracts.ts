@@ -1,5 +1,5 @@
 import type { FilterRule } from "@/lib/api/list-filter";
-import type { SortRule } from "@/types/table";
+import type { SortRule, TableListOptions, TableListExtras } from "@/types/table";
 
 /** Phase 2 public contract constants. Database values and API inputs must use these constants. */
 export const UserStatus = ["ACTIVE", "DISABLED"] as const;
@@ -233,6 +233,8 @@ export type ChangePasswordInput = {
 };
 
 export type PaginationInput = { page: number; pageSize: number };
+export type TableListInput = PaginationInput & TableListOptions;
+
 export type PaginationMeta = PaginationInput & {
   total: number;
   totalPages: number;
@@ -285,7 +287,7 @@ export type JoinApplicationView = {
   initializationSecret?: string;
 };
 
-export type JoinApplicationListInput = PaginationInput & {
+export type JoinApplicationListInput = TableListInput & {
   /** 精确匹配历史或当前招募批次，空白视为不筛选。 */
   recruitmentCycle?: string;
   status?: JoinApplicationStatus;
@@ -296,6 +298,8 @@ export type JoinApplicationListInput = PaginationInput & {
 };
 
 export type JoinApplicationSummary = JoinApplicationView & {
+  /** 首次通过操作的服务端记录时间；历史无审核记录时为 null。 */
+  approvedAt: string | null;
   ticketNo: string;
   recruitmentCycle: string;
   realName: string;
@@ -483,7 +487,7 @@ export type MemberUpdateView = MemberView & { version: number };
  * `query` 只做「姓名 / 昵称 / 学号 / 班级 / 已脱敏 QQ / 手机号」的模糊匹配，
  * **不返回明文联系方式** —— 明文只在成员详情里出现，且读取要写审计。
  */
-export type MemberListInput = PaginationInput & {
+export type MemberListInput = TableListInput & {
   query?: string;
   status?: MemberStatus;
   role?: RoleCode;
@@ -541,7 +545,10 @@ export type MemberListEntry = {
 /** 成员身上的一枚技能标签（列表用；`isActive` 为 false 表示该标签已被停用）。 */
 export type MemberSkillTag = { id: string; name: string; isActive: boolean };
 
-export type MemberListResult = { items: MemberListEntry[]; pagination: PaginationMeta };
+export type MemberListResult = TableListExtras & {
+  items: MemberListEntry[];
+  pagination: PaginationMeta;
+};
 
 /** 成员详情。管理端**唯一**返回 QQ / 手机号明文的位置，读取必须写审计。 */
 export type MemberDetail = MemberListEntry & {
@@ -733,7 +740,7 @@ export type RepairBatchReviewResult = {
   failed: { recordId: string; code: string; message: string }[];
 };
 export type RepairFlagsInput = { isDifficult: boolean; isTypical: boolean };
-export type RepairListInput = PaginationInput & {
+export type RepairListInput = TableListInput & {
   memberId?: string;
   categoryId?: string;
   status?: RepairStatus;
@@ -754,12 +761,14 @@ export type RepairListInput = PaginationInput & {
    * 排序规则。字段必须落在 `REPAIR_SORTABLE` 白名单内 ——
    * 解析在 `repair-http.ts`（`sortRules`），映射到列在 `repair-sort.ts`（`repairOrderBy`）。
    *
-   * 注意：`RepairExportInput` 继承了这个类型（只去掉分页），但**导出不读这个字段** ——
-   * 导出的顺序固定按维修日期倒序，不该由界面上的临时排序决定。
+   * 列表与导出共用此排序；未指定时沿用维修日期倒序。
    */
   sort?: SortRule[];
 };
-export type RepairListResult = { items: RepairView[]; pagination: PaginationMeta };
+export type RepairListResult = TableListExtras & {
+  items: RepairView[];
+  pagination: PaginationMeta;
+};
 /**
  * 新增故障分类。
  *
@@ -810,7 +819,7 @@ export type UpdateSkillInput = {
 };
 
 /** 邀请码管理列表入参。`status` 是**生效状态**（含派生的过期/用尽），不是存储状态。 */
-export type InviteCodeListInput = PaginationInput & {
+export type InviteCodeListInput = TableListInput & {
   status?: InviteCodeEffectiveStatus;
   query?: string;
 };
@@ -828,7 +837,7 @@ export type InviteCodeAdminView = InviteCodeView & {
   revokedAt: string | null;
 };
 
-export type InviteCodeListResult = {
+export type InviteCodeListResult = TableListExtras & {
   items: InviteCodeAdminView[];
   pagination: PaginationMeta;
 };
@@ -836,7 +845,7 @@ export type InviteCodeListResult = {
 export const AuditResult = ["SUCCESS", "FAILURE"] as const;
 export type AuditResult = ValueOf<typeof AuditResult>;
 
-export type AuditLogListInput = PaginationInput & {
+export type AuditLogListInput = TableListInput & {
   action?: string;
   actorUserId?: string;
   targetType?: string;
@@ -871,7 +880,7 @@ export type AuditLogEntry = {
   createdAt: string;
 };
 
-export type AuditLogListResult = {
+export type AuditLogListResult = TableListExtras & {
   items: AuditLogEntry[];
   pagination: PaginationMeta;
 };
@@ -1435,7 +1444,7 @@ export interface JoinApplicationServiceContract {
   list(
     input: JoinApplicationListInput,
     actor: AuthorizedActor,
-  ): Promise<{ items: JoinApplicationSummary[]; pagination: PaginationMeta }>;
+  ): Promise<TableListExtras & { items: JoinApplicationSummary[]; pagination: PaginationMeta }>;
   get(applicationId: string, actor: AuthorizedActor): Promise<JoinApplicationDetail>;
   /** 更正通知邮箱（issue #161）：按通知任务状态决定是否同步任务收件地址。 */
   correctNotificationEmail(

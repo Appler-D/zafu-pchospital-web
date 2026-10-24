@@ -1,5 +1,6 @@
+import { auditTableQuery } from "@/lib/table/audit-query";
 import { joinApplicationStatusLabels, provisionStatusLabels } from "@/config/admin";
-import { joinApplicationListWhere } from "@/features/recruitment/join-application-service";
+import { joinQueryIds } from "@/features/recruitment/join-application-query";
 import { AppError } from "@/lib/api/errors";
 import { appendAuditLog } from "@/lib/audit/audit-service";
 import { requirePermission } from "@/lib/auth/permissions";
@@ -62,7 +63,7 @@ const COLUMN_WIDTHS: Record<string, number> = {
 /**
  * 报名数据导出（M6 批次 2，需求 §4.4）。
  *
- * 与维修导出共用三条硬规则：筛选条件与列表**同源**（复用 `joinApplicationListWhere`）、
+ * 与维修导出共用三条硬规则：筛选条件与列表**同源**（复用 `joinQueryIds`）、
  * 超限**拒绝而不是截断**、导出**必写审计**。
  * 审计动作用 `join.applications.exported`，与 `repair.exported` 分开 ——
  * 这份文件里带明文联系方式，检索时不该和维修导出混在一起。
@@ -96,7 +97,7 @@ export const joinApplicationExportService: JoinApplicationExportServiceContract 
         targetType: "JoinApplicationExport",
         targetId: actor.userId ?? "00000000-0000-0000-0000-000000000000",
         result: "SUCCESS",
-        after: { format, rowCount: rows.length, filter: input },
+        after: { format, rowCount: rows.length, filter: auditTableQuery(input) },
       });
     });
     return {
@@ -113,8 +114,14 @@ export const joinApplicationExportService: JoinApplicationExportServiceContract 
 };
 
 async function loadRows(input: JoinApplicationExportInput): Promise<JoinApplicationExportRow[]> {
-  const records = await getDb().joinApplication.findMany({
-    where: joinApplicationListWhere(input),
+  const ids = await joinQueryIds(input, EXPORT_MAX_ROWS + 1);
+  if (ids.length > EXPORT_MAX_ROWS)
+    throw new AppError(
+      "EXPORT_ROW_LIMIT_EXCEEDED",
+      `导出行数超过上限 ${EXPORT_MAX_ROWS} 条，请缩小筛选范围后重试`,
+    );
+  const found = await getDb().joinApplication.findMany({
+    where: { id: { in: ids.map((row) => row.id) }, deletedAt: null },
     select: {
       id: true,
       ticketNo: true,
@@ -130,9 +137,13 @@ async function loadRows(input: JoinApplicationExportInput): Promise<JoinApplicat
       submittedAt: true,
       lastReviewedAt: true,
     },
-    orderBy: [{ submittedAt: "desc" }, { id: "desc" }],
     // 多取一行判断是否超限，避免额外一次 count。
     take: EXPORT_MAX_ROWS + 1,
+  });
+  const byId = new Map(found.map((row) => [row.id, row]));
+  const records = ids.flatMap((row) => {
+    const record = byId.get(row.id);
+    return record ? [record] : [];
   });
   if (records.length > EXPORT_MAX_ROWS) {
     throw new AppError(

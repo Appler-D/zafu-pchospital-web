@@ -103,6 +103,7 @@ test("白名单只含可比较的标量列与关联名字列", () => {
       "memberName",
       "categoryName",
       "createdAt",
+      "deviceModel",
     ],
   );
   // 长文本与一对多关系不得进入白名单。

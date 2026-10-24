@@ -1010,3 +1010,19 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - `AccountNotificationServiceContract` 的 `get(applicationId, actor)` / `retry(applicationId, actor)` 承担管理端权限；`runBatch({limit?})` 只由受保护 CLI 调用（缺省 10，范围 1–50），返回无敏感值的批次统计，不提供公开发信入口。
 - PENDING → SENDING → ACCEPTED / FAILED / UNCERTAIN；明确暂时拒绝可退回 PENDING。每轮最多 4 次实际 Sender 调用，间隔 1 / 5 / 30 分钟。邮件关闭、领取和预算等待不计尝试。结果未知或领取超时停止自动重发；“ACCEPTED”仅表示已提交发信服务。
 - 运行、状态边界与发布 / 停用步骤见 [账号通知运行说明](../account-notifications.md)。
+
+
+## 统一表格查询（issue #214）
+
+本节覆盖管理端 members、repairs、join-applications、invite-codes、audit-logs；原权限及 Service 二次校验不变。
+字段白名单与不支持原因见 [生成的能力清单](../table-capabilities.md)。分类/技能保留业务拖动序，活动/内嵌任务表保持专用交互。
+
+- 列表接受 `sort=field:asc,other:desc`（最多 3 项）、重复 `filter=field:op:value`（最多 5 条、AND）、可选 `groupBy=field`。字段/方向/运算符/值非法返回 400 `VALIDATION_FAILED`；参数化查询，不透传任意 SQL 列名。
+- 默认排序维持原规则，显式排序最终补 `id desc`；可空字段沿用 GreatSQL 原生排序。分页默认 20、上限 100。日期按上海自然日解释并含结束日；维修 DATE 列按日历日处理。
+- 记录计数沿用 `meta.pagination.total`。选择分组时同一次列表 HTTP 响应可增加 `meta.summary: {field, counts: [{value: string | null, count: number}]}`，口径为权限范围内、当前全部筛选后的全量，与分页无关。未选择分组不执行分组查询、不新增网络请求。
+- 分组白名单：members=status/department，repairs=status/result，join-applications=status/provisionStatus，invite-codes=status（派生生效状态），audit-logs=result/actorType。无其他统计指标、统计导出或新的导出权限。
+- `JoinApplicationSummary.approvedAt: string | null` 是既有 PASSED 审核记录最早的服务端 `createdAt`；补记备注不改变它，历史缺失保持 null。原 `lastReviewedAt` 继续表示填写的面试时间，列表分别显示两列。新增通过时间排序/日期筛选不新增列、不伪造历史时间；不改变公开回执与详情披露范围。
+- 报名列表/计数/分组/导出复用参数化 `joinQueryWhere`；通过时间派生式复用已有 `(application_id, created_at)` 索引定位审核记录。维修列表/导出继续共用 `listWhere`，并统一使用 `repairOrderBy`。两个导出保留原列/超限拒绝/权限与审计，不增加地址或统计列；新文本条件值和关键词不进入审计摘要。
+- 管理端维修默认排除草稿保持有效；显式 `status=DRAFT` 或列级 `status:eq:DRAFT` 才选择草稿，其他标记/条件不隐式解除默认限制。
+- 五个管理列表成功/失败均 `private, no-store`。共用客户端查询取消旧请求并丢弃旧结果，保留已有列表；不会悬停预取详情或按输入字符发请求。
+- 页面 URL 仅保留受控排序、日期与枚举条件，不带姓名、QQ、手机号、学号等文本。刷新/回退恢复可分享部分，从第一页重新读取；清除统一恢复查询默认值，列宽通过独立动作恢复。

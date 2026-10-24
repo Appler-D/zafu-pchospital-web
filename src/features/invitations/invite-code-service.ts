@@ -1,3 +1,8 @@
+import { inviteOrderBy } from "@/features/admin/table-order";
+import { INVITE_FILTERABLE, TABLE_GROUPS } from "@/features/admin/table-fields";
+import { checkedFilters, dateFilter, textFilter, numberFilter } from "@/lib/table/filter-value";
+import { checkedGroup, groupSummary } from "@/lib/table/group-summary";
+import { InviteCodeEffectiveStatus as EffectiveStatuses } from "@/types/contracts";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -70,20 +75,54 @@ export class InviteCodeService implements InviteCodeServiceContract {
     const now = new Date();
     const where: Prisma.InviteCodeWhereInput = {
       deletedAt: null,
-      ...effectiveStatusWhere(input.status, now),
+
       OR: buildSearch(input.query),
+      AND: [
+        effectiveStatusWhere(input.status, now),
+        ...checkedFilters(input.filters, INVITE_FILTERABLE).map(
+          (rule): Prisma.InviteCodeWhereInput => {
+            if (rule.field === "status") {
+              if (!(EffectiveStatuses as readonly string[]).includes(rule.value))
+                throw new AppError("VALIDATION_FAILED", "邀请码状态无效");
+              const where = effectiveStatusWhere(rule.value as InviteCodeEffectiveStatus, now);
+              return rule.op === "neq" ? { NOT: where } : where;
+            }
+            return {
+              [rule.field]:
+                rule.field === "displayPrefix"
+                  ? textFilter(rule)
+                  : rule.field === "maxUses" || rule.field === "usedCount"
+                    ? numberFilter(rule)
+                    : dateFilter(rule),
+            };
+          },
+        ),
+      ],
     };
+    const group = checkedGroup(input.groupBy, TABLE_GROUPS["invite-codes"]);
     const [records, total] = await Promise.all([
       getDb().inviteCode.findMany({
         where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        orderBy: inviteOrderBy(input.sort),
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
       }),
       getDb().inviteCode.count({ where }),
     ]);
+    const counts: { value: string; count: number }[] = [];
+    // 派生状态必须与列表使用同一 now/谓词；按需串行计数，不同时占用五条连接。
+    if (group)
+      for (const status of EffectiveStatuses) {
+        counts.push({
+          value: status,
+          count: await getDb().inviteCode.count({
+            where: { AND: [where, effectiveStatusWhere(status, now)] },
+          }),
+        });
+      }
     return {
-      items: records.map((record) => ({ ...toView(record), ...adminFields(record) })),
+      summary: group ? groupSummary(group, counts) : undefined,
+      items: records.map((record) => ({ ...toView(record, now), ...adminFields(record) })),
       pagination: paginationMeta(input, total),
     };
   }
@@ -378,11 +417,11 @@ function validateDateRange(activeFrom: Date | null, expiresAt: Date | null): voi
   }
 }
 
-function toView(record: InviteCode): InviteCodeView {
+function toView(record: InviteCode, now?: Date): InviteCodeView {
   return {
     id: record.id,
     displayPrefix: record.displayPrefix,
-    status: getInviteCodeEffectiveStatus(record),
+    status: getInviteCodeEffectiveStatus(record, now),
     activeFrom: record.activeFrom?.toISOString() ?? null,
     expiresAt: record.expiresAt?.toISOString() ?? null,
     maxUses: record.maxUses,

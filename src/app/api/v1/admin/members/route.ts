@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     );
     return apiSuccess(result.items, requestId, {
       pagination: result.pagination,
+      summary: result.summary,
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

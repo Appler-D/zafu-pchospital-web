@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AdminApiResult } from "@/features/admin/admin-client";
 import { applyOrder, movedManyIds } from "@/lib/list-order";
 import type { PaginationMeta } from "@/types/contracts";
+import type { TableGroupSummary } from "@/types/table";
 
 /**
  * 后台列表的取数状态（M6 第四轮验收：把「上一页 / 下一页」换成邮箱式的连续下翻）。
@@ -26,6 +27,8 @@ export type AdminListController<T> = {
   state: "loading" | "ready" | "error";
   problem: string;
   loadingMore: boolean;
+  refreshing: boolean;
+  summary?: TableGroupSummary;
   /** 重新取第一页（筛选变化、写操作之后调用）。 */
   reload: () => Promise<void>;
   /** 写操作后刷新已加载的页数，保留长列表上下文。 */
@@ -54,7 +57,8 @@ export type AdminListController<T> = {
 };
 
 export function useAdminList<T extends { id: string }>(
-  fetchPage: (page: number) => Promise<AdminApiResult<T[]>>,
+  fetchPage: (page: number, signal?: AbortSignal) => Promise<AdminApiResult<T[]>>,
+  options: { queryKey?: string | null } = {},
 ): AdminListController<T> {
   const [items, setItems] = useState<T[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
@@ -63,6 +67,8 @@ export function useAdminList<T extends { id: string }>(
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [problem, setProblem] = useState("");
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [summary, setSummary] = useState<TableGroupSummary | undefined>();
 
   // 每次渲染都更新引用：fetchPage 闭包捕获了当前筛选条件，取值时要用最新的一份。
   const fetchRef = useRef(fetchPage);
@@ -71,11 +77,14 @@ export function useAdminList<T extends { id: string }>(
   const inFlight = useRef(false);
   const requestDone = useRef<Promise<void>>(Promise.resolve());
   const generation = useRef(0);
+  const controller = useRef<AbortController | null>(null);
 
   const run = useCallback(async (targetPage: number, append: boolean, refreshLoaded = false) => {
     if (inFlight.current) return;
     inFlight.current = true;
     const requestGeneration = generation.current;
+    const active = new AbortController();
+    controller.current = active;
     const fetch = fetchRef.current;
     let completeRequest = () => {};
     requestDone.current = new Promise<void>((resolve) => {
@@ -83,16 +92,17 @@ export function useAdminList<T extends { id: string }>(
     });
     if (append) setLoadingMore(true);
     else setState((current) => (current === "ready" ? "ready" : "loading"));
+    setRefreshing(true);
     setProblem("");
 
     try {
-      let result = await fetch(refreshLoaded ? 1 : targetPage);
+      let result = await fetch(refreshLoaded ? 1 : targetPage, active.signal);
       if (requestGeneration !== generation.current) return;
       if (refreshLoaded && result.ok) {
         result = { ...result, data: [...result.data] };
         const lastPage = Math.min(targetPage, result.pagination?.totalPages || 1);
         for (let nextPage = 2; nextPage <= lastPage; nextPage++) {
-          const next = await fetch(nextPage);
+          const next = await fetch(nextPage, active.signal);
           if (requestGeneration !== generation.current) return;
           if (!next.ok) {
             setProblem(next.message);
@@ -106,18 +116,22 @@ export function useAdminList<T extends { id: string }>(
 
       if (!result.ok) {
         // 追加失败时不要把已有的列表换掉（那会让用户以为数据没了），只报错。
-        if (!append && !refreshLoaded) setState("error");
+        if (!append && !refreshLoaded)
+          setState((current) => (current === "ready" ? current : "error"));
         setProblem(result.message);
         return;
       }
       setItems((current) => (append ? [...current, ...result.data] : result.data));
       setPagination(result.pagination ?? null);
+      setSummary(result.summary);
       setPage(targetPage);
       pageRef.current = targetPage;
       setState("ready");
     } finally {
+      if (controller.current === active) controller.current = null;
       inFlight.current = false;
       if (append) setLoadingMore(false);
+      setRefreshing(false);
       completeRequest();
     }
   }, []);
@@ -148,13 +162,18 @@ export function useAdminList<T extends { id: string }>(
     return previous;
   }, []);
 
+  const invalidate = useCallback(() => {
+    const next = ++generation.current;
+    controller.current?.abort();
+    return next;
+  }, []);
   const reload = useCallback(async () => {
     // 新筛选立即作废旧结果；在途请求结束后只执行最新一次重载，不能静默丢弃。
-    const nextGeneration = ++generation.current;
+    const nextGeneration = invalidate();
     while (inFlight.current) await requestDone.current;
     if (nextGeneration !== generation.current) return;
     await run(1, false);
-  }, [run]);
+  }, [run, invalidate]);
   const refreshLoaded = useCallback(async () => {
     // 删除时可能还有追加页在途；等待完成再刷新，不能被 inFlight 静默丢弃。
     const currentGeneration = generation.current;
@@ -170,6 +189,7 @@ export function useAdminList<T extends { id: string }>(
   }, [page, pagination, run]);
 
   useEffect(() => {
+    if (options.queryKey === null) return;
     // 组件卸载后不要再 setState（例如快速切页）。
     let alive = true;
     void (async () => {
@@ -177,8 +197,9 @@ export function useAdminList<T extends { id: string }>(
     })();
     return () => {
       alive = false;
+      invalidate();
     };
-  }, [reload]);
+  }, [reload, options.queryKey, invalidate]);
 
   return {
     items,
@@ -187,6 +208,8 @@ export function useAdminList<T extends { id: string }>(
     state,
     problem,
     loadingMore,
+    refreshing,
+    summary,
     reload,
     refreshLoaded,
     loadMore,

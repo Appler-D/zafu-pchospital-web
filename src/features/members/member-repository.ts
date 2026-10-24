@@ -1,3 +1,6 @@
+import { checkedGroup, groupSummary } from "@/lib/table/group-summary";
+import { TABLE_GROUPS } from "@/features/admin/table-fields";
+import type { TableListExtras } from "@/types/table";
 import { Prisma } from "@/generated/prisma/client";
 import { approvedRepairSql } from "@/features/analytics/analytics-repository";
 import { memberFilterWhere } from "@/features/members/member-filter";
@@ -73,7 +76,9 @@ type AdminProfileRow = {
 };
 
 export const memberRepository = {
-  async list(input: MemberListInput): Promise<{ rows: MemberListEntry[]; total: number }> {
+  async list(
+    input: MemberListInput,
+  ): Promise<TableListExtras & { rows: MemberListEntry[]; total: number }> {
     const query = input.query?.trim();
     const where: Prisma.MemberProfileWhereInput = {
       deletedAt: null,
@@ -113,7 +118,8 @@ export const memberRepository = {
         : {}),
     };
 
-    const [total, rows] = await Promise.all([
+    const group = checkedGroup(input.groupBy, TABLE_GROUPS.members);
+    const [total, rows, summary] = await Promise.all([
       getDb().memberProfile.count({ where }),
       getDb().memberProfile.findMany({
         where,
@@ -125,11 +131,29 @@ export const memberRepository = {
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
       }),
+      group
+        ? getDb()
+            .memberProfile.groupBy({
+              by: [group as "status" | "department"],
+              where,
+              _count: { _all: true },
+            })
+            .then((rows) =>
+              groupSummary(
+                group,
+                rows.map((row) => ({
+                  value: group === "status" ? row.status : row.department,
+                  count: row._count._all,
+                })),
+              ),
+            )
+        : undefined,
     ]);
 
     const stats = await approvedRepairStats(rows.map((row) => row.id));
     return {
       total,
+      summary,
       rows: rows.map((row) => toEntry(row, stats.get(row.id) ?? { count: 0, minutes: 0 })),
     };
   },

@@ -1,3 +1,6 @@
+import { parseFilters } from "@/lib/api/list-filter";
+import { checkedGroup } from "@/lib/table/group-summary";
+import { REPAIR_FILTERABLE, TABLE_GROUPS } from "@/features/admin/table-fields";
 import { REPAIR_SORTABLE } from "@/features/repairs/repair-sort";
 import { AppError } from "@/lib/api/errors";
 import { sortRules } from "@/lib/api/list-query";
@@ -25,6 +28,8 @@ export function repairListInput(
   return {
     page,
     pageSize,
+    filters: parseFilters(params.getAll("filter"), REPAIR_FILTERABLE),
+    groupBy: checkedGroup(params.get("groupBy"), TABLE_GROUPS.repairs),
     memberId: value(params, "memberId"),
     categoryId: value(params, "categoryId"),
     status: oneOf(

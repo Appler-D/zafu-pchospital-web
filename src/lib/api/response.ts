@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 
 import { toPublicError } from "@/lib/api/errors";
 import type { PaginationMeta } from "@/types/contracts";
+import type { TableGroupSummary } from "@/types/table";
 
 export type ApiSuccess<T> = {
   success: true;
   data: T;
-  meta: { requestId: string; pagination?: PaginationMeta };
+  meta: { requestId: string; pagination?: PaginationMeta; summary?: TableGroupSummary };
 };
 
 export type ApiFailure = {
@@ -18,10 +19,19 @@ export type ApiFailure = {
 export function apiSuccess<T>(
   data: T,
   requestId: string,
-  options: { status?: number; pagination?: PaginationMeta; headers?: Record<string, string> } = {},
+  options: {
+    status?: number;
+    pagination?: PaginationMeta;
+    summary?: TableGroupSummary;
+    headers?: Record<string, string>;
+  } = {},
 ) {
   return NextResponse.json<ApiSuccess<T>>(
-    { success: true, data, meta: { requestId, pagination: options.pagination } },
+    {
+      success: true,
+      data,
+      meta: { requestId, pagination: options.pagination, summary: options.summary },
+    },
     { status: options.status ?? 200, headers: options.headers },
   );
 }

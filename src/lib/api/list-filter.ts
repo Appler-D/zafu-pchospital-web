@@ -62,7 +62,7 @@ export function parseFilters(
     const field = trimmed.slice(0, first);
     const op = trimmed.slice(first + 1, second) as FilterOp;
     const value = trimmed.slice(second + 1);
-    const allowed = filterable[field];
+    const allowed = Object.hasOwn(filterable, field) ? filterable[field] : undefined;
     if (!allowed) throw new AppError("VALIDATION_FAILED", `filter 字段无效：${field}`);
     if (!allowed.includes(op)) {
       throw new AppError("VALIDATION_FAILED", `filter 运算符无效：${field} 不支持 ${op}`);

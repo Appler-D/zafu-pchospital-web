@@ -107,6 +107,9 @@ jobs:
         # 等每条 pnpm 命令都不会再次启用新包等待期。
         run: pnpm install --frozen-lockfile
 
+      - name: 校验表格能力清单
+        run: pnpm table:capabilities
+
       # 依赖漏洞审计：**先只警告，不阻断**。
       # 首次接入就发现 5 个 high / 6 个 moderate（mariadb、mysql2、postcss、deepmerge-ts、uuid），
       # 其中多数只差一个补丁版本 —— 但这些包升级要单独验证，不能让它们把每个 PR 都卡住。

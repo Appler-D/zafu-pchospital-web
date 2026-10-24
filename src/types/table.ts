@@ -1,4 +1,5 @@
 import type { FilterOp } from "@/lib/api/list-filter";
+import type { FilterRule } from "@/lib/api/list-filter";
 import type { ReactNode } from "react";
 
 /**
@@ -22,6 +23,13 @@ export type SortDirection = "asc" | "desc";
 
 /** 一条排序规则。`field` 必须落在该表的可排序白名单里（服务端同样要校验）。 */
 export type SortRule = { field: string; direction: SortDirection };
+
+export type TableListOptions = { sort?: SortRule[]; filters?: FilterRule[]; groupBy?: string };
+export type TableGroupSummary = {
+  field: string;
+  counts: { value: string | null; count: number }[];
+};
+export type TableListExtras = { summary?: TableGroupSummary };
 
 /**
  * 列表查询契约：分页 + 关键字 + 排序。
@@ -134,6 +142,8 @@ export type FieldSpec<T, C = unknown> = {
    * API 字段而改列 id** —— 改了会让使用者已保存的列宽全部失效。两者分开表达。
    */
   sortKey?: string;
+  /** 复合列的排序口径说明，作为列头排序按钮的提示与无障碍名称。 */
+  sortDescription?: string;
   /** 右对齐 + 等宽数字（`admin-table__num`）。默认由 `kind` 推导，可显式覆盖。 */
   numeric?: boolean;
   /** 是否可作为排序字段。默认由 `kind` 推导；`false` 表示这列不参与排序。 */
@@ -192,7 +202,8 @@ export type FieldFilterSpec = {
   input:
     | { kind: "text"; placeholder?: string }
     | { kind: "enum"; options: readonly { value: string; label: string }[] }
-    | { kind: "date" };
+    | { kind: "date" }
+    | { kind: "number" };
 };
 
 /**

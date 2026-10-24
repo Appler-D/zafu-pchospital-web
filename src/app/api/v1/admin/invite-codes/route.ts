@@ -1,6 +1,6 @@
 import { queryOneOf, queryString } from "@/features/admin/admin-http";
 import { inviteCodeService } from "@/features/invitations/invite-code-service";
-import { parsePagination } from "@/lib/api/pagination";
+import { tableQueryInput } from "@/features/admin/table-http";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
@@ -19,13 +19,17 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const result = await inviteCodeService.list(
       {
-        ...parsePagination(params),
+        ...tableQueryInput(params, "invite-codes"),
         status: queryOneOf(params, "status", InviteCodeEffectiveStatus),
         query: queryString(params, "query"),
       },
       actor,
     );
-    return apiSuccess(result.items, requestId, { pagination: result.pagination });
+    return apiSuccess(result.items, requestId, {
+      pagination: result.pagination,
+      summary: result.summary,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (error) {
     return apiFailure(error, requestId);
   }

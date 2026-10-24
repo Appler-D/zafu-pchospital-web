@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
+import { tableCopy } from "@/config/admin-tables";
 
 import { AdminTable } from "@/components/admin/AdminTable";
 import { AdminToast } from "@/components/admin/AdminToast";
@@ -229,6 +231,12 @@ export function SkillAdminPanel() {
               逐列渲染表达不了，因此走 `renderRow` **整行接管**（与邀请码表的「调整策略」
               同一处理）—— `<tr>`、列宽与 `data-label` 规则仍由内核负责，接管的只是
               「这一行里有哪些格子」。 */}
+          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))}>
+            <Button variant="ghost" disabled>
+              {tableCopy.clear}
+            </Button>
+            <span className="admin-note">{tableCopy.dragOnly}</span>
+          </AdminListToolbar>
           <AdminTable
             spec={skillTableSpec}
             items={items}

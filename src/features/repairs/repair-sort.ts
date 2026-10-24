@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 
-import { AppError } from "@/lib/api/errors";
+import { tableOrderBy } from "@/lib/table/order-by";
 import type { SortRule } from "@/types/table";
 
 /**
@@ -19,8 +19,7 @@ import type { SortRule } from "@/types/table";
  *    `ASC` 会把 `NULL` 排在**最前**、`DESC` 排最后。草稿没有维修日期，所以升序时草稿在最上面
  *    —— 这是 MySQL 的既定语义，不额外改写（改成 `NULLS LAST` 需要 `ORDER BY IS NULL`，
  *    会让索引失效）；
- * 3. **导出不复用这里的排序**：`RepairExportInput` 虽然继承了 `RepairListInput`，
- *    但导出服务的 `orderBy` 是固定的（按维修日期倒序），导出顺序不该由界面上的临时排序决定。
+ * 3. 列表与导出共用排序，未指定时保留原默认顺序。
  */
 export const REPAIR_SORTABLE = [
   "repairDate",
@@ -30,6 +29,7 @@ export const REPAIR_SORTABLE = [
   "memberName",
   "categoryName",
   "createdAt",
+  "deviceModel",
 ] as const;
 
 export type RepairSortField = (typeof REPAIR_SORTABLE)[number];
@@ -39,6 +39,7 @@ const REPAIR_SORT_ORDER: Record<
   RepairSortField,
   (direction: SortRule["direction"]) => Prisma.RepairRecordOrderByWithRelationInput
 > = {
+  deviceModel: (direction) => ({ deviceModel: direction }),
   repairDate: (direction) => ({ repairDate: direction }),
   durationMinutes: (direction) => ({ durationMinutes: direction }),
   status: (direction) => ({ status: direction }),
@@ -63,12 +64,5 @@ export const REPAIR_DEFAULT_ORDER_BY: readonly Prisma.RepairRecordOrderByWithRel
 export function repairOrderBy(
   sort?: readonly SortRule[],
 ): Prisma.RepairRecordOrderByWithRelationInput[] {
-  if (!sort || sort.length === 0) return [...REPAIR_DEFAULT_ORDER_BY];
-  const orderBy = sort.map((rule) => {
-    const build = REPAIR_SORT_ORDER[rule.field as RepairSortField];
-    if (!build) throw new AppError("VALIDATION_FAILED", `sort 字段无效：${rule.field}`);
-    return build(rule.direction);
-  });
-  orderBy.push({ id: "desc" });
-  return orderBy;
+  return tableOrderBy(sort, REPAIR_SORT_ORDER, REPAIR_DEFAULT_ORDER_BY, { id: "desc" });
 }

@@ -298,7 +298,14 @@ test("排序控件：传了 onSortChange 时只给白名单内的列渲染按钮
   // 不可排序：技能标签与角色（关联）、维修记录（跨表聚合）、联系方式（脱敏拼接）。
   assert.deepEqual(
     buttons.map((match) => match[1]),
-    [table.realName, table.studentId, table.className, table.status, table.joinedAt],
+    [
+      table.realName,
+      modules.admin.adminCopy.members.department,
+      table.studentId,
+      table.className,
+      table.status,
+      table.joinedAt,
+    ],
   );
 });
 
@@ -611,7 +618,7 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
     onSortChange: () => {},
   });
   const buttons = [
-    ...html.matchAll(/<button type="button" class="admin-th__sort[^"]*">(.*?)<\/button>/g),
+    ...html.matchAll(/<button type="button" class="admin-th__sort[^"]*"[^>]*>(.*?)<\/button>/g),
   ];
   // 可排：维修日期 / 成员 / 分类 / 结果 / 时长 / 状态；不可排：选择列、机型列与操作列。
   assert.deepEqual(
@@ -620,11 +627,13 @@ test("维修表：成员 / 分类按名字排——排序用的是 sortKey（mem
       copy.table.repairDate,
       copy.table.member,
       copy.table.category,
+      copy.table.deviceModel,
       copy.table.result,
       copy.table.duration,
       copy.table.status,
     ],
   );
+  assert.ok(html.includes('title="按创建成员实名排序；此列显示全部参与者"'));
   const head = html.slice(html.indexOf("<thead>"), html.indexOf("</thead>"));
   assert.ok(
     head.includes('aria-sort="ascending"'),

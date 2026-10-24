@@ -25,6 +25,8 @@ export async function GET(request: Request) {
     const filter = repairListInput(params, 1, 1);
     const result = await repairExportService.export(
       {
+        sort: filter.sort,
+        filters: filter.filters,
         memberId: filter.memberId,
         categoryId: filter.categoryId,
         status: filter.status,

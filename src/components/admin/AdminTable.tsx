@@ -199,6 +199,12 @@ export function AdminTable<T, C = unknown>({
                       // `p-0 text-left` 抵消浏览器给 `<button>` 的默认内边距与居中对齐：
                       // 排序控件必须在表头里占与纯文本完全相同的位置（零位移）。
                       className="admin-th__sort p-0 text-left"
+                      title={field.sortDescription}
+                      aria-label={
+                        field.sortDescription
+                          ? `${field.label}：${field.sortDescription}`
+                          : undefined
+                      }
                       onClick={() => onSortChange(cycleSortRule(rules, sortKeyOf(field)))}
                     >
                       {field.label}

@@ -340,5 +340,12 @@ export function useColumnResize({
     [applyDrag, columns, dragging, endDrag, minWidth, nudgeColumn, resetColumn, table, widths],
   );
 
-  return { widths, tableRef, colRefs, boundaries, lineProps, dragging };
+  const reset = useCallback(() => {
+    const container =
+      table?.tHead && window.getComputedStyle(table.tHead).display !== "none"
+        ? table.parentElement?.clientWidth
+        : undefined;
+    commit(container ? fill([...defaults], container) : [...defaults]);
+  }, [commit, defaults, fill, table]);
+  return { widths, tableRef, colRefs, boundaries, lineProps, dragging, reset };
 }

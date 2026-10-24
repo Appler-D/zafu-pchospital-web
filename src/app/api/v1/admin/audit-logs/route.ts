@@ -1,6 +1,6 @@
 import { queryOneOf, queryString } from "@/features/admin/admin-http";
 import { auditLogService } from "@/features/admin/audit-log-service";
-import { parsePagination } from "@/lib/api/pagination";
+import { tableQueryInput } from "@/features/admin/table-http";
 import { apiFailure, apiSuccess } from "@/lib/api/response";
 import { getRequestId } from "@/lib/api/request-id";
 import { authenticateRequest } from "@/lib/auth/request";
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const result = await auditLogService.list(
       {
-        ...parsePagination(params),
+        ...tableQueryInput(params, "audit"),
         action: queryString(params, "action"),
         actorUserId: queryString(params, "actorUserId"),
         targetType: queryString(params, "targetType"),
@@ -34,7 +34,11 @@ export async function GET(request: Request) {
       },
       actor,
     );
-    return apiSuccess(result.items, requestId, { pagination: result.pagination });
+    return apiSuccess(result.items, requestId, {
+      pagination: result.pagination,
+      summary: result.summary,
+      headers: { "Cache-Control": "private, no-store" },
+    });
   } catch (error) {
     return apiFailure(error, requestId);
   }

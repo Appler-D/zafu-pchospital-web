@@ -8,8 +8,8 @@ import { accountProvisionService } from "@/features/accounts/account-provision-s
 import { parseMemberDepartment } from "@/features/members/member-department";
 import { assertNoActiveMemberConflict } from "@/features/recruitment/member-conflicts";
 import { ACCOUNT_NOTIFICATION_KIND } from "@/config/account-notification";
-import type { AccountNotification, JoinApplication, Prisma } from "@/generated/prisma/client";
-import { dateRangeWhere, parseUtcDateFilter } from "@/lib/api/date-filter";
+import type { AccountNotification, JoinApplication } from "@/generated/prisma/client";
+import { joinQueryRows, joinQueryTotal, joinQuerySummary } from "./join-application-query";
 import { AppError } from "@/lib/api/errors";
 import { appendAuditLog } from "@/lib/audit/audit-service";
 import { maskPhone, maskQq } from "@/lib/audit/redaction";
@@ -52,18 +52,14 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       Number.isInteger(input.pageSize) && input.pageSize > 0 && input.pageSize <= 100
         ? input.pageSize
         : 20;
-    const where = joinApplicationListWhere(input);
-    const [records, total] = await Promise.all([
-      getDb().joinApplication.findMany({
-        where,
-        orderBy: { submittedAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      getDb().joinApplication.count({ where }),
+    const [records, total, summary] = await Promise.all([
+      joinQueryRows(input, pageSize, (page - 1) * pageSize),
+      joinQueryTotal(input),
+      joinQuerySummary(input),
     ]);
     const items: JoinApplicationSummary[] = records.map((record) => ({
       ...toView(record),
+      approvedAt: record.approvedAt?.toISOString() ?? null,
       ticketNo: record.ticketNo,
       recruitmentCycle: record.recruitmentCycle,
       realName: record.realName,
@@ -73,6 +69,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
     }));
     return {
       items,
+      summary,
       pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
   }
@@ -524,44 +521,6 @@ function validateSubmission(input: SubmitJoinApplicationInput): {
   };
 }
 
-/**
- * 报名列表的筛选谓词。**导出与列表共用这一份**（与维修导出的 `listWhere` 同一做法），
- * 否则「筛选后导出」会与「界面所见」悄悄分叉。
- *
- * 提交时间是**时刻**（`DATETIME(3)`），因此日期筛选按 `Asia/Shanghai` 自然日解释、
- * 结束日包含全天。原先用 `lte: new Date("2026-09-22")` 会把 9-22 当天 08:00 之后的报名
- * 全部排除，界面上表现为「筛同一天得到 0 条」。
- */
-export function joinApplicationListWhere(
-  input: Omit<JoinApplicationListInput, "page" | "pageSize">,
-): Prisma.JoinApplicationWhereInput {
-  const submitted = parseUtcDateFilter(input.submittedFrom, input.submittedTo, "提交时间");
-  const recruitmentCycle = input.recruitmentCycle?.trim() || undefined;
-  if (recruitmentCycle && recruitmentCycle.length > 32) {
-    throw new AppError("VALIDATION_FAILED", "招募批次不能超过 32 字符");
-  }
-  return {
-    deletedAt: null,
-    recruitmentCycle,
-    status: input.status,
-    provisionStatus: input.provisionStatus,
-    submittedAt: dateRangeWhere(submitted),
-    OR: buildSearch(input.query),
-  };
-}
-
-function buildSearch(query: string | undefined): Prisma.JoinApplicationWhereInput[] | undefined {
-  const value = query?.trim();
-  if (!value) return undefined;
-  const normalizedDigits = value.replace(/\D/g, "");
-  return [
-    { ticketNo: { contains: value } },
-    { realName: { contains: value } },
-    ...(/^\d{5,11}$/.test(normalizedDigits) ? [{ qqNormalized: normalizedDigits }] : []),
-    ...(/^1[3-9]\d{9}$/.test(normalizedDigits) ? [{ phoneNormalized: normalizedDigits }] : []),
-  ];
-}
-
 async function findDuplicate(cycle: string, qq: string, phone: string) {
   return getDb().joinApplication.findFirst({
     where: {
@@ -602,7 +561,12 @@ function toReceipt(record: JoinApplication, duplicate: boolean): JoinReceipt {
   };
 }
 
-function toView(record: JoinApplication): JoinApplicationView {
+function toView(
+  record: Pick<
+    JoinApplication,
+    "id" | "status" | "provisionStatus" | "admittedDepartment" | "lastReviewedAt"
+  >,
+): JoinApplicationView {
   return {
     id: record.id,
     status: record.status as JoinApplicationView["status"],

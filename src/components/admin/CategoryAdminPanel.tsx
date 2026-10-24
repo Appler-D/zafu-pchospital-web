@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { AdminListToolbar } from "@/components/admin/AdminListToolbar";
+import { tableCopy } from "@/config/admin-tables";
 
 import { AdminTable } from "@/components/admin/AdminTable";
 import { AdminToast } from "@/components/admin/AdminToast";
@@ -253,6 +255,12 @@ export function CategoryAdminPanel() {
               也不传 `onSortChange`：列表顺序就是拖动排序维护的那一份，后端没有 `sort`
               参数；开了表头排序就会出现「拖了但顺序不变」的假入口
               （`docs/admin-table-kernel.md` §5.1）。 */}
+          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))}>
+            <Button variant="ghost" disabled>
+              {tableCopy.clear}
+            </Button>
+            <span className="admin-note">{tableCopy.dragOnly}</span>
+          </AdminListToolbar>
           <AdminTable
             spec={categoryTableSpec}
             items={items}
