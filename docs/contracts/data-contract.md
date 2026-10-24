@@ -394,3 +394,14 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 验证码与通知共用 `email_security_counters` 原 `budget:global:day` / `budget:global:minute` HMAC 桶（每日配置，默认 150；分钟 10）。通知不创建验证码用户、目标或伪 IP 桶；预算不足提交下个允许窗口，不退款。任务 → 凭据 → 当前资格 / QQ / 报名 / 建档 → 原预算桶为本轮发送准备锁序，预算内部仍按原键排序；取锁及有界 Serializable 重试后重新取当前时间。发送前每次复核当前凭据；不在 SMTP 期间锁住改密。
 
 业务审计使用既有入口：`account.notification.queued / attempted / retry_scheduled / accepted / failed / uncertain` 为 SYSTEM；`retry_requested` 记录授权管理员及操作时间。摘要只含关联 ID、状态、计数和受控原因，不加完整邮箱、QQ、密码、正文或服务商报文；详情沿用 `join.application.detail.viewed` 访问审计。
+
+## 成员管理导出（issue #232）
+
+成员 CSV / XLSX 导出复用现有成员列表 DTO、筛选谓词、排序与有效维修参与统计，
+无 Schema / Migration。`MemberExportInput` 复用 `MemberListInput` 的条件与排序，
+去掉分页和分组；`MemberExportServiceContract` 通过既有附件结果模型返回文件。
+
+导出同时要求 `member:manage` 与 `data:export`。QQ / 手机号沿用列表脱敏值，邮箱及凭据
+不进入文件；明文读取仍限原详情 / reveal 路径。成功导出必写 `member.exported` 审计，
+不保存搜索词和筛选值，超限拒绝而非截断。列及 HTTP 语义见
+[API 契约](api-v1.md#成员管理导出issue-232)。

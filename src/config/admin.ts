@@ -395,6 +395,16 @@ export const adminCopy = {
     },
     /** 列表顶栏右侧的总数。 */
     count: "共 {count} 名成员",
+    export: {
+      note: `按当前筛选和排序导出全部匹配成员，最多 ${EXPORT_MAX_ROWS} 条。QQ 与手机号保持脱敏，不导出邮箱；每次导出都会写入审计记录。`,
+      columns: {
+        approvedRepairCount: "已通过维修次数",
+        approvedRepairMinutes: "维修总时长（分钟）",
+        qqMasked: "QQ 号（脱敏）",
+        phoneMasked: "手机号（脱敏）",
+        memberProfileId: "成员档案 ID",
+      },
+    },
     batch: {
       selected: "已选择 {count} 名成员",
       /** 未选中时顶栏显示的状态（按钮同时是禁用态，所以这里是陈述而不是提示）。 */

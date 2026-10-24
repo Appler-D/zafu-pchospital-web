@@ -550,6 +550,18 @@ export type MemberListResult = TableListExtras & {
   pagination: PaginationMeta;
 };
 
+/** 成员导出与列表共用筛选和排序，不导出分页、分组或邮箱信息。 */
+export type MemberExportInput = Omit<MemberListInput, "page" | "pageSize" | "groupBy">;
+export type MemberExportResult = RepairExportResult;
+
+export interface MemberExportServiceContract {
+  export(
+    input: MemberExportInput,
+    format: ExportFormat,
+    actor: AuthorizedActor,
+  ): Promise<MemberExportResult>;
+}
+
 /** 成员详情。管理端**唯一**返回 QQ / 手机号明文的位置，读取必须写审计。 */
 export type MemberDetail = MemberListEntry & {
   qq: string | null;

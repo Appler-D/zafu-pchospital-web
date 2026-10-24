@@ -8,7 +8,13 @@ import { memberOrderBy } from "@/features/members/member-sort";
 import { AppError } from "@/lib/api/errors";
 import { getDb } from "@/lib/db/client";
 import { maskEmail, maskPhone, maskQq } from "@/lib/audit/redaction";
-import type { MemberListEntry, MemberListInput, RoleCode } from "@/types/contracts";
+import {
+  EXPORT_MAX_ROWS,
+  type MemberExportInput,
+  type MemberListEntry,
+  type MemberListInput,
+  type RoleCode,
+} from "@/types/contracts";
 
 /**
  * 成员管理端数据访问（M6）。
@@ -79,44 +85,7 @@ export const memberRepository = {
   async list(
     input: MemberListInput,
   ): Promise<TableListExtras & { rows: MemberListEntry[]; total: number }> {
-    const query = input.query?.trim();
-    const where: Prisma.MemberProfileWhereInput = {
-      deletedAt: null,
-      status: input.status,
-      user: {
-        deletedAt: null,
-        roles: input.role ? { some: { revokedAt: null, role: { code: input.role } } } : undefined,
-      },
-      // 列级筛选各自是一条 AND 条件（同一字段的 `gte` + `lte` 因此天然是区间，
-      // 不会被 OR 拆开）。映射与取值校验见 `member-filter.ts`。
-      ...(input.filters && input.filters.length > 0
-        ? { AND: memberFilterWhere(input.filters) }
-        : {}),
-      // 关键字命中的四个「资料字段」与两个「身份字段」必须是**同一个 OR**。
-      // 曾经把身份匹配写在 `user.identities.some` 里与姓名 OR 并列，结果是两者被 AND：
-      // 按姓名搜索永远不命中（因为 QQ/手机号里不含姓名），只有搜数字才有效。
-      ...(query
-        ? {
-            OR: [
-              { realName: { contains: query } },
-              { nickname: { contains: query } },
-              { studentId: { contains: query } },
-              { className: { contains: query } },
-              {
-                user: {
-                  identities: {
-                    some: {
-                      type: { in: ["QQ", "PHONE"] },
-                      deletedAt: null,
-                      identifierNormalized: { contains: query },
-                    },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-    };
+    const where = memberListWhere(input);
 
     const group = checkedGroup(input.groupBy, TABLE_GROUPS.members);
     const [total, rows, summary] = await Promise.all([
@@ -156,6 +125,23 @@ export const memberRepository = {
       summary,
       rows: rows.map((row) => toEntry(row, stats.get(row.id) ?? { count: 0, minutes: 0 })),
     };
+  },
+
+  /** 导出读取全量匹配数据；先判超限，再批量读取维修统计，不逐成员查询。 */
+  async exportRows(input: MemberExportInput): Promise<MemberListEntry[]> {
+    const rows = await getDb().memberProfile.findMany({
+      where: memberListWhere(input),
+      select: adminProfileSelect,
+      orderBy: memberOrderBy(input.sort),
+      take: EXPORT_MAX_ROWS + 1,
+    });
+    if (rows.length > EXPORT_MAX_ROWS)
+      throw new AppError(
+        "EXPORT_ROW_LIMIT_EXCEEDED",
+        `导出行数超过上限 ${EXPORT_MAX_ROWS} 条，请缩小筛选范围后重试`,
+      );
+    const stats = await approvedRepairStats(rows.map((row) => row.id));
+    return rows.map((row) => toEntry(row, stats.get(row.id) ?? { count: 0, minutes: 0 }));
   },
 
   /**
@@ -300,5 +286,45 @@ function toEntry(row: AdminProfileRow, stats: RepairStats): MemberListEntry {
     approvedRepairMinutes: stats.minutes,
     joinedAt: row.joinedAt.toISOString(),
     version: row.version,
+  };
+}
+
+/** 列表、计数、分组与导出共用同一个成员筛选谓词。 */
+function memberListWhere(input: MemberExportInput): Prisma.MemberProfileWhereInput {
+  const query = input.query?.trim();
+  return {
+    deletedAt: null,
+    status: input.status,
+    user: {
+      deletedAt: null,
+      roles: input.role ? { some: { revokedAt: null, role: { code: input.role } } } : undefined,
+    },
+    // 列级筛选各自是一条 AND 条件（同一字段的 `gte` + `lte` 因此天然是区间，
+    // 不会被 OR 拆开）。映射与取值校验见 `member-filter.ts`。
+    ...(input.filters && input.filters.length > 0 ? { AND: memberFilterWhere(input.filters) } : {}),
+    // 关键字命中的四个「资料字段」与两个「身份字段」必须是**同一个 OR**。
+    // 曾经把身份匹配写在 `user.identities.some` 里与姓名 OR 并列，结果是两者被 AND：
+    // 按姓名搜索永远不命中（因为 QQ/手机号里不含姓名），只有搜数字才有效。
+    ...(query
+      ? {
+          OR: [
+            { realName: { contains: query } },
+            { nickname: { contains: query } },
+            { studentId: { contains: query } },
+            { className: { contains: query } },
+            {
+              user: {
+                identities: {
+                  some: {
+                    type: { in: ["QQ", "PHONE"] },
+                    deletedAt: null,
+                    identifierNormalized: { contains: query },
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : {}),
   };
 }

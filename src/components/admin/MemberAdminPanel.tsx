@@ -6,6 +6,7 @@ import { tableCopy } from "@/config/admin-tables";
 
 import { useCallback, useEffect, useState } from "react";
 import { AdminTableQuery } from "@/components/admin/AdminTableQuery";
+import { AdminTableExport } from "@/components/admin/AdminTableExport";
 
 import { AdminBatchTools } from "@/components/admin/AdminBatchTools";
 import { AdminListEnd, useAdminList } from "@/components/admin/useAdminList";
@@ -292,6 +293,8 @@ export function MemberAdminPanel() {
         onResetColumns={resize.reset}
       />
 
+      <p className="admin-note">{copy.export.note}</p>
+
       {state === "loading" ? (
         <p className="admin-status" role="status">
           {adminShared.loading}
@@ -345,6 +348,13 @@ export function MemberAdminPanel() {
               }
             />
             <span className="admin-toolbar__sep" aria-hidden="true" />
+            <AdminTableExport
+              path="/api/v1/admin/members/export"
+              params={() => query.params(1)}
+              disabled={busy || !query.ready || list.refreshing || Boolean(list.problem)}
+              onError={setProblem}
+              onDone={(text) => setToast({ text, tone: "success" })}
+            />
             {/* 列级筛选常驻在工具栏里（与批量动作同一排）：它不因「有没有条件」出现或消失，
                 计数槽位宽度固定，因此数字变化时右边的按钮不会横移。 */}
             <Button onClick={() => setEmailOpen(true)}>{accountEmailCopy.adminTitle}</Button>

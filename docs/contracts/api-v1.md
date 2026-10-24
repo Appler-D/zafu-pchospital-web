@@ -1037,3 +1037,28 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - 管理端维修默认排除草稿保持有效；显式 `status=DRAFT` 或列级 `status:eq:DRAFT` 才选择草稿，其他标记/条件不隐式解除默认限制。
 - 五个管理列表成功/失败均 `private, no-store`。共用客户端查询取消旧请求并丢弃旧结果，保留已有列表；不会悬停预取详情或按输入字符发请求。
 - 页面 URL 仅保留受控排序、日期与枚举条件，不带姓名、QQ、手机号、学号等文本。刷新/回退恢复可分享部分，从第一页重新读取；清除统一恢复查询默认值，列宽通过独立动作恢复。
+
+## 成员管理导出（issue #232）
+
+`GET /api/v1/admin/members/export` 要求同时具备 `member:manage` 与 `data:export`，
+使用既有 Session 与账号门禁。`format=csv|xlsx`（缺省 csv，大小写不敏感），非法格式返回
+400 `EXPORT_FORMAT_INVALID`。其余查询参数与成员列表共用 `memberListInput`：
+`query`、`status`、`role`、`sort`、重复 `filter`，白名单及上海自然日边界不变；
+`page` / `pageSize` / `groupBy` 不影响导出内容。成员排序白名单还包含 `department`。
+
+列表、计数、分组与导出共用 `memberListWhere`，导出与列表均由 `memberOrderBy` 排序；
+没有显式排序时沿用管理员持久化的拖动顺序与稳定 ID 兜底。导出筛选后全部匹配成员，
+不限于已加载页或已勾选项；并发修改时不承诺与先前列表冻结在同一快照。
+
+列顺序：姓名、昵称、部门、技能标签（完整名单）、学号、班级、角色、状态、加入时间、
+已通过维修次数、维修总时长（分钟）、QQ 号（脱敏）、手机号（脱敏）、成员档案 ID。
+维修统计复用列表的有效参与记录口径；加入日期按上海日期输出，空值为空字符串。
+QQ / 手机号沿用列表脱敏结果，不导出邮箱、凭据或内部账号 ID。完整联系方式的读取仍由
+原详情 / 邮箱 reveal 接口负责并审计。XLSX 学号按文本保存前导零，CSV 沿用 BOM、转义与公式防护。
+
+最多 20,000 行，超限返回 409 `EXPORT_ROW_LIMIT_EXCEEDED`，不截断；空结果返回只有表头
+的附件及 `X-Export-Row-Count: 0`，前端提示无匹配结果并不触发下载。
+成功返回附件流，带 `Content-Type`、`Content-Disposition`、`Content-Length`、
+`X-Export-Row-Count` 与 `Cache-Control: private, no-store`。
+每次成功导出写 `member.exported` / `MemberExport` 审计，摘要记录格式、行数和查询结构，
+不记录搜索词或筛选值；审计失败不返回附件。错误沿用统一 API 信封。
