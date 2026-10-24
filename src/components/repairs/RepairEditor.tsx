@@ -76,6 +76,7 @@ function localDraftRecord(input: {
     reviews: [],
     timeline: [],
     canEdit: true,
+    canAttachPhotos: true,
     canReview: false,
     canFlag: false,
     isFavorited: false,

@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 
 import { FavoriteToggle } from "@/components/community/FavoriteToggle";
 import { RepairFlagControls } from "@/components/community/RepairFlagControls";
+import { RepairPhotoAttachments } from "@/components/repairs/RepairPhotoAttachments";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { communityCopy } from "@/config/community";
@@ -155,23 +155,15 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
       </Card>
       <Card className="repair-panel">
         <h2 className="text-display-3 font-bold">维修照片</h2>
-        {record.photos.length ? (
-          <div className="gap-s-4 grid md:grid-cols-2">
-            {record.photos.map((p, i) => (
-              <Image
-                key={p.id}
-                className="rounded-mid border-line h-64 w-full border object-cover"
-                src={p.contentUrl}
-                alt={`维修照片 ${i + 1}`}
-                width={720}
-                height={480}
-                unoptimized
-              />
-            ))}
-          </div>
-        ) : (
-          <p>暂无照片。</p>
-        )}
+        <RepairPhotoAttachments
+          recordId={record.id}
+          photos={record.photos}
+          limits={record.photoLimits}
+          canAttach={record.canAttachPhotos}
+          onChange={(photos) =>
+            setRecord((current) => (current ? { ...current, photos } : current))
+          }
+        />
       </Card>
       <Card className="repair-panel">
         <h2 className="text-display-3 font-bold">审核信息</h2>

@@ -74,6 +74,11 @@ export const repairCopy = {
     title: "维修记录详情",
     label: "Repair Detail",
     lead: "查看维修信息、审核历史与记录时间线。",
+    /** 审核前补照片（issue #226）：仅记录本人、提交后未审核时可见。 */
+    pendingPhotoHint:
+      "审核前可补充照片（最多 {count} 张，单张不超过 {size}）；审核通过后不可修改。",
+    pendingPhotoEmpty: "暂无照片，可在审核前补充。",
+    photoEmpty: "暂无照片。",
   },
   empty: "暂时没有符合条件的维修记录。",
 } as const;

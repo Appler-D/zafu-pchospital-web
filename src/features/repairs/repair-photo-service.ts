@@ -2,9 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendAuditLog } from "@/lib/audit/audit-service";
 import { AppError } from "@/lib/api/errors";
 import { formatBytes } from "@/config/repairs";
+import type { Prisma } from "@/generated/prisma/client";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
-import { assertCanEditRepair, assertCanReadRepair } from "./repair-policy";
+import { assertCanAttachRepairPhotos, assertCanReadRepair } from "./repair-policy";
 import { repairRepository } from "./repair-repository";
 import { timeline } from "./repair-service";
 import {
@@ -22,10 +23,10 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
       actor: AuthorizedActor,
     ): Promise<RepairPhotoView[]> {
       const record = await repairRepository.getById(recordId);
-      assertCanEditRepair(actor, record);
+      assertCanAttachRepairPhotos(actor, record);
       const limits = uploadLimits();
       if (!files.length) throw new AppError("VALIDATION_FAILED", "请选择照片");
-      if (record.photos.length + files.length > limits.maxFiles)
+      if (files.length > limits.maxFiles)
         throw new AppError(
           "REPAIR_PHOTO_LIMIT_EXCEEDED",
           `每条记录最多上传 ${limits.maxFiles} 张照片`,
@@ -57,6 +58,14 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
         for (const item of prepared) stored.push({ ...(await storage.put(item)), item });
         const now = new Date();
         const created = await inSerializableTransaction(async (tx) => {
+          // 审核与补附件可能并发：锁记录行后复核状态和实际照片数，避免审核通过后照片才落库。
+          const locked = await lockRecordForPhotoMutation(tx, recordId);
+          assertCanAttachRepairPhotos(actor, locked);
+          if (locked.photos.length + stored.length > limits.maxFiles)
+            throw new AppError(
+              "REPAIR_PHOTO_LIMIT_EXCEEDED",
+              `每条记录最多上传 ${limits.maxFiles} 张照片`,
+            );
           const rows = [];
           for (const [index, entry] of stored.entries()) {
             rows.push(
@@ -69,7 +78,7 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
                   mimeType: entry.item.mimeType,
                   sizeBytes: entry.item.bytes.byteLength,
                   sha256Digest: entry.item.digest,
-                  sortOrder: record.photos.length + index,
+                  sortOrder: locked.photos.length + index,
                   uploadedByUserId: actor.userId!,
                   createdAt: now,
                 },
@@ -96,10 +105,14 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
 
     async remove(recordId: string, photoId: string, actor: AuthorizedActor): Promise<void> {
       const record = await repairRepository.getById(recordId);
-      assertCanEditRepair(actor, record);
+      assertCanAttachRepairPhotos(actor, record);
       const photo = record.photos.find((item) => item.id === photoId);
       if (!photo) throw new AppError("REPAIR_NOT_FOUND", "照片不存在");
       await inSerializableTransaction(async (tx) => {
+        const locked = await lockRecordForPhotoMutation(tx, recordId);
+        assertCanAttachRepairPhotos(actor, locked);
+        if (!locked.photos.some((item) => item.id === photoId))
+          throw new AppError("REPAIR_NOT_FOUND", "照片不存在");
         await tx.repairPhoto.update({ where: { id: photoId }, data: { deletedAt: new Date() } });
         await timeline(tx, recordId, actor.userId, "PHOTO_REMOVED", { photoId }, new Date());
       });
@@ -114,18 +127,27 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
       if (!Number.isInteger(sortOrder) || sortOrder < 0)
         throw new AppError("VALIDATION_FAILED", "照片顺序无效");
       const record = await repairRepository.getById(recordId);
-      assertCanEditRepair(actor, record);
+      assertCanAttachRepairPhotos(actor, record);
       const current = record.photos.find((item) => item.id === photoId);
       if (!current) throw new AppError("REPAIR_NOT_FOUND", "照片不存在");
       const target = record.photos[sortOrder];
       if (!target) throw new AppError("VALIDATION_FAILED", "照片顺序无效");
       const updated = await inSerializableTransaction(async (tx) => {
-        if (target.id !== photoId)
+        const locked = await lockRecordForPhotoMutation(tx, recordId);
+        assertCanAttachRepairPhotos(actor, locked);
+        const lockedCurrent = locked.photos.find((item) => item.id === photoId);
+        const lockedTarget = locked.photos[sortOrder];
+        if (!lockedCurrent || !lockedTarget)
+          throw new AppError("VALIDATION_FAILED", "照片顺序无效");
+        if (lockedTarget.id !== photoId)
           await tx.repairPhoto.update({
-            where: { id: target.id },
-            data: { sortOrder: current.sortOrder },
+            where: { id: lockedTarget.id },
+            data: { sortOrder: lockedCurrent.sortOrder },
           });
-        const photo = await tx.repairPhoto.update({ where: { id: photoId }, data: { sortOrder } });
+        const photo = await tx.repairPhoto.update({
+          where: { id: photoId },
+          data: { sortOrder },
+        });
         await timeline(
           tx,
           recordId,
@@ -170,6 +192,28 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
 }
 
 export const repairPhotoService = createRepairPhotoService(localRepairPhotoStorage);
+
+/**
+ * 锁定维修记录并按真实状态复核照片权限（issue #226）。
+ *
+ * 审核服务更新同一行状态；这里先 `FOR UPDATE` 再读，保证「审核已通过」不会被并发补传绕过。
+ */
+async function lockRecordForPhotoMutation(tx: Prisma.TransactionClient, recordId: string) {
+  await tx.$queryRaw`SELECT id FROM repair_records WHERE id = ${recordId} FOR UPDATE`;
+  const record = await tx.repairRecord.findFirst({
+    where: { id: recordId, deletedAt: null },
+    include: {
+      memberProfile: true,
+      photos: {
+        where: { deletedAt: null },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, sortOrder: true },
+      },
+    },
+  });
+  if (!record) throw new AppError("REPAIR_NOT_FOUND", "维修记录不存在");
+  return record;
+}
 
 export function detectImageType(
   bytes: Uint8Array,

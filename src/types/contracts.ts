@@ -659,6 +659,13 @@ export type RepairDetailView = RepairView & {
   reviews: RepairReviewView[];
   timeline: RepairTimelineView[];
   canEdit: boolean;
+  /**
+   * 记录本人能否在详情页补照片（issue #226）。
+   *
+   * `DRAFT` / `REJECTED` 与「本人未审核的 `PENDING`」为 true；审核通过后 false。
+   * 仅控制界面入口，服务端仍会在照片写接口内复核。
+   */
+  canAttachPhotos: boolean;
   canReview: boolean;
   canFlag: boolean;
   isFavorited: boolean;
