@@ -154,13 +154,21 @@ async function prepareFixtures(): Promise<void> {
       data: { id: userId, status: "ACTIVE", displayName, createdAt: now, updatedAt: now },
     });
   }
-  for (const [profileId, userId, realName] of [
-    [STAFF_PROFILE_ID, STAFF_USER_ID, `${PREFIX} 接待员`],
-    [ADMIN_PROFILE_ID, ADMIN_USER_ID, `${PREFIX} 管理员`],
-    [OTHER_PROFILE_ID, OTHER_USER_ID, `${PREFIX} 其他成员`],
+  for (const [profileId, userId, realName, nickname] of [
+    [STAFF_PROFILE_ID, STAFF_USER_ID, `${PREFIX} 接待员`, null],
+    [ADMIN_PROFILE_ID, ADMIN_USER_ID, `${PREFIX} 管理员`, `${PREFIX} 管理员昵称`],
+    [OTHER_PROFILE_ID, OTHER_USER_ID, `${PREFIX} 其他成员`, null],
   ] as const) {
     await db.memberProfile.create({
-      data: { id: profileId, userId, realName, status: "ACTIVE", joinedAt: now, createdAt: now },
+      data: {
+        id: profileId,
+        userId,
+        realName,
+        nickname,
+        status: "ACTIVE",
+        joinedAt: now,
+        createdAt: now,
+      },
     });
   }
   for (const [id, title] of [
@@ -262,6 +270,7 @@ before(async () => {
   if (!enabled) return;
   await prepareFixtures();
   await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
+  await repairActivityStaffService.markAttendance(ACTIVITY_ID, adminActor);
   await repairActivityStaffService.markAttendance(OTHER_ACTIVITY_ID, staffActor);
 });
 
@@ -345,6 +354,33 @@ dbTest("继续填写预填：仅接待者本人，完整电话 + 分类映射 + 
   assert.equal(prefill.deviceModel, "SERVE221 测试机型");
   assert.ok(prefill.categoryId, "故障类型映射到启用中的分类");
   assert.equal(prefill.activityTitle, ACTIVITY_TITLE);
+  assert.deepEqual(
+    prefill.participantOptions.map((option) => option.id).sort(),
+    [STAFF_PROFILE_ID, ADMIN_PROFILE_ID].sort(),
+    "参与人候选只含本场出勤成员",
+  );
+  const staffOption = prefill.participantOptions.find((option) => option.id === STAFF_PROFILE_ID);
+  assert.deepEqual(staffOption, {
+    id: STAFF_PROFILE_ID,
+    name: `${PREFIX} 接待员`,
+    realName: `${PREFIX} 接待员`,
+    nickname: null,
+  });
+  const adminOption = prefill.participantOptions.find((option) => option.id === ADMIN_PROFILE_ID);
+  assert.equal(adminOption?.name, `${PREFIX} 管理员昵称`, "展示名优先取昵称");
+  assert.equal(adminOption?.realName, `${PREFIX} 管理员`);
+  assert.equal(adminOption?.nickname, `${PREFIX} 管理员昵称`);
+  assert.equal(
+    prefill.participantOptions.some((option) => option.id === OTHER_PROFILE_ID),
+    false,
+    "未出勤成员不得进入候选",
+  );
+  assert.deepEqual(Object.keys(adminOption ?? {}).sort(), ["id", "name", "nickname", "realName"]);
+  assert.equal(
+    /phone|qq|studentId|className/i.test(JSON.stringify(prefill.participantOptions)),
+    false,
+    "候选不携带联系方式或学籍字段",
+  );
   const activity = await db.repairActivity.findUniqueOrThrow({ where: { id: ACTIVITY_ID } });
   assert.match(prefill.repairDate, /^\d{4}-\d{2}-\d{2}$/);
   assert.ok(activity.activityAt);
@@ -697,8 +733,14 @@ dbTest("路由接线：预填 GET 与提交 POST（同源 / 幂等头 / 201）",
     categoryId: string | null;
     name: string;
     deviceModel: string | null;
+    participantOptions: Array<{ id: string; name: string; realName: string | null }>;
   };
   assert.equal(prefillData.phone, registration.phone);
+  assert.deepEqual(
+    prefillData.participantOptions.map((option) => option.id).sort(),
+    [STAFF_PROFILE_ID, ADMIN_PROFILE_ID].sort(),
+    "路由信封同样只下发出勤候选",
+  );
 
   const body = fieldsFromPrefill(prefillData);
   const crossOrigin = await callRoute(

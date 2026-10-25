@@ -620,7 +620,13 @@ export type RepairCategoryAdminView = RepairCategoryView & {
   usedByRepairCount: number;
   createdAt: string;
 };
-export type RepairMemberOption = { id: string; name: string };
+export type RepairMemberOption = {
+  id: string;
+  name: string;
+  /** 姓名 / 昵称（issue #238）：仅活动接待预填候选下发，用于姓名与昵称双关键字匹配。 */
+  realName?: string | null;
+  nickname?: string | null;
+};
 /** 参与维修的成员（issue #114）：`id` 为成员档案 id，创建人恒排第一。 */
 export type RepairParticipantView = { id: string; name: string };
 export type RepairTimelineView = {

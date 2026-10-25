@@ -671,8 +671,15 @@ DELETE     /api/v1/admin/comments/:id
   都返回 409 `ACTIVITY_SERVE_PENDING`（消息含客户姓名）；撤销或提交后解除。
 - **继续填写**：
   - `GET /api/v1/member/repair-activities/:id/registrations/:registrationId/prefill`：仅接待者本人可读，
-    返回客户姓名、完整电话、机型、故障类型映射后的启用分类与活动日；完整电话读取写
-    `repair_activity.registration_phone.viewed` 审计。管理员不代填（403）。
+    返回客户姓名、完整电话、机型、故障类型映射后的启用分类、活动日，以及本场出勤的
+    参与人候选；完整电话读取写 `repair_activity.registration_phone.viewed` 审计。管理员不代填（403）。
+  - 预填响应自 issue #238 起增加 `participantOptions: { id, name, realName, nickname }[]`：
+    仅包含**本场出勤且 `ACTIVE`、未软删除**的成员，按 `checkedInAt` 升序；`name` 走展示名回退链
+    `nickname → realName → displayName → "成员"`，`realName` / `nickname` 供编辑器按姓名或昵称
+    做大小写不敏感的包含匹配。不含 QQ、手机号、学号等身份字段；非活动接待的维修表单仍使用
+    `GET /api/v1/repair-members` 的全局活跃成员候选。
+    影响范围：`ServePrefillView` / `getServePrefill` → 接待建单的
+    `RepairParticipantPicker`；集成测试 `repair-serve-record.test.ts` 钉住候选范围与字段。
   - `POST /api/v1/member/repair-activities/:id/registrations/:registrationId/record`：接待者本人提交，
     `Idempotency-Key` 必填；在一个事务里创建 **`PENDING`** 维修记录（与成员自助提交同一套校验，
     含机型必填）、写参与人 / `SUBMITTED` 时间线 / 审计，并回写 `repair_record_id`。
