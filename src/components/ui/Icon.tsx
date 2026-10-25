@@ -54,9 +54,28 @@ export type IconName =
   | "message"
   | "shield"
   | "sliders"
-  | "calendar";
+  | "calendar"
+  | "hardDrive"
+  | "plug"
+  | "package";
 
 const shapes: Record<IconName, ReactNode> = {
+  hardDrive: (
+    <>
+      <path d="M5 4h14l3 9v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z" />
+      <path d="M2 13h20M6 17h.01M10 17h.01" />
+    </>
+  ),
+  plug: (
+    <>
+      <path d="M8 3v5M16 3v5M6 8h12v5a6 6 0 0 1-12 0zM12 19v3" />
+    </>
+  ),
+  package: (
+    <>
+      <path d="m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5" />
+    </>
+  ),
   menu: (
     <>
       <line x1="4" x2="20" y1="12" y2="12" />
@@ -265,9 +284,7 @@ const shapes: Record<IconName, ReactNode> = {
       <circle cx="7.5" cy="7.5" r="1" />
     </>
   ),
-  message: (
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-  ),
+  message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   shield: (
     <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
   ),

@@ -4,7 +4,7 @@
  * 改动 `detail.consent.clauses` 之后**必须**同时改这个值：报名记录里存的是当时那一版，
  * 用于日后核对「这位同学同意的是哪一版文本」。格式为日期，便于排序与人工核对。
  */
-export const repairActivityConsentVersion = "2026-10-10";
+export const repairActivityConsentVersion = "2026-10-25";
 
 /**
  * 公开维修活动页文案（M1）。
@@ -26,10 +26,17 @@ export const repairActivitiesPage = {
   nextPage: "下一页",
   paginationLabel: "分页",
   detail: {
+    backToList: "维修活动",
+    breadcrumb: "活动详情",
+    category: "校园志愿服务",
     signupTitle: "报名参加",
-    lookupTitle: "查询 / 修改故障类型",
+    lookupTitle: "已经报名？",
+    lookupHint: "使用报名手机号查询或修改故障类型。",
+    lookupPhonePlaceholder: "报名时使用的手机号",
     name: "姓名",
+    namePlaceholder: "用于现场核对",
     phone: "手机号",
+    phonePlaceholder: "用于查询报名",
     issueType: "故障类型",
     /** 机型选填（issue #68）：填了成员到场前能先了解设备。 */
     deviceModel: "机型（选填）",
@@ -37,7 +44,25 @@ export const repairActivitiesPage = {
     submitSignup: "提交报名",
     submitLookup: "查询报名",
     submitUpdate: "保存故障类型",
-    signupSuccess: "报名成功。请按时到场，并保管好手机号以便查询。",
+    signupSuccess: "请按时到场，可使用报名手机号查询记录。到场前请做好以下准备。",
+    precautionsTitle: "到场前，记好这四件事",
+    signupSuccessTitle: "报名成功",
+    acknowledgePrecautions: "我已知晓",
+    signupConsentHint: "提交前会展示完整须知，征得同意后才会报名。",
+    fullPrecautions: "完整报名须知与免责声明 · {count} 条",
+    serviceTitle: "服务说明",
+    serviceHint: "社团提供免费志愿服务。能否修复、维修时长以现场检查为准；特殊拆机需求请提前咨询。",
+    cancelHint: "如需取消报名，请联系 QQ 群管理员。",
+    preparation: [
+      { icon: "hardDrive", title: "备份数据", description: "送修前自行备份重要文件。" },
+      { icon: "plug", title: "携带电源", description: "请带上设备的电源适配器。" },
+      { icon: "package", title: "自备耗材", description: "清灰、换硅脂请自备导热膏等耗材。" },
+      {
+        icon: "message",
+        title: "特殊机型先咨询",
+        description: "部分 Dell 游戏本请先联系 QQ 群管理员。",
+      },
+    ],
     lookupSuccess: "已找到报名记录，可修改故障类型。",
     updateSuccess: "故障类型已更新。",
     signupDisabled: "当前不可报名",
@@ -64,6 +89,8 @@ export const repairActivitiesPage = {
         "配件与耗材按现场情况与客户协商解决，社团不承诺提供配件。",
         "如需清灰、更换硅脂等使用耗材的服务，请自备硅脂（导热膏）等耗材；未自备将无法完成该类服务。",
         "送修时请携带电源适配器；部分故障需通电才能现场检查。",
+        "部分 Dell 游戏本机型因主板倒装设计，换硅脂需要拆卸整块主板，对比其他机型所需时间较长，难度稍大，风险较高，由于不同场次活动的参加成员不同，我们可能不进行接待，请先 QQ 群内联系管理员确认。",
+        "如果想要取消报名请联系 QQ 群内管理员，把名额留给需要的人。",
         "报名信息只用于本场活动的组织与到场核对，不对外公开。",
       ],
       agree: "我已阅读并同意",

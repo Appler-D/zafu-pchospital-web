@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
@@ -8,6 +9,8 @@ import {
 } from "@/components/repair-activities/activity-format";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
+import { RepairActivityPrecautions } from "@/components/repair-activities/RepairActivityPrecautions";
+import { RepairActivityPreparation } from "@/components/repair-activities/RepairActivityPreparation";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -25,6 +28,8 @@ import type {
   RepairActivityPublicView,
 } from "@/features/repair-activities/repair-activity-service";
 
+import styles from "./RepairActivityDetail.module.css";
+
 type Props = { activityId: string };
 
 export function RepairActivityDetail({ activityId }: Props) {
@@ -37,9 +42,10 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
+  const [signupSucceeded, setSignupSucceeded] = useState(false);
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
-  /** 已填好、等报名者在免责声明弹层里点「我已阅读并同意」的那一份表单内容。 */
+  /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
   const [pendingSignup, setPendingSignup] = useState<{
     name: string;
     phone: string;
@@ -203,10 +209,11 @@ export function RepairActivityDetail({ activityId }: Props) {
         setPendingSignup(null);
         setProblem(json.error?.message ?? "报名失败");
       } else {
-        setPendingSignup(null);
-        setNotice({ text: copy.signupSuccess, tone: "success" });
+        setSignupSucceeded(true);
         signupFormRef.current?.reset();
-        await load();
+        // 刷新独立收尾，不延长 POST 的忙碌周期，也不解除下一次操作的禁用。
+        // 报名已成功：刷新失败时保留当前页面与成功提醒。
+        void load(true);
       }
     } catch {
       setPendingSignup(null);
@@ -214,6 +221,13 @@ export function RepairActivityDetail({ activityId }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function closeSignupDialog() {
+    // 名额用完后提交按钮会禁用，以表单作为可用的焦点归还位置。
+    signupFormRef.current?.focus({ preventScroll: true });
+    setPendingSignup(null);
+    setSignupSucceeded(false);
   }
 
   async function doLookup(event: FormEvent<HTMLFormElement>) {
@@ -293,6 +307,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   if (state === "missing") {
     return (
       <Card className="repair-panel">
+        <h1 className="admin-panel__title" id="repair-activity-detail-title">
+          {copy.breadcrumb}
+        </h1>
         <p className="muted" role="alert">
           {problem || "活动已结束"}
         </p>
@@ -306,9 +323,14 @@ export function RepairActivityDetail({ activityId }: Props) {
   }
   if (state === "error" || !activity) {
     return (
-      <p className="admin-status admin-status--error" role="alert">
-        {problem}
-      </p>
+      <div className={styles.detail}>
+        <h1 className="admin-panel__title" id="repair-activity-detail-title">
+          {copy.breadcrumb}
+        </h1>
+        <p className="admin-status admin-status--error" role="alert">
+          {problem}
+        </p>
+      </div>
     );
   }
 
@@ -328,17 +350,23 @@ export function RepairActivityDetail({ activityId }: Props) {
           : copy.signupDisabled;
 
   return (
-    <div className="activity-detail">
-      <Card className="repair-panel">
+    <div className={`activity-detail ${styles.detail}`}>
+      <nav className={styles.breadcrumb} aria-label={copy.breadcrumb}>
+        <Link href="/repair-activities">{copy.backToList}</Link>
+        <span aria-hidden="true"> / </span>
+        <span>{copy.breadcrumb}</span>
+      </nav>
+      <header className={styles.overview}>
+        <p className={styles.category}>{copy.category}</p>
         <div className="activity-card__head">
-          <h2 className="activity-card__title" id="repair-activity-detail-title">
+          <h1 className={styles.title} id="repair-activity-detail-title">
             {activity.title}
-          </h2>
+          </h1>
           <span className={repairActivityStatusBadgeClass(activity.status)}>
             {repairActivityStatusLabels[activity.status as RepairActivityStatus]}
           </span>
         </div>
-        <dl className="activity-card__meta">
+        <dl className={styles.meta}>
           <div>
             <dt>{repairActivitiesPage.activityAt}</dt>
             <dd>{formatShanghaiDateTime(activity.activityAt)}</dd>
@@ -351,7 +379,7 @@ export function RepairActivityDetail({ activityId }: Props) {
             </dd>
           </div>
           <div>
-            <dt>名额</dt>
+            <dt className="sr-only">名额</dt>
             <dd>
               {repairActivitiesPage.capacity
                 .replace("{registered}", String(activity.registeredCount))
@@ -361,7 +389,7 @@ export function RepairActivityDetail({ activityId }: Props) {
             </dd>
           </div>
         </dl>
-      </Card>
+      </header>
 
       <AdminToast toast={notice} onDismiss={() => setNotice(null)} />
       {problem ? (
@@ -370,211 +398,253 @@ export function RepairActivityDetail({ activityId }: Props) {
         </p>
       ) : null}
 
-      <div className="activity-detail__actions">
-        <Card className="repair-panel activity-detail__signup">
-          <h2 className="admin-panel__title">{copy.signupTitle}</h2>
-          {!open ? <p className="muted">{signupDisabledReason}</p> : null}
-          {/* 开始时间解析不出（契约保证不会）时整块不渲染，避免数字块出现 Infinity。 */}
-          {activity.status === "UPCOMING" && Number.isFinite(countdownMs) ? (
-            <div className="activity-countdown" role="timer">
-              <p className="activity-countdown__label">{copy.countdownPrefix}</p>
-              {waitingForOpen ? (
-                <p className="activity-countdown__opening">{copy.countdownOpeningSoon}</p>
-              ) : (
-                <>
-                  <div className="activity-countdown__blocks">
-                    {countdown.days > 0 ? (
-                      <>
-                        <span className="activity-countdown__block">
-                          <span className="activity-countdown__num">
-                            {String(countdown.days).padStart(2, "0")}
-                          </span>
-                          <span className="activity-countdown__unit">
-                            {copy.countdownUnits.days}
-                          </span>
-                        </span>
-                        <span className="activity-countdown__colon" aria-hidden="true">
-                          :
-                        </span>
-                      </>
-                    ) : null}
-                    <span className="activity-countdown__block">
-                      <span className="activity-countdown__num">{countdown.hours}</span>
-                      <span className="activity-countdown__unit">{copy.countdownUnits.hours}</span>
-                    </span>
-                    <span className="activity-countdown__colon" aria-hidden="true">
-                      :
-                    </span>
-                    <span className="activity-countdown__block">
-                      <span className="activity-countdown__num">{countdown.minutes}</span>
-                      <span className="activity-countdown__unit">
-                        {copy.countdownUnits.minutes}
-                      </span>
-                    </span>
-                    <span className="activity-countdown__colon" aria-hidden="true">
-                      :
-                    </span>
-                    <span className="activity-countdown__block">
-                      <span className="activity-countdown__num">{countdown.seconds}</span>
-                      <span className="activity-countdown__unit">
-                        {copy.countdownUnits.seconds}
-                      </span>
-                    </span>
-                  </div>
-                  <p className="activity-countdown__hint">{countdownOpens}</p>
-                </>
-              )}
-            </div>
-          ) : null}
-          {openedNotice ? (
-            <p className="sr-only" role="status">
-              {copy.countdownOpened}
-            </p>
-          ) : null}
-          <form
-            className="admin-form"
-            ref={signupFormRef}
-            onSubmit={requestSignup}
-            aria-label={copy.signupTitle}
+      <div className={styles.layout}>
+        <section aria-labelledby="repair-activity-precautions-title">
+          <h2 className="admin-panel__title" id="repair-activity-precautions-title">
+            {copy.precautionsTitle}
+          </h2>
+          <RepairActivityPreparation />
+          <div className={styles.service}>
+            <h3>{copy.serviceTitle}</h3>
+            <p>{copy.serviceHint}</p>
+          </div>
+          <details className={styles.fullPrecautions}>
+            <summary>
+              {copy.fullPrecautions.replace("{count}", String(copy.consent.clauses.length))}
+            </summary>
+            <RepairActivityPrecautions />
+          </details>
+        </section>
+
+        <div className={styles.actions}>
+          <section
+            className="activity-detail__signup"
+            aria-labelledby="repair-activity-signup-title"
           >
-            <div className="admin-form__grid">
-              <label className="field">
-                <span className="field__label">{copy.name}</span>
-                <input
-                  className="field__input"
-                  name="name"
-                  required
-                  minLength={2}
-                  maxLength={40}
+            <h2 className="admin-panel__title" id="repair-activity-signup-title">
+              {copy.signupTitle}
+            </h2>
+            {!open ? <p className="muted">{signupDisabledReason}</p> : null}
+            {/* 开始时间解析不出（契约保证不会）时整块不渲染，避免数字块出现 Infinity。 */}
+            {activity.status === "UPCOMING" && Number.isFinite(countdownMs) ? (
+              <div className="activity-countdown" role="timer">
+                <p className="activity-countdown__label">{copy.countdownPrefix}</p>
+                {waitingForOpen ? (
+                  <p className="activity-countdown__opening">{copy.countdownOpeningSoon}</p>
+                ) : (
+                  <>
+                    <div className="activity-countdown__blocks">
+                      {countdown.days > 0 ? (
+                        <>
+                          <span className="activity-countdown__block">
+                            <span className="activity-countdown__num">
+                              {String(countdown.days).padStart(2, "0")}
+                            </span>
+                            <span className="activity-countdown__unit">
+                              {copy.countdownUnits.days}
+                            </span>
+                          </span>
+                          <span className="activity-countdown__colon" aria-hidden="true">
+                            :
+                          </span>
+                        </>
+                      ) : null}
+                      <span className="activity-countdown__block">
+                        <span className="activity-countdown__num">{countdown.hours}</span>
+                        <span className="activity-countdown__unit">
+                          {copy.countdownUnits.hours}
+                        </span>
+                      </span>
+                      <span className="activity-countdown__colon" aria-hidden="true">
+                        :
+                      </span>
+                      <span className="activity-countdown__block">
+                        <span className="activity-countdown__num">{countdown.minutes}</span>
+                        <span className="activity-countdown__unit">
+                          {copy.countdownUnits.minutes}
+                        </span>
+                      </span>
+                      <span className="activity-countdown__colon" aria-hidden="true">
+                        :
+                      </span>
+                      <span className="activity-countdown__block">
+                        <span className="activity-countdown__num">{countdown.seconds}</span>
+                        <span className="activity-countdown__unit">
+                          {copy.countdownUnits.seconds}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="activity-countdown__hint">{countdownOpens}</p>
+                  </>
+                )}
+              </div>
+            ) : null}
+            {openedNotice ? (
+              <p className="sr-only" role="status">
+                {copy.countdownOpened}
+              </p>
+            ) : null}
+            <form
+              className="admin-form"
+              ref={signupFormRef}
+              tabIndex={-1}
+              onSubmit={requestSignup}
+              aria-label={copy.signupTitle}
+            >
+              <div className={styles.fields}>
+                <label className="field">
+                  <span className="field__label">
+                    {copy.name} <span className={styles.required}>*</span>
+                  </span>
+                  <input
+                    className="field__input"
+                    name="name"
+                    placeholder={copy.namePlaceholder}
+                    required
+                    minLength={2}
+                    maxLength={40}
+                    disabled={!open || busy}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">
+                    {copy.phone} <span className={styles.required}>*</span>
+                  </span>
+                  <input
+                    className="field__input"
+                    name="phone"
+                    placeholder={copy.phonePlaceholder}
+                    required
+                    inputMode="numeric"
+                    maxLength={11}
+                    disabled={!open || busy}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">
+                    {copy.issueType} <span className={styles.required}>*</span>
+                  </span>
+                  <select
+                    className="field__input"
+                    name="issueType"
+                    required
+                    disabled={!open || busy}
+                    defaultValue="CLEAN_PASTE"
+                  >
+                    {repairActivitiesPage.issueTypes.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="field__label">{copy.deviceModel}</span>
+                  <input
+                    className="field__input"
+                    name="deviceModel"
+                    maxLength={REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH}
+                    placeholder={copy.deviceModelPlaceholder}
+                    disabled={!open || busy}
+                  />
+                </label>
+              </div>
+              <p className="muted">{copy.signupConsentHint}</p>
+              <div className="signup__actions">
+                <Button
+                  type="submit"
+                  variant="solid"
+                  trailingIcon="arrowRight"
                   disabled={!open || busy}
-                />
-              </label>
+                >
+                  {busy ? "提交中…" : copy.submitSignup}
+                </Button>
+              </div>
+            </form>
+          </section>
+
+          <section className={styles.lookup} aria-labelledby="repair-activity-lookup-title">
+            <h2 className="admin-panel__title" id="repair-activity-lookup-title">
+              {copy.lookupTitle}
+            </h2>
+            <p className="muted">{copy.lookupHint}</p>
+            <form className="admin-form" onSubmit={doLookup} aria-label={copy.lookupTitle}>
               <label className="field">
                 <span className="field__label">{copy.phone}</span>
                 <input
                   className="field__input"
                   name="phone"
+                  placeholder={copy.lookupPhonePlaceholder}
                   required
                   inputMode="numeric"
                   maxLength={11}
-                  disabled={!open || busy}
+                  disabled={busy}
                 />
               </label>
-              <label className="field">
-                <span className="field__label">{copy.issueType}</span>
-                <select
-                  className="field__input"
-                  name="issueType"
-                  required
-                  disabled={!open || busy}
-                  defaultValue="CLEAN_PASTE"
-                >
-                  {repairActivitiesPage.issueTypes.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span className="field__label">{copy.deviceModel}</span>
-                <input
-                  className="field__input"
-                  name="deviceModel"
-                  maxLength={REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH}
-                  placeholder={copy.deviceModelPlaceholder}
-                  disabled={!open || busy}
-                />
-              </label>
-            </div>
-            <div className="signup__actions">
-              <Button type="submit" variant="solid" disabled={!open || busy}>
-                {busy ? "提交中…" : copy.submitSignup}
-              </Button>
-            </div>
-          </form>
-        </Card>
-
-        <Card className="repair-panel activity-detail__lookup">
-          <h2 className="admin-panel__title">{copy.lookupTitle}</h2>
-          <form className="admin-form" onSubmit={doLookup} aria-label={copy.lookupTitle}>
-            <label className="field">
-              <span className="field__label">{copy.phone}</span>
-              <input
-                className="field__input"
-                name="phone"
-                required
-                inputMode="numeric"
-                maxLength={11}
-                disabled={busy}
-              />
-            </label>
-            <div className="signup__actions">
-              <Button type="submit" variant="ghost" disabled={busy}>
-                {copy.submitLookup}
-              </Button>
-            </div>
-          </form>
-
-          {lookup ? (
-            <form className="admin-form mt-s-4" onSubmit={updateType}>
-              <p className="muted">
-                {lookup.name} · {lookup.phoneMasked} · 当前：
-                {repairActivityIssueTypeLabels[lookup.issueType as RepairActivityIssueType] ??
-                  lookup.issueType}
-                {" · "}
-                {lookup.status}
-              </p>
-              {lookup.status !== "REGISTERED" ? (
-                <p className="muted">{copy.notEditable}</p>
-              ) : (
-                <>
-                  <label className="field">
-                    <span className="field__label">{copy.issueType}</span>
-                    <select
-                      className="field__input"
-                      name="issueType"
-                      required
-                      disabled={busy}
-                      defaultValue={lookup.issueType}
-                    >
-                      {repairActivitiesPage.issueTypes.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="signup__actions">
-                    <Button type="submit" variant="solid" disabled={busy}>
-                      {copy.submitUpdate}
-                    </Button>
-                  </div>
-                </>
-              )}
+              <div className="signup__actions">
+                <Button type="submit" disabled={busy}>
+                  {copy.submitLookup}
+                </Button>
+              </div>
             </form>
-          ) : null}
-        </Card>
+
+            {lookup ? (
+              <form className="admin-form mt-s-4" onSubmit={updateType}>
+                <p className="muted">
+                  {lookup.name} · {lookup.phoneMasked} · 当前：
+                  {repairActivityIssueTypeLabels[lookup.issueType as RepairActivityIssueType] ??
+                    lookup.issueType}
+                  {" · "}
+                  {lookup.status}
+                </p>
+                {lookup.status !== "REGISTERED" ? (
+                  <p className="muted">{copy.notEditable}</p>
+                ) : (
+                  <>
+                    <label className="field">
+                      <span className="field__label">{copy.issueType}</span>
+                      <select
+                        className="field__input"
+                        name="issueType"
+                        required
+                        disabled={busy}
+                        defaultValue={lookup.issueType}
+                      >
+                        {repairActivitiesPage.issueTypes.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="signup__actions">
+                      <Button type="submit" variant="solid" disabled={busy}>
+                        {copy.submitUpdate}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </form>
+            ) : null}
+            <p className="muted">{copy.cancelHint}</p>
+          </section>
+        </div>
       </div>
 
-      {/* 免责声明（issue #62 前端3）：点「提交报名」先弹这里，不同意就提交不了。
-          服务端同样强制，绕开这个弹层直接打接口会拿到 400。 */}
+      {/* 提交前确认完整声明，成功后在同一弹层展示到场准备（issue #208）。
+          服务端同样强制同意，绕开确认直接打接口会拿到 400。 */}
       {pendingSignup ? (
         <ConfirmDialog
-          title={copy.consent.title}
-          confirmLabel={copy.consent.agree}
-          cancelLabel={copy.consent.cancel}
-          busy={busy}
-          onConfirm={() => void confirmSignup()}
-          onClose={() => setPendingSignup(null)}
+          title={signupSucceeded ? copy.signupSuccessTitle : copy.consent.title}
+          confirmLabel={signupSucceeded ? copy.acknowledgePrecautions : copy.consent.agree}
+          cancelLabel={signupSucceeded ? undefined : copy.consent.cancel}
+          busy={!signupSucceeded && busy}
+          onConfirm={signupSucceeded ? closeSignupDialog : () => void confirmSignup()}
+          onClose={closeSignupDialog}
         >
           <div className="admin-section">
-            <p className="muted">{copy.consent.subtitle}</p>
-            <ol className="admin-plain-list">
-              {copy.consent.clauses.map((clause) => (
-                <li key={clause}>{clause}</li>
-              ))}
-            </ol>
+            <p className="muted">{signupSucceeded ? copy.signupSuccess : copy.consent.subtitle}</p>
+            {signupSucceeded ? <RepairActivityPreparation /> : <RepairActivityPrecautions />}
           </div>
         </ConfirmDialog>
       ) : null}

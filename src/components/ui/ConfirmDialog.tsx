@@ -26,7 +26,8 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel: string;
-  cancelLabel: string;
+  /** 仅需知晓的提醒可省略取消按钮；关闭与 Esc 仍可用。 */
+  cancelLabel?: string;
   /** 标题栏关闭按钮文案（默认可访问名「关闭」） */
   closeLabel?: string;
   onConfirm: () => void;
@@ -51,6 +52,12 @@ export function ConfirmDialog({
       returnFocusRef.current?.focus();
     };
   }, []);
+
+  useEffect(() => {
+    // 同一窗口从确认切换为成功提醒时，从正文开头阅读并重新宣告标题。
+    windowRef.current?.focus();
+    windowRef.current?.querySelector(".admin-modal__body")?.scrollTo(0, 0);
+  }, [title]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -111,9 +118,11 @@ export function ConfirmDialog({
         <div className="admin-modal__body">
           {children}
           <div className="signup__actions">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
-              {cancelLabel}
-            </Button>
+            {cancelLabel ? (
+              <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+                {cancelLabel}
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant={confirmVariant}
