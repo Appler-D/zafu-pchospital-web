@@ -1,26 +1,70 @@
-# 浙江农林大学电脑医院 · 社团综合服务平台
+<p align="center">
+  <a href="https://pczafu.cn/"><img src="public/icon.png" width="88" height="88" alt="浙江农林大学电脑医院标志" /></a>
+</p>
 
-电脑医院社团的官方网站与内部服务平台，用于介绍社团、招募新成员、组织维修活动和管理维修记录。
+<h1 align="center">浙江农林大学电脑医院</h1>
 
-目前已实现：
+<p align="center">官方网站与社团综合服务平台 · 让志愿维修、活动组织与社团协作更有序</p>
 
-- **公开网站**：社团介绍、新社员登记、维修活动查询与报名、技术文档。
-- **成员区**：QQ 号与密码登录、邀请码注册、个人资料、维修记录与照片、活动接待与签到、案例库、评论与收藏、通知、个人统计与排行榜。
-- **管理后台**：成员与角色管理、招募审核、维修审核、活动管理、故障分类与技能标签、邀请码、评论管理、数据导出、审计日志和公开展示设置。
+<p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
 
-页面支持浅色与深色模式，并适配桌面和手机。
+<p align="center">
+  <a href="https://github.com/ZAFU-PCHospital/zafu-pchospital-web/actions/workflows/ci.yml"><img src="https://github.com/ZAFU-PCHospital/zafu-pchospital-web/actions/workflows/ci.yml/badge.svg" alt="CI 校验与构建" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-15-171717?logo=nextdotjs&amp;logoColor=white" alt="Next.js 15" /></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-149eca?logo=react&amp;logoColor=white" alt="React 19" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&amp;logoColor=white" alt="TypeScript strict" /></a>
+  <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-4-0f7490?logo=tailwindcss&amp;logoColor=white" alt="Tailwind CSS 4" /></a>
+  <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-7.10-2d3748?logo=prisma&amp;logoColor=white" alt="Prisma 7.10" /></a>
+  <a href="https://greatsql.cn/"><img src="https://img.shields.io/badge/GreatSQL-8.0.32--27-276b60" alt="GreatSQL 8.0.32-27" /></a>
+  <a href="https://pnpm.io/"><img src="https://img.shields.io/badge/pnpm-12.4.1-f69220?logo=pnpm&amp;logoColor=white" alt="pnpm 12.4.1" /></a>
+</p>
 
-## 技术栈
+<p align="center">
+  <a href="https://pczafu.cn/">访问官网</a> ·
+  <a href="https://pczafu.cn/repair-activities">维修活动</a> ·
+  <a href="https://pczafu.cn/docs">技术文档</a> ·
+  <a href="#快速开始">本地运行</a> ·
+  <a href="CONTRIBUTING.md">参与贡献</a>
+</p>
 
-Next.js 15（App Router）· React 19 · TypeScript · Tailwind CSS v4 · GreatSQL 8.0.32-27 · Prisma 7.10.0（MariaDB adapter）。使用 pnpm 管理依赖。
+## 平台提供什么
 
-## 本地运行
+电脑医院面向全校师生提供志愿计算机技术服务。本项目将公开介绍、活动报名与社团内部工作放在同一平台中，支持桌面、手机及浅色 / 深色模式。
 
-准备 Node.js（`^20.19 || ^22.12 || >=24.0`）和 pnpm。pnpm 版本由 `package.json` 固定；未启用 Corepack 时先运行 `corepack enable`。
+| 使用者 | 主要功能                                                                                                                |
+| ------ | ----------------------------------------------------------------------------------------------------------------------- |
+| 公众   | 社团介绍、新社员登记、维修活动查询与报名、技术文档                                                                      |
+| 成员   | QQ 账号登录、邀请码注册、邮箱管理与密码找回；维修记录和照片、活动出勤与接待、案例与收藏、通知、个人统计与排行榜         |
+| 管理员 | 成员与角色管理、招募 / 维修审核、活动与客户签到管理、分类与技能标签、邀请码、列表筛选排序、数据导出、审计与公开展示设置 |
 
-Windows 开发环境采用 **WSL 中的 Docker Engine + GreatSQL 容器**（支持 WSL 3.x，发行版使用 WSL 2 架构），应用与 pnpm 在 Windows 运行。先按 [Windows 数据库环境配置](docs/database-windows.md) 安装 WSL 与 Docker、配置国内下载源，再在项目根目录执行：
+## 界面预览
+
+<a href="https://pczafu.cn/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="shots/01-home-desktop-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="shots/01-home-desktop-normal.png" />
+    <img src="shots/01-home-desktop-normal.png" alt="电脑医院官网首页预览" width="1440" />
+  </picture>
+</a>
+
+预览沿用仓库现有图库，线上界面可能已更新；点击图片可访问官网。
+
+## 快速开始
+
+### 环境要求
+
+- **Node.js**：`^20.19 || ^22.12 || >=24.0`，以 [package.json](package.json) 的 `engines` 为准。
+- **pnpm**：使用 `packageManager` 固定的版本；Corepack 的安装与启用见[环境配置](docs/database-windows.md)。
+- **GreatSQL 8.0.32-27**：Windows 推荐 WSL 中的 Docker Engine；其他环境见[数据库指南](docs/database.md)。
+
+### Windows 本地运行
+
+先按 [Windows 环境指南](docs/database-windows.md) 准备 WSL 与 Docker，再在 **Windows PowerShell** 执行：
 
 ```powershell
+git clone https://github.com/ZAFU-PCHospital/zafu-pchospital-web.git
+cd zafu-pchospital-web
+corepack enable
 .\tools\setup-greatsql-wsl.ps1
 pnpm install
 pnpm db:migrate:deploy
@@ -29,61 +73,57 @@ pnpm db:health
 pnpm dev
 ```
 
-脚本使用独立的 `compose.greatsql.wsl.yml` 启动数据库、创建独立测试库，并在缺失时生成 `.env`（含随机密钥）和 `.env.test.local`；已有文件会保留。服务器使用的 `compose.greatsql.yml` 保持原样。重启 Windows 后运行 `.\tools\start-greatsql-wsl.ps1`。安装、测试库使用与排错见 [详细配置文档](docs/database-windows.md)。
+打开 <http://localhost:3000>。配置脚本会在文件缺失时生成本地 `.env` 与独立测试库配置，保留已有文件；执行数据库命令前，确认当前 `DATABASE_URL` 指向本地目标库。
 
-打开 <http://localhost:3000>。已有 GreatSQL 实例或在 Linux 开发时，按 [数据库指南](docs/database.md) 配置 `DATABASE_URL`、密钥和数据库即可。
+已有 GreatSQL 或使用 Linux / macOS 时，先按[数据库指南](docs/database.md)配置数据库与 `.env`，再从 `pnpm install` 开始执行。
 
-Seed 会初始化角色、故障分类和技能标签，不会创建默认账号。成员账号由管理员发放或通过邀请码注册；全新数据库的首个管理员需由维护者初始化。数据库配置与排错见 [数据库指南](docs/database.md)。
+**首次使用请留意：**
 
-## 主要入口
+- Seed 只初始化角色、故障分类与技能标签，**不创建默认登录账号**；全新本地库的首个管理员由维护者协助初始化。
+- 重启 Windows 后，先运行 `.\tools\start-greatsql-wsl.ps1` 恢复数据库环境。
+- `pnpm dev` 不需要 mdBook，但不会生成技术文档正文。查看本地 `/handbook/` 或执行完整 `pnpm build` 时，需要 mdBook；详见 [AGENTS.md](AGENTS.md) 第 7 节。
 
-| 路径                  | 用途                                                       |
-| --------------------- | ---------------------------------------------------------- |
-| `/`、`/about`         | 首页与社团介绍                                             |
-| `/repair-activities`  | 维修活动查询与报名                                         |
-| `/join`               | 新社员登记                                                 |
-| `/docs`、`/handbook/` | 技术文档目录与正文                                         |
-| `/login`              | 成员登录，可切换邀请码注册                                 |
-| `/member`             | 成员工作台，包含维修、活动、案例、通知、统计与个人资料入口 |
+<details>
+<summary>常用命令</summary>
 
-## 常用命令
+| 命令              | 用途                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `pnpm dev`        | 本地开发                                                                                         |
+| `pnpm test`       | 单元与契约测试；默认跳过数据库集成测试                                                           |
+| `pnpm lint`       | ESLint 与官网 / 文档站调色板一致性检查                                                           |
+| `pnpm build`      | 完整构建，包含 mdBook 技术文档                                                                   |
+| `pnpm docs:build` | 单独生成技术文档                                                                                 |
+| `pnpm build:site` | 只编译官网，用于快速自检；不用于部署                                                             |
+| `pnpm test:db`    | 仅连接独立 `_test` 库，串行运行集成测试；先阅读[切库步骤](docs/database-windows.md#4-独立测试库) |
 
-| 命令              | 用途                                                       |
-| ----------------- | ---------------------------------------------------------- |
-| `pnpm dev`        | 本地开发                                                   |
-| `pnpm lint`       | ESLint 与主题调色板校验                                    |
-| `pnpm test`       | 单元与契约测试                                             |
-| `pnpm test:db`    | GreatSQL 集成测试，必须连接库名以 `_test` 结尾的独立测试库 |
-| `pnpm build`      | 完整生产构建，包含技术文档                                 |
-| `pnpm start`      | 启动已构建的生产服务                                       |
-| `pnpm docs:build` | 单独构建技术文档                                           |
-| `pnpm build:site` | 跳过文档构建，仅用于官网快速自检                           |
+</details>
 
-技术文档来自独立的 [ZAFU-PCHospital-Doc](https://github.com/ZAFU-PCHospital/ZAFU-PCHospital-Doc) 仓库，由 mdBook 生成。完整构建需要安装 mdBook，缺少文档源码时会自动克隆到 `.docs-source/`。只运行 `pnpm dev` 不会生成文档正文；本地查看 `/handbook/` 前需执行 `pnpm docs:build`。配置细节见 [工程手册第 7 节](AGENTS.md#7-站内文档构建 handbook)。
+## 第一次贡献
 
-## 部署
+文档、文案、界面和明确的小问题都欢迎贡献。推荐从一个范围清楚的 Issue 开始：
 
-生产环境使用 [`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh) 部署：先在本地构建产物，再上传到服务器做原子替换。生产服务器内存很小，不在服务器上执行构建。
+**确认问题 → Fork / 建分支 → 本地修改 → 按影响验证 → 提交 PR**
 
-```bash
-bash tools/deploy/deploy-prod.sh                 # 部署 upstream/main 当前指向的提交（缺省）
-bash tools/deploy/deploy-prod.sh --sha <提交>    # 部署指定提交（须已合并到远端 main）
-bash tools/deploy/deploy-prod.sh --rollback      # 秒级回退到上一版产物
-```
+[新人贡献指南](CONTRIBUTING.md)包含完整操作、目录说明、测试库用法与 PR 检查清单。纯文档改动只检查格式、链接与规则一致性；涉及交互、接口或数据时补对应验证，完整工程检查与 CI 协调，避免重复运行。
 
-脚本覆盖完整流程：环境预检 → 服务器侦察 → 变更评估（新迁移与环境变量变化会停下确认）→ 本地构建打包（独立 worktree，不影响当前工作区）→ 备份数据库 → 上传并校验产物 → 更新代码与依赖 → 停机执行迁移 → 原子替换并启动服务 → 冒烟验证。「开始部署」与「即将停机」两处需要人工确认；中途失败不自动回滚，会按中断阶段打印恢复指引，修复后重跑即可。
+## 文档导航
 
-运行脚本需要：对生产服务器的 SSH 访问（`--key <私钥>` 或环境变量 `DEPLOY_SSH_KEY`），本机安装 Node.js、pnpm 与 mdBook。全部参数与各阶段闸门见脚本头部注释（`bash tools/deploy/deploy-prod.sh --help`）。
+| 想了解什么                           | 从这里开始                                                                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| 项目环境、命令、验证、CI             | [工程手册 AGENTS.md](AGENTS.md)                                                                                 |
+| 页面布局、主题与组件复用             | [设计系统](docs/design-system.md)                                                                               |
+| 目录职责与 Service / Repository 边界 | [项目架构](docs/architecture.md)                                                                                |
+| 本地数据库、迁移与测试隔离           | [数据库指南](docs/database.md) · [Windows 环境](docs/database-windows.md)                                       |
+| API、数据与跨模块约定                | [公共契约](docs/contracts/)                                                                                     |
+| 分支、提交与 PR 协作                 | [Git 工作流](docs/git-workflow.md)                                                                              |
+| 面向师生的维修技术资料               | [在线技术文档](https://pczafu.cn/docs) · [文档源码仓库](https://github.com/ZAFU-PCHospital/ZAFU-PCHospital-Doc) |
 
-生产运行需要 Node.js 服务端与 GreatSQL；上传照片的存储目录需要持久化。
+## 部署与维护
 
-## 参与开发
+发布由获授权的维护者使用 [deploy skill](.agents/skills/zafu-pchospital-deploy/SKILL.md) 和唯一入口 [`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh)执行：本地完整构建、备份、上传、原子切换与冒烟验证。生产运行需要 Node.js 服务端、GreatSQL 和持久化照片存储。
 
-从最新 `main` 创建工作分支，通过 Pull Request 提交改动。提交前运行 `pnpm lint`、`pnpm test` 和 `pnpm build`；涉及数据库时还需验证迁移并在独立测试库运行集成测试
+参数与恢复方式见部署手册，通知配置见[部署结果通知](tools/deploy/NOTIFICATIONS.md)。
 
-- [设计系统](docs/design-system.md)：页面样式与公共组件
-- [项目架构](docs/architecture.md)：目录职责与代码组织
-- [数据库指南](docs/database.md)与[数据 / API 契约](docs/contracts/)：数据开发与运行规范
-- [第二期需求](docs/第二期需求分析文档.md)与[模块开发计划](docs/phase2-development.md)：业务范围和模块划分
-- [协作流程](docs/git-workflow.md)：分支、提交与 PR 规范
-- [工程手册](AGENTS.md)：环境、验证、文档构建与 CI 的详细说明，也是 AI Agent 的项目规则
+## 问题与建议
+
+请先搜索[已有 Issue](https://github.com/ZAFU-PCHospital/zafu-pchospital-web/issues)。反馈问题时附上复现步骤、预期与实际表现；截图和日志请去除账号凭据及个人资料。
