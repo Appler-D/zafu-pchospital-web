@@ -23,6 +23,7 @@
 #   P10 总结与回滚指引
 #
 # 用法（在任意 git 检出内执行）：
+#   生产主机地址不进本仓库：先 export DEPLOY_HOST=<user@host>，或每条命令带 --host。
 #   bash tools/deploy/deploy-prod.sh                     # 部署 upstream/main 当前指向
 #   bash tools/deploy/deploy-prod.sh --sha <提交>        # 部署指定提交（须已合并到远端 main）
 #   bash tools/deploy/deploy-prod.sh --rollback          # 只用 .next.old 秒级回滚产物
@@ -30,7 +31,7 @@
 #
 # 关键参数（均有等价的 DEPLOY_* 环境变量）：
 #   --sha <sha>            目标提交；缺省 upstream/main，其次 origin/main
-#   --host <user@host>     生产服务器（缺省 root@47.116.132.37）
+#   --host <user@host>     生产服务器（必填，缺省取 DEPLOY_HOST；可用 ~/.ssh/config 别名）
 #   --key <path>           SSH 私钥（缺省 $DEPLOY_SSH_KEY；都没有则用 ssh 默认配置）
 #   --base <url>           冒烟验证地址（缺省 https://pczafu.cn）
 #   --build-dir <dir>      本地构建目录（缺省 仓库同级 .zafu-deploy-build）
@@ -97,7 +98,7 @@ usage() { awk 'NR>1 && /^# ={20,}$/{n++; if(n==2) exit} NR>1{print}' "$0" | sed 
 # 参数解析
 # ---------------------------------------------------------------------------
 SHA_INPUT=""
-SSH_HOST="${DEPLOY_HOST:-root@47.116.132.37}"
+SSH_HOST="${DEPLOY_HOST:-}"
 SSH_KEY="${DEPLOY_SSH_KEY:-}"
 ASSUME_YES=0; FORCE_REBUILD=0; ALLOW_REDEPLOY=0; DO_ROLLBACK=0
 BUILD_DIR_OPT=""; DOCS_DIR_OPT="${DOCS_SOURCE_DIR:-}"; LOG_FILE_OPT="${DEPLOY_LOG:-}"
@@ -124,6 +125,10 @@ while [ $# -gt 0 ]; do
     *) usage; die "未知参数：$1" ;;
   esac
 done
+
+# 主机地址不硬编码：缺省目标会让任何一次误跑都打在线上，所以必须先显式给出。
+[ -n "$SSH_HOST" ] ||
+  die "未指定生产服务器：用 --host <user@host> 或 DEPLOY_HOST 环境变量指定（向管理员获取，主机地址不写进公开仓库）"
 
 # ---------------------------------------------------------------------------
 # 生产环境常量（与 skill 0 节一致；密钥一律不进本脚本）
