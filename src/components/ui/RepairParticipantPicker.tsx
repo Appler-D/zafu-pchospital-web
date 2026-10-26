@@ -4,15 +4,20 @@ import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { repairEditorCopy as copy, repairFieldLimits } from "@/config/repairs";
+import { matchesRepairMemberKeyword } from "@/features/repairs/repair-member-search";
 import { cn } from "@/lib/utils";
 import type { RepairMemberOption } from "@/types/contracts";
 
-/** 成员编辑器与后台共用；已选区高度固定，增删人员不挤动下方表单。 */
+/**
+ * 成员编辑器与后台共用；已选区高度固定，增删人员不挤动下方表单。
+ * 活动接待建单传 `scope="attendance"`：候选仅本场出勤成员，姓名/昵称均可搜索。
+ */
 export function RepairParticipantPicker({
   creatorId,
   participants,
   options,
   disabled = false,
+  scope = "all",
   onAdd,
   onRemove,
 }: {
@@ -20,6 +25,7 @@ export function RepairParticipantPicker({
   participants: readonly RepairMemberOption[];
   options: readonly RepairMemberOption[];
   disabled?: boolean;
+  scope?: "all" | "attendance";
   onAdd: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
@@ -34,9 +40,24 @@ export function RepairParticipantPicker({
   );
   const full = participants.length >= repairFieldLimits.participantMaxCount;
   const unavailable = disabled || full || addable.length === 0;
-  const keyword = query.trim().toLocaleLowerCase();
-  const matches = addable.filter((member) => member.name.toLocaleLowerCase().includes(keyword));
-  const expanded = open && !unavailable && keyword.length > 0;
+  const attendanceScope = scope === "attendance";
+  const labels = attendanceScope
+    ? {
+        add: copy.participantsAttendanceAddLabel,
+        placeholder: copy.participantsAttendancePlaceholder,
+        noMatches: copy.participantsAttendanceNoMatches,
+        noOptions: copy.participantsAttendanceNoOptions,
+        hint: copy.participantsAttendanceHint,
+      }
+    : {
+        add: copy.participantsAddLabel,
+        placeholder: copy.participantsAddPlaceholder,
+        noMatches: copy.participantsNoMatches,
+        noOptions: copy.participantsNoOptions,
+        hint: copy.participantsHint,
+      };
+  const matches = addable.filter((member) => matchesRepairMemberKeyword(member, query));
+  const expanded = open && !unavailable && query.trim().length > 0;
   const activeMember = matches[activeIndex];
 
   function selectMember(member: RepairMemberOption) {
@@ -126,10 +147,10 @@ export function RepairParticipantPicker({
             full
               ? copy.participantsLimit
               : addable.length === 0
-                ? copy.participantsNoOptions
-                : copy.participantsAddPlaceholder
+                ? labels.noOptions
+                : labels.placeholder
           }
-          aria-label={copy.participantsAddLabel}
+          aria-label={labels.add}
           aria-describedby={`${id}-hint`}
           aria-autocomplete="list"
           aria-expanded={expanded}
@@ -151,7 +172,7 @@ export function RepairParticipantPicker({
               event.stopPropagation();
               setOpen(false);
             } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              if (!keyword || matches.length === 0) return;
+              if (!query.trim() || matches.length === 0) return;
               event.preventDefault();
               setOpen(true);
               moveActive(
@@ -174,14 +195,9 @@ export function RepairParticipantPicker({
             <p className="repair-participants__results" role="status">
               {matches.length
                 ? copy.participantsMatches.replace("{count}", String(matches.length))
-                : copy.participantsNoMatches}
+                : labels.noMatches}
             </p>
-            <ul
-              ref={menuRef}
-              id={`${id}-options`}
-              role="listbox"
-              aria-label={copy.participantsAddLabel}
-            >
+            <ul ref={menuRef} id={`${id}-options`} role="listbox" aria-label={labels.add}>
               {matches.map((member, index) => (
                 <li key={member.id} role="presentation">
                   <button
@@ -207,7 +223,7 @@ export function RepairParticipantPicker({
         ) : null}
       </div>
       <span className="field__hint" id={`${id}-hint`}>
-        {copy.participantsHint}
+        {labels.hint}
       </span>
     </div>
   );

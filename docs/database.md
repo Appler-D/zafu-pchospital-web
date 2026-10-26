@@ -1,7 +1,7 @@
 # Database
 
 > 本文件是 Phase 2 数据库运行、Migration 与发布流程的事实来源。数据语义见
-> `docs/contracts/data-contract.md`，M0 验收记录见 `docs/M0-交付报告.md`。
+> `docs/contracts/data-contract.md`；历史验收记录通过 Git 历史查阅，入口见 [文档目录](README.md)。
 
 ## 1. 固定基线
 

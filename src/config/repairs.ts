@@ -125,6 +125,13 @@ export const repairEditorCopy = {
   participantsMatches: "找到 {count} 位成员，选择即可添加",
   participantsNoMatches: "未找到匹配成员，请尝试其他姓名",
   participantsNoOptions: "暂无可添加的成员",
+  /** 活动接待（issue #238）：候选只来自本场出勤成员，姓名/昵称均可搜索。 */
+  participantsAttendanceAddLabel: "输入姓名或昵称添加本场出勤成员",
+  participantsAttendancePlaceholder: "输入姓名或昵称，选择本场出勤成员…",
+  participantsAttendanceNoMatches: "本场出勤成员中没有匹配的人，请检查姓名或昵称",
+  participantsAttendanceNoOptions: "暂无可添加的本场出勤成员",
+  participantsAttendanceHint:
+    "创建人固定保留；只能添加本场已出勤成员，姓名或昵称均可搜索。维修时长对全部参与者生效。",
   participantsRemove: "移除",
   participantsRemoveLabel: "移除参与成员 {name}",
   participantsCount: "已选 {count} / {limit} 人",

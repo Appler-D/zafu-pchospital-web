@@ -14,9 +14,9 @@
 
 ## 0. 项目一句话
 
-浙江农林大学电脑医院官网与社团综合服务平台。第一阶段官网框架保持稳定，当前进入
-**Phase 2 模块化开发**；M0 已建立 GreatSQL 与公共契约，M1 在此基础上实现数据库 Session、
-QQ 身份登录、首次改密、成员账号发放与核心管理 API。
+浙江农林大学电脑医院官网与社团综合服务平台。公开官网与账号、招募、维修、活动、统计和
+管理后台按领域协作，复用 GreatSQL、数据库 Session、公共契约与权限审计机制。
+现行文档入口见 [docs/README.md](docs/README.md)。
 
 ### 0.1 文档职责与规则级别
 
@@ -96,15 +96,16 @@ QQ 身份登录、首次改密、成员账号发放与核心管理 API。
 
 **关于业务范围（重要）：**
 
-Phase 2 按 M0–M7 分模块实施，状态和依赖见 `docs/phase2-development.md`。当前任务没有明确要求时：
+模块职责见 `docs/architecture.md`，数据与接口约定见 `docs/contracts/`。当前任务没有明确要求时：
 
-- ❌ 不要提前实现其他里程碑的完整业务页面或状态机
+- ❌ 不要提前实现未经确认的业务页面或状态机
 - ❌ 不要让页面组件或 Route Handler 直接查询 Prisma；必须经过 Feature Service / Repository
 - ❌ 不要把 QQ、手机号、学号作为 User 本体、主键或跨领域外键
 - ❌ 不要绕过统一 API 信封、错误码、权限与审计入口
 - ❌ 不要改写已经提交或执行过的 Migration；修复必须新增前向 Migration
 
-业务规则以 `docs/第二期需求分析文档.md` 和当前模块任务书为准。只完成当前模块要求，
+业务规则以现行公共契约、负责人确认的需求和当前模块任务书为准；
+`docs/第二期需求分析文档.md` 仅供原始设计背景参考。只完成当前模块要求，
 不要为了「考虑未来」提前实现不存在的业务。
 
 公共组件 API 可为当前任务调整，先查调用方并说明兼容 / 迁移方案；依赖按第 1 节处理。不要借此重写未受影响的页面。
@@ -280,9 +281,8 @@ DATABASE_URL="mysql://app_user:change-me@127.0.0.1:3307/zafu_pchospital_test" pn
 
 ## 8. 本地验证与截图
 
-> **先读这一节再验证任何东西。** 踩过的坑：每改一点就把 `shots/` 里的几十张图重拍一遍，
-> 一轮下来几分钟没了，diff 里全是二进制噪声，临时脚本和临时图堆在仓库和 `C:\Temp` 里没人清。
-> 下面三条是硬规则。
+> **先读这一节再验证任何东西。** 验证围绕本轮影响，断言优先；临时脚本和截图放仓库外，
+> 不维护逐页图库，也不为日常改动批量重拍。
 
 ### 8.1 验证优先级：断言 > 截图
 
@@ -314,39 +314,23 @@ chrome --headless=new --remote-debugging-port=9222 --user-data-dir=./.chrome-pro
 - 仓库里只保留 `tools/` 下**长期有用**的脚本（`inspect.mjs` / `console-probe.mjs`）。
 - 需要重放某次验证时再写一个新脚本，不要为了「以后可能用得上」攒一堆。
 
-### 8.3 shots/ 不进日常提交（第三次反馈后定稿的规则）
+### 8.3 展示图片与验证截图
 
-`shots/` 是**对外展示用的成品图库**，不是验证缓存，也不是「代码变了就得跟着变」的镜像。
-
-**硬规则：**
-
-- ❌ **日常提交里不允许出现 `shots/**` 的改动。** 二进制 diff 无法 review，每次 commit 都改
-  几十张图会让人没法看这次到底改了什么 —— 已经因此被明确要求停止。
-- ✅ 需要重拍时**先问人**，并且**等一批功能全部做完**再一次性拍（「做完这一批你跟我确认再拍」）。
-- ✅ 拍的时候**只拍确认过的那几个编号**，同一编号两种模式成对更新；不要顺手全量重拍。
-- ✅ 图库更新的那次提交**只包含图片**，不夹带代码改动，方便单独 review / revert。
-- 图库与当前代码不一致**是可接受的**：以代码、`docs/` 与测试为准；图库说明的是
-  「上一次确认过的样子」，在文件不够新时**不要**因为「看起来不一致」就去重拍。
-
-`shots/` 的命名规范（`<编号>-<页面>-<视图>-<模式>.png`，模式取 `normal` / `dark`，
-同一编号成对出现）继续有效：
-
-```text
-01-home-desktop-normal.png       01-home-desktop-dark.png
-14-join-signup-done-normal.png   14-join-signup-done-dark.png
-```
-
-站点有两套主题，主题改的不只是颜色（走线栅格、扫描线、水印描边、索引栏面板色、准星混合
-模式都随主题变），所以**同一个视图的两种模式要么一起更新、要么都不动**。
+- 仓库仅在 `docs/assets/` 保留 README 使用的浅 / 深色首页预览，不再维护逐页成品图库。
+- 这两张预览不随日常功能 PR 更新；确需替换时先确认展示范围，浅 / 深色成对、单独更新。
+- PR 需要说明视觉变化时，只附本轮受影响视图的代表性截图；验证图片放仓库外，不加入源码目录。
+- 截图不替代行为断言，也不作为当前功能清单；以代码、公共契约与测试为准。
 
 模式必须在**文档创建之前**写进 `localStorage`（键见 `src/config/theme.ts`）。
 用 `tools/inspect.mjs` 时它已经处理好；**不传 `THEME_MODE` 时它会主动清掉那个键**，
 避免上一轮留下的深色选择把后面所有截图都拍成深色（这个坑踩过一次）。
 
 ```bash
-THEME_MODE=normal CAP_SEL="#services" node tools/inspect.mjs URL shots/02-home-services-normal.png
-THEME_MODE=dark   CAP_SEL="#services" node tools/inspect.mjs URL shots/02-home-services-dark.png
+THEME_MODE=normal CAP_SEL="#services" node tools/inspect.mjs URL /tmp/home-services-normal.png
+THEME_MODE=dark   CAP_SEL="#services" node tools/inspect.mjs URL /tmp/home-services-dark.png
 ```
+
+上述输出路径用于类 Unix 环境；Windows 使用仓库外的 `C:\Temp`，按所用 Shell 设置环境变量。
 
 `inspect.mjs` 的环境变量：`CAP_SEL` / `CAP_Y`（截图前先滚到这里，触发进场动效）、
 `CAP_X` / `CAP_W` / `CAP_H` / `CAP_SCALE`（截图区域）、`WAIT_MS`（载入后等待时长）、

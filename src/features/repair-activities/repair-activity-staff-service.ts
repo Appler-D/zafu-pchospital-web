@@ -33,6 +33,7 @@ import { inSerializableTransaction } from "@/lib/db/transaction";
 import type {
   AuthorizedActor,
   RepairDraftFields,
+  RepairMemberOption,
   RepairStatus,
   RepairView,
 } from "@/types/contracts";
@@ -195,6 +196,11 @@ export type ServePrefillView = {
   issueType: RepairActivityIssueType;
   categoryId: string | null;
   repairDate: string;
+  /**
+   * 参与维修人员候选（issue #238）：仅本场出勤且 ACTIVE 的成员，按出勤时间升序。
+   * 姓名与昵称一并下发供搜索，不含 QQ、手机号、学号等身份字段。
+   */
+  participantOptions: RepairMemberOption[];
 };
 
 const effectiveStatusFilter = {
@@ -946,6 +952,9 @@ export const repairActivityStaffService = {
    *
    * 只有「已接待且未建单」的登记可读；完整电话沿用按需查看审计
    * （`repair_activity.registration_phone.viewed`）。
+   *
+   * issue #238：同时下发本场出勤且在职的参与人候选，供接待建单的成员选择器
+   * 按姓名 / 昵称搜索；不再让该场景使用全局成员名册。
    */
   async getServePrefill(
     activityId: string,
@@ -973,6 +982,24 @@ export const repairActivityStaffService = {
         where: { code: categoryCode, deletedAt: null, isActive: true },
         select: { id: true },
       });
+      const attendanceRows = await tx.repairActivityAttendance.findMany({
+        where: {
+          activityId,
+          // 候选必须能作为新增参与人落库：停用 / 软删除的成员即使出勤也不列出。
+          memberProfile: { status: "ACTIVE", deletedAt: null },
+        },
+        orderBy: [{ checkedInAt: "asc" }, { id: "asc" }],
+        select: {
+          memberProfileId: true,
+          memberProfile: {
+            select: {
+              realName: true,
+              nickname: true,
+              user: { select: { displayName: true } },
+            },
+          },
+        },
+      });
       await appendAuditLog(tx, {
         actor,
         actorType: actor.actorType,
@@ -993,6 +1020,16 @@ export const repairActivityStaffService = {
         issueType,
         categoryId: category?.id ?? null,
         repairDate: shanghaiCalendarDay(activity.activityAt),
+        participantOptions: attendanceRows.map((row) => ({
+          id: row.memberProfileId,
+          name: resolveDisplayName({
+            nickname: row.memberProfile.nickname,
+            realName: row.memberProfile.realName,
+            displayName: row.memberProfile.user.displayName,
+          }),
+          realName: row.memberProfile.realName,
+          nickname: row.memberProfile.nickname,
+        })),
       };
     });
   },

@@ -149,7 +149,10 @@ export function RepairEditor({
   const [createRequestKey] = useState(createIdempotencyKey);
   const [record, setRecord] = useState<RepairDetailView>();
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
-  /** 参与维修人员（issue #114）的候选名单：全部活跃成员，从中挑选添加。 */
+  /**
+   * 参与维修人员的候选名单（issue #114）：普通场景为全部活跃成员；
+   * 活动接待建单改用预填接口下发的本场出勤成员（issue #238）。
+   */
   const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden" | "serveError">(
     "loading",
@@ -169,49 +172,48 @@ export function RepairEditor({
     setState("loading");
     try {
       if (!serverId) {
-        const [catsResponse, membersResponse, meResponse] = await Promise.all([
+        // 活动接待由预填接口一并返回本场出勤候选（issue #238）；其他新建场景仍用全局名册。
+        const candidateUrl = serveContext
+          ? `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`
+          : "/api/v1/repair-members";
+        const [catsResponse, meResponse, candidateResponse] = await Promise.all([
           fetch("/api/v1/repair-categories", { cache: "no-store" }),
-          fetch("/api/v1/repair-members", { cache: "no-store" }),
           fetch("/api/v1/me", { cache: "no-store" }),
+          fetch(candidateUrl, { cache: "no-store" }),
         ]);
         const cats = await catsResponse.json();
-        const members = await membersResponse.json();
         const me = await meResponse.json();
+        const candidate = await candidateResponse.json();
         if (!me.success || typeof me.data?.memberProfileId !== "string") {
           setState("error");
           return;
         }
-        const options: RepairMemberOption[] = members.success ? members.data : [];
         const categories: RepairCategoryView[] = cats.success ? cats.data : [];
-        setMemberOptions(options);
+        const creator = {
+          id: me.data.memberProfileId as string,
+          name: (me.data.displayName as string | null) ?? "我",
+        };
         setCategories(categories);
         if (serveContext) {
-          const prefillResponse = await fetch(
-            `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`,
-            { cache: "no-store" },
-          );
-          const prefillJson = await prefillResponse.json();
-          if (!prefillJson.success) {
-            setMessage(prefillJson.error?.message ?? "无法读取这条接待的预填信息。");
+          if (!candidate.success) {
+            setMessage(candidate.error?.message ?? "无法读取这条接待的预填信息。");
             setState("serveError");
             return;
           }
+          const options: RepairMemberOption[] = candidate.data.participantOptions ?? [];
           const stored = readCreateDraft(draftScope);
           const wanted = new Set(stored?.participantIds ?? []);
-          const creator = {
-            id: me.data.memberProfileId as string,
-            name: (me.data.displayName as string | null) ?? "我",
-          };
           const participants = options
             .filter((option) => wanted.has(option.id) && option.id !== creator.id)
             .map((option) => ({ id: option.id, name: option.name }));
+          setMemberOptions(options);
           setRecord(
             serveDraftRecord({
               creator,
               categories,
               participants,
               stored,
-              prefill: prefillJson.data,
+              prefill: candidate.data,
             }),
           );
           if (stored && hasCreateDraftContent(stored))
@@ -219,15 +221,13 @@ export function RepairEditor({
           setState("ready");
           return;
         }
+        const options: RepairMemberOption[] = candidate.success ? candidate.data : [];
         const stored = readCreateDraft();
         const wanted = new Set(stored?.participantIds ?? []);
-        const creator = {
-          id: me.data.memberProfileId as string,
-          name: (me.data.displayName as string | null) ?? "我",
-        };
         const participants = options
           .filter((option) => wanted.has(option.id) && option.id !== creator.id)
           .map((option) => ({ id: option.id, name: option.name }));
+        setMemberOptions(options);
         setRecord(localDraftRecord({ creator, categories, participants, stored }));
         if (stored && hasCreateDraftContent(stored))
           setMessage(repairEditorCopy.createDraftRestored);
@@ -717,6 +717,7 @@ export function RepairEditor({
             participants={record.participants}
             options={memberOptions}
             disabled={busy}
+            scope={serveContext ? "attendance" : "all"}
             onAdd={addParticipant}
             onRemove={removeParticipant}
           />

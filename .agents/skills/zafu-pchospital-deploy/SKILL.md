@@ -1,6 +1,6 @@
 ---
 name: zafu-pchospital-deploy
-description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pczafu.cn（阿里云 ECS 47.116.132.37）。主流程 = 运行仓库脚本 tools/deploy/deploy-prod.sh（本地构建 + 上传产物；侦察/备份闸门/ff-only/迁移核对/原子切换/冒烟/回滚全内置）。当用户说「部署到服务器」「上线新版」「把 main 发上去」时使用。
+description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczafu.cn。主流程 = 运行仓库脚本 tools/deploy/deploy-prod.sh（本地构建 + 上传产物；侦察/备份闸门/ff-only/迁移核对/原子切换/冒烟/回滚全内置）。当用户说「部署到服务器」「上线新版」「把 main 发上去」时使用。
 ---
 
 # 部署 zafu-pchospital-web 到生产
@@ -10,8 +10,9 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pc
 **部署统一走仓库脚本 `tools/deploy/deploy-prod.sh`**（本地构建 + 上传产物；侦察、备份闸门、ff-only、
 迁移核对、原子切换、冒烟、回滚指引全部内置）：
 
-1. 人在终端运行：`bash tools/deploy/deploy-prod.sh`（脚本自己 `git fetch`；缺省部署 `upstream/main`，
-   也可 `--sha <提交>`）。脚本在「开始部署（P2）」与「即将停机（P7）」两处要人工确认 —— **人盯的就是这两个点**。
+1. 人在终端运行：`bash tools/deploy/deploy-prod.sh`（先 `export DEPLOY_HOST=<user@host>`，或每条命令带
+   `--host`；脚本自己 `git fetch`；缺省部署 `upstream/main`，也可 `--sha <提交>`）。
+   脚本在「开始部署（P2）」与「即将停机（P7）」两处要人工确认 —— **人盯的就是这两个点**。
 2. AI 助手在非交互环境运行：必须加 `--yes`（人工确认点自动放行并留痕）——**先取得用户同意**。
    盯脚本输出；失败时按脚本打印的「恢复指引」处理（下面各节就是兜底知识，重跑脚本天然幂等）；
    成功后按第 7 节补做本次改动的针对性验证，并认下结尾的 `DEPLOY RESULT: SUCCESS sha=… build_id=…` 行才算成功。
@@ -39,12 +40,12 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pc
 - 断电、强杀、完全断网不能保证即时通知；残留 `attempt-*.json` 的 running 状态不代表部署失败。
   人工核实站点和本机记录后处理，不能自动重发或自动回滚。
 
-## 0. 事实速查（不要在命令里硬编码密码）
+## 0. 事实速查（不要在命令里硬编码密码，主机地址也不写进仓库）
 
 | 项 | 值 |
 | --- | --- |
 | 公网 | https://pczafu.cn（nginx + certbot，反代 127.0.0.1:3311） |
-| 服务器 | 阿里云 ECS `root@47.116.132.37`（Ubuntu）；SSH 私钥向管理员获取，用 `--key` / `DEPLOY_SSH_KEY` 传入，**不要提交进仓库** |
+| 服务器 | 生产主机（Ubuntu）地址与 SSH 私钥**只走内部运维渠道**：运行时用 `--host` / `DEPLOY_HOST` 与 `--key` / `DEPLOY_SSH_KEY` 传入，**不要提交进仓库** |
 | 应用 | `/opt/zafu-pchospital-web`（仓库检出，属 `zafu-web`，跟踪 `origin/main`） |
 | 服务 | systemd `zafu-pchospital-web.service`（`User=zafu-web`，`next start -H 127.0.0.1 -p 3311`，`enabled`） |
 | 数据库 | 容器 `zafu-pchospital-db-greatsql-1`（GreatSQL 8.0.32-27），只监听 `127.0.0.1:3307`，库名 `zafu_pchospital` |
@@ -90,7 +91,7 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pc
 ```text
 --sha <sha>       目标提交（缺省 upstream/main，其次 origin/main）
 --key <path>      SSH 私钥路径（也可用 DEPLOY_SSH_KEY 环境变量）
---host <user@host>  生产服务器（缺省 root@47.116.132.37）
+--host <user@host>  生产服务器（必填，缺省取 DEPLOY_HOST；也可用 ~/.ssh/config 里的别名）
 --yes             非交互：自动放行两个人工确认点（AI / 自动化必须，且需用户同意）
 --rollback        只用服务器上的 .next.old 秒级回滚产物（不动数据库与代码）
 --rebuild         忽略已有产物缓存强制重建
@@ -102,7 +103,8 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产服务器 pc
 ## 3. 侦察判据（人工排查时）
 
 ```bash
-ssh -i "$KEY" root@47.116.132.37 '
+# DEPLOY_HOST / KEY 从内部运维渠道获取（主机地址不写进本仓库）
+ssh -i "$KEY" "$DEPLOY_HOST" '
   git config --global --add safe.directory /opt/zafu-pchospital-web
   git config --global --add safe.directory /opt/zafu-pchospital-web/.docs-source
   cd /opt/zafu-pchospital-web
