@@ -673,12 +673,21 @@ DELETE     /api/v1/admin/comments/:id
   都返回 409 `ACTIVITY_SERVE_PENDING`（消息含客户姓名）；撤销或提交后解除。
 - **继续填写**：
   - `GET /api/v1/member/repair-activities/:id/registrations/:registrationId/prefill`：仅接待者本人可读，
-    返回客户姓名、完整电话、机型、故障类型映射后的启用分类与活动日；完整电话读取写
-    `repair_activity.registration_phone.viewed` 审计。管理员不代填（403）。
+    返回客户姓名、完整电话、机型、故障类型映射后的启用分类、活动日，以及本场出勤的
+    参与人候选；完整电话读取写 `repair_activity.registration_phone.viewed` 审计。管理员不代填（403）。
+  - 预填响应自 issue #238 起增加 `participantOptions: { id, name, realName, nickname }[]`：
+    仅包含**本场出勤且 `ACTIVE`、未软删除**的成员，按 `checkedInAt` 升序；`name` 走展示名回退链
+    `nickname → realName → displayName → "成员"`，`realName` / `nickname` 供编辑器按姓名或昵称
+    做大小写不敏感的包含匹配。不含 QQ、手机号、学号等身份字段；非活动接待的维修表单仍使用
+    `GET /api/v1/repair-members` 的全局活跃成员候选。
+    影响范围：`ServePrefillView` / `getServePrefill` → 接待建单的
+    `RepairParticipantPicker`；集成测试 `repair-serve-record.test.ts` 钉住候选范围与字段。
   - `POST /api/v1/member/repair-activities/:id/registrations/:registrationId/record`：接待者本人提交，
     `Idempotency-Key` 必填；在一个事务里创建 **`PENDING`** 维修记录（与成员自助提交同一套校验，
     含机型必填）、写参与人 / `SUBMITTED` 时间线 / 审计，并回写 `repair_record_id`。
-    同一幂等键重试返回原记录；登记已被其他会话建单返回 409 `ACTIVITY_REGISTRATION_STATE_INVALID`。
+    服务端按 `activityId` 复核最终参与人（含创建人）均在本场出勤，未出勤返回 400
+    `VALIDATION_FAILED` 且不占用登记。同一幂等键重试返回原记录；登记已被其他会话建单返回
+    409 `ACTIVITY_REGISTRATION_STATE_INVALID`。
 - 看板 `GET /api/v1/member/repair-activities/:id/board`：
   - `served: StaffServedRow[]` —— `SERVED` 报名（按 `servedAt` 倒序）：管理员为本场全部，
     普通成员仅**本人接待**（issue #207）；每行新增 `canFill`（本人接待且未建单）与
@@ -1023,7 +1032,6 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - `AccountNotificationServiceContract` 的 `get(applicationId, actor)` / `retry(applicationId, actor)` 承担管理端权限；`runBatch({limit?})` 只由受保护 CLI 调用（缺省 10，范围 1–50），返回无敏感值的批次统计，不提供公开发信入口。
 - PENDING → SENDING → ACCEPTED / FAILED / UNCERTAIN；明确暂时拒绝可退回 PENDING。每轮最多 4 次实际 Sender 调用，间隔 1 / 5 / 30 分钟。邮件关闭、领取和预算等待不计尝试。结果未知或领取超时停止自动重发；“ACCEPTED”仅表示已提交发信服务。
 - 运行、状态边界与发布 / 停用步骤见 [账号通知运行说明](../account-notifications.md)。
-
 
 ## 统一表格查询（issue #214）
 
