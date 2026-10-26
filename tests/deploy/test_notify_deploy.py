@@ -143,7 +143,13 @@ NOTIFY_COMMIT='{SHA if result else ''}'
 trap on_exit EXIT
 exit {code}
 ''', encoding="utf-8")
-                run = subprocess.run([bash, str(script)], capture_output=True, text=True, encoding="utf-8", env={**os.environ, "PYTHONUTF8": "1"})
+                run = subprocess.run(
+                    [bash, str(script)],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    env={**os.environ, "PYTHONUTF8": "1", "DEPLOY_HOST": "fixture@example.invalid"},
+                )
                 self.assertEqual(run.returncode, code, run.stdout + run.stderr)
                 self.assertNotIn("secret-must-not-appear", run.stdout + run.stderr)
                 payload = next(json.loads(p.read_text(encoding="utf-8")) for p in spool.glob("*.json") if not p.name.startswith("attempt-"))

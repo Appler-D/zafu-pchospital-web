@@ -9,7 +9,8 @@
 # 流程（每一步都有闸门，失败即停并打印恢复指引，绝不自动回滚）：
 #   P0  参数与本地环境预检（pnpm / mdbook / node / ssh / 目标提交是否已合并）
 #   P1  服务器侦察（只读：HEAD、工作区、服务、内存、磁盘）
-#   P2  变更评估（提交列表 / 新迁移 SQL 风险扫描 / .env.example 变化）+ 人工确认
+#   P2  变更评估（提交列表 / 迁移风险扫描 / 数据库变更计划 / .env.example）+ 人工确认
+#       数据库计划在停机前只读核对 _prisma_migrations：待应用迁移、schema、seed
 #   P3  本地构建与打包（git worktree，不碰当前工作区；产出 tar + BUILD_COMMIT）
 #       无 .git 的打包构建（tarball / 容器内）需显式指定版本：
 #       BUILD_COMMIT_SHA=$(git rev-parse HEAD) pnpm build
@@ -17,8 +18,10 @@
 #   P4  数据库备份（mysqldump + 闸门：表数≥27、有 INSERT、gzip 完整）
 #   P5  上传产物并暂存校验（双端 sha256 对比 + 服务器端解包断言）
 #   P6  更新服务器代码与依赖（ff-only、.docs-source、pnpm install、db:generate）
-#   P7  【停机】迁移 + seed + 迁移前后行数核对        ← 人工确认停机窗口
-#   P8  原子切换产物（.next / public/handbook）并启动服务
+#       服务器 fetch 缺省只等 30s，失败立即走本地 bundle，不再先等 8 分钟
+#   P7  【停机】数据库变更（需要时）：迁移 + seed + 迁移前后行数核对
+#       纯代码发布跳过本阶段，服务保持运行
+#   P8  原子切换产物（.next / public/handbook）并启动服务；纯代码发布在此停机秒级切换
 #   P9  冒烟验证（页面 200、新构建 chunk 已生效、可选登录态）
 #   P10 总结与回滚指引
 #
@@ -42,6 +45,10 @@
 #   --allow-risky-migration  确认已读过含 DROP/MODIFY/UPDATE 的迁移 SQL 再放行
 #   --allow-env-change       确认服务器 .env 已随 .env.example 更新再放行
 #   DEPLOY_SMOKE_QQ / DEPLOY_SMOKE_PASSWORD  可选：冒烟时做登录态验证
+#   DEPLOY_FETCH_TIMEOUT / DEPLOY_FETCH_ATTEMPTS
+#       服务器主仓库 fetch 的单次超时与尝试次数（缺省 30 秒 × 1 次，失败即走 bundle）
+#   DEPLOY_DOCS_FETCH_TIMEOUT / DEPLOY_DOCS_FETCH_ATTEMPTS
+#       .docs-source 的 fetch 参数（缺省 20 秒 × 1 次；失败只告警，不影响 7A 部署）
 #
 # 恢复与兜底：
 #   · 失败时脚本不自动回滚，会按中断的阶段打印恢复指引（服务在停机前失败都还活着）。
@@ -65,12 +72,49 @@ warn() { printf '%s  ! %s%s\n' "$C_YELLOW" "$*" "$C_OFF"; }
 note() { printf '%s    %s%s\n' "$C_DIM" "$*" "$C_OFF"; }
 die()  { printf '\n%s✗ 中止：%s%s\n' "$C_RED" "$*" "$C_OFF" >&2; exit 1; }
 
+positive_int() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; [ "$1" -ge 1 ]; }
+
+SCRIPT_START_SECONDS=$SECONDS
 CURRENT_PHASE="0"
+PHASE_NAME=""
+PHASE_START_SECONDS=$SECONDS
+PHASE_TIMINGS=()
+TIMINGS_PRINTED=0
 PHASE_FAIL_GUIDE=""
+
+finish_phase() {
+  if [ -n "$PHASE_NAME" ]; then
+    PHASE_TIMINGS+=("P$CURRENT_PHASE|$PHASE_NAME|$((SECONDS - PHASE_START_SECONDS))")
+    PHASE_NAME=""
+  fi
+}
+
+print_phase_timings() {
+  [ "${#PHASE_TIMINGS[@]}" -gt 0 ] || return 0
+  TIMINGS_PRINTED=1
+  say ""
+  say "阶段耗时（本地墙钟）："
+  local entry num name dur
+  if [ "${#PHASE_TIMINGS[@]}" -gt 0 ]; then
+    for entry in "${PHASE_TIMINGS[@]}"; do
+      IFS='|' read -r num name dur <<< "$entry"
+      printf '  %-4s %-40s %5ss\n' "$num" "$name" "$dur"
+    done
+  fi
+  printf '  %-4s %-40s %5ss\n' "合计" "脚本运行" "$((SECONDS - SCRIPT_START_SECONDS))"
+  [ -z "${DOWNTIME:-}" ] || say "  停机窗口：${DOWNTIME}s"
+  [ "${FETCH_WAIT_SECONDS:-0}" = "0" ] ||
+    say "  服务器主仓库 fetch 等待：${FETCH_WAIT_SECONDS}s（尝试 ${FETCH_TRY_COUNT} 次后$([ "${FETCH_OK:-0}" = "1" ] && echo 成功 || echo 切换 bundle)）"
+  [ "${DOCS_FETCH_WAIT_SECONDS:-0}" = "0" ] ||
+    say "  .docs-source fetch 等待：${DOCS_FETCH_WAIT_SECONDS}s"
+}
 
 # 阶段头：$1=阶段号 $2=标题
 step() {
+  finish_phase
   CURRENT_PHASE="$1"
+  PHASE_NAME="$2"
+  PHASE_START_SECONDS=$SECONDS
   case "$1" in 7|8|R) NOTIFY_COMMIT="" ;; esac
   printf '\n%s====== [P%s] %s ======%s\n' "$C_BOLD" "$1" "$2" "$C_OFF"
 }
@@ -141,10 +185,42 @@ DB_NAME="zafu_pchospital"
 DB_ENV_FILE="/opt/zafu-pchospital-db/.env"
 ZAFU_USER="zafu-web"
 MIN_TABLES="${DEPLOY_MIN_TABLES:-27}"
+FETCH_TIMEOUT="${DEPLOY_FETCH_TIMEOUT:-30}"
+FETCH_MAX_ATTEMPTS="${DEPLOY_FETCH_ATTEMPTS:-1}"
+DOCS_FETCH_TIMEOUT="${DEPLOY_DOCS_FETCH_TIMEOUT:-20}"
+DOCS_FETCH_MAX_ATTEMPTS="${DEPLOY_DOCS_FETCH_ATTEMPTS:-1}"
+for pair in \
+  "DEPLOY_FETCH_TIMEOUT=$FETCH_TIMEOUT" \
+  "DEPLOY_FETCH_ATTEMPTS=$FETCH_MAX_ATTEMPTS" \
+  "DEPLOY_DOCS_FETCH_TIMEOUT=$DOCS_FETCH_TIMEOUT" \
+  "DEPLOY_DOCS_FETCH_ATTEMPTS=$DOCS_FETCH_MAX_ATTEMPTS"; do
+  positive_int "${pair#*=}" || die "${pair%%=*} 必须是正整数（当前：${pair#*=}）"
+done
+
 DOCS_SYNC_STOPPED=0
+SERVICE_STOPPED=0
+STOP_TS=""
+DOWNTIME=""
 WT_CREATED=0
 BUNDLE_BRANCH=""
 DEPLOY_OK=0
+FETCH_WAIT_SECONDS=0
+FETCH_TRY_COUNT=0
+FETCH_OK=""
+DOCS_FETCH_WAIT_SECONDS=0
+
+DB_QUERY_OK=0
+DB_WORK=0
+DB_REASONS=""
+DB_PENDING_COUNT=0
+DB_APPLIED_COUNT=0
+DB_LOCAL_COUNT=0
+DB_PENDING_LIST=""
+DB_FAILED_LIST=""
+DB_DRIFT_LIST=""
+SCHEMA_CHANGED=0
+SEED_CHANGED=0
+PRISMA_CONFIG_CHANGED=0
 
 # ---------------------------------------------------------------------------
 # 退出钩子：无论成功失败都要把 docs-sync 定时器放回去，并按阶段打印指引
@@ -190,6 +266,8 @@ on_exit() {
     esac
     printf '%s---------------------------------------------%s\n\n' "$C_RED" "$C_OFF"
   fi
+  finish_phase
+  [ "$TIMINGS_PRINTED" = "1" ] || print_phase_timings
   if [ "$DEPLOY_OK" = "1" ] && [ "$WT_CREATED" = "1" ]; then
     git -C "$REPO_ROOT" worktree remove --force "$WT" >/dev/null 2>&1 || true
   fi
@@ -217,6 +295,155 @@ remote() { ssh "${SSH_OPTS[@]}" "${SSH_OPTS_KEY[@]}" "$SSH_HOST" "$@"; }
 ssh_run_quiet() { ssh "${SSH_OPTS[@]}" "${SSH_OPTS_KEY[@]}" "$SSH_HOST" "$@" 2>/dev/null || true; }
 # 多行脚本走 stdin；调用形式： remote_script <<REMOTE ... REMOTE
 remote_script() { ssh "${SSH_OPTS[@]}" "${SSH_OPTS_KEY[@]}" "$SSH_HOST" 'bash -s'; }
+
+# ---------------------------------------------------------------------------
+# 停机前数据库变更计划（P2 只读核对；不推断，只按实际差异分类）
+# ---------------------------------------------------------------------------
+add_db_reason() { DB_REASONS="${DB_REASONS:+$DB_REASONS；}$1"; }
+
+# 只比较 schema 的实质内容：去掉行首/空白后的 // 注释、行尾空白与空行；
+# http:// 这类字符串里的 // 前面不是空白，不会被误删。
+schema_fingerprint() {
+  git -C "$REPO_ROOT" show "$1:prisma/schema.prisma" 2>/dev/null |
+    sed -E 's@(^|[[:space:]])//.*$@@' |
+    sed -E 's/[[:space:]]+$//' |
+    sed '/^[[:space:]]*$/d' || true
+}
+
+assess_db_plan() {
+  local local_rows="" db_rows="" name finished rolled
+  local applied_names="" failed_names="" rolled_names=""
+  DB_QUERY_OK=0; DB_WORK=0; DB_REASONS=""
+  DB_PENDING_COUNT=0; DB_APPLIED_COUNT=0; DB_LOCAL_COUNT=0
+  DB_PENDING_LIST=""; DB_FAILED_LIST=""; DB_DRIFT_LIST=""
+  SCHEMA_CHANGED=0; SEED_CHANGED=0; PRISMA_CONFIG_CHANGED=0
+
+  if [ "$HAVE_OLD" != "1" ]; then
+    DB_WORK=1
+    add_db_reason "缺少服务器当前提交对象，无法比对变更"
+    warn "无法比对 $OLD_SHA..$TARGET_SHA：按“需要数据库阶段”保守处理。"
+    return 0
+  fi
+
+  if ! git -C "$REPO_ROOT" cat-file -e "$OLD_SHA:prisma/schema.prisma" 2>/dev/null ||
+     ! git -C "$REPO_ROOT" cat-file -e "$TARGET_SHA:prisma/schema.prisma" 2>/dev/null; then
+    SCHEMA_CHANGED=1
+  elif [ "$(schema_fingerprint "$OLD_SHA")" != "$(schema_fingerprint "$TARGET_SHA")" ]; then
+    SCHEMA_CHANGED=1
+  fi
+  if ! git -C "$REPO_ROOT" diff --quiet "$OLD_SHA..$TARGET_SHA" -- prisma/seed.ts prisma/seed 2>/dev/null; then
+    SEED_CHANGED=1
+  fi
+  if ! git -C "$REPO_ROOT" diff --quiet "$OLD_SHA..$TARGET_SHA" -- prisma.config.ts 2>/dev/null; then
+    PRISMA_CONFIG_CHANGED=1
+  fi
+
+  local_rows="$(git -C "$REPO_ROOT" ls-tree -d --name-only "$TARGET_SHA" prisma/migrations/ 2>/dev/null |
+    sed 's#^prisma/migrations/##' | sed '/^[[:space:]]*$/d' || true)"
+  DB_LOCAL_COUNT="$(printf '%s\n' "$local_rows" | grep -c . || true)"
+
+  if db_rows="$(remote_script <<'REMOTE'
+set -e
+set -a; . /opt/zafu-pchospital-db/.env; set +a
+docker exec zafu-pchospital-db-greatsql-1 mysql -uroot -p"$GREATSQL_ROOT_PASSWORD" -N -B zafu_pchospital -e "SELECT CONCAT(migration_name, '|', COALESCE(DATE_FORMAT(finished_at, '%Y-%m-%dT%H:%i:%sZ'), ''), '|', COALESCE(DATE_FORMAT(rolled_back_at, '%Y-%m-%dT%H:%i:%sZ'), '')) FROM _prisma_migrations ORDER BY started_at"
+REMOTE
+)"; then
+    DB_QUERY_OK=1
+    db_rows="$(printf '%s' "$db_rows" | tr -d '\r')"
+    while IFS='|' read -r name finished rolled; do
+      [ -n "$name" ] || continue
+      if [ -n "$rolled" ]; then
+        rolled_names+="$name"$'\n'
+      elif [ -n "$finished" ]; then
+        applied_names+="$name"$'\n'
+      else
+        failed_names+="$name"$'\n'
+      fi
+    done <<< "$db_rows"
+
+    DB_APPLIED_COUNT="$(printf '%s' "$applied_names" | grep -c . || true)"
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if ! grep -Fxq "$name" <<< "$applied_names"; then
+        DB_PENDING_LIST+="$name"$'\n'
+      fi
+    done <<< "$local_rows"
+    DB_PENDING_COUNT="$(printf '%s' "$DB_PENDING_LIST" | grep -c . || true)"
+
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if ! grep -Fxq "$name" <<< "$local_rows"; then
+        DB_DRIFT_LIST+="$name"$'\n'
+      fi
+    done <<< "$applied_names"
+
+    DB_FAILED_LIST="$(printf '%s%s' "$failed_names" "$rolled_names" | sed '/^[[:space:]]*$/d')"
+  else
+    DB_QUERY_OK=0
+  fi
+
+  say ""
+  say "数据库变更计划（停机前只读核对）："
+  if [ "$DB_QUERY_OK" = "1" ]; then
+    say "  _prisma_migrations：已应用 $DB_APPLIED_COUNT；目标提交迁移目录 $DB_LOCAL_COUNT；待应用 $DB_PENDING_COUNT"
+    if [ -n "$DB_PENDING_LIST" ]; then
+      say "  待应用迁移："
+      printf '%s' "$DB_PENDING_LIST" | sed 's/^/      /'
+    elif [ -n "$NEW_MIGS" ]; then
+      say "  本次新增的迁移文件均已在数据库应用。"
+    fi
+    if [ -n "$DB_FAILED_LIST" ]; then
+      warn "数据库存在失败或已回滚的迁移记录："
+      printf '%s\n' "$DB_FAILED_LIST" | sed 's/^/      /'
+    fi
+    if [ -n "$DB_DRIFT_LIST" ]; then
+      warn "数据库已应用、但目标提交不包含的迁移："
+      printf '%s' "$DB_DRIFT_LIST" | sed 's/^/      /'
+    fi
+  else
+    warn "无法读取 _prisma_migrations（数据库不可连、表不存在或权限不足）：按“需要数据库阶段”保守处理。"
+  fi
+  say "  schema.prisma 实质变化：$([ "$SCHEMA_CHANGED" = "1" ] && echo 是 || echo 否)；seed 变化：$([ "$SEED_CHANGED" = "1" ] && echo 是 || echo 否)"
+
+  if [ -n "$DB_FAILED_LIST" ]; then
+    die "数据库存在失败或已回滚的迁移记录（见上）。先人工用 prisma migrate resolve 处理，再部署；
+    不能把 migrate deploy 的失败留到停机窗口里才发现。"
+  fi
+  if [ -n "$DB_DRIFT_LIST" ]; then
+    die "数据库已应用了目标提交里不存在的迁移（见上）。数据库与目标版本不一致，先人工核对。"
+  fi
+
+  if [ "$DB_QUERY_OK" != "1" ]; then
+    DB_WORK=1
+    add_db_reason "无法确认数据库已应用版本"
+  fi
+  if [ "$DB_PENDING_COUNT" -gt 0 ]; then
+    DB_WORK=1
+    add_db_reason "待应用迁移 $DB_PENDING_COUNT 个"
+  fi
+  if [ "$SCHEMA_CHANGED" = "1" ]; then
+    if [ "$DB_QUERY_OK" = "1" ] && [ "$DB_PENDING_COUNT" -eq 0 ]; then
+      die "prisma/schema.prisma 有实质变化，但数据库没有待应用迁移。
+    不能把它当作纯代码发布：请补对应迁移，或人工确认 schema 与数据库一致后再部署。"
+    fi
+    DB_WORK=1
+    add_db_reason "schema.prisma 有变化"
+  fi
+  if [ "$SEED_CHANGED" = "1" ]; then
+    DB_WORK=1
+    add_db_reason "seed 有变化"
+  fi
+  if [ "$PRISMA_CONFIG_CHANGED" = "1" ]; then
+    DB_WORK=1
+    add_db_reason "prisma.config.ts 有变化"
+  fi
+
+  if [ "$DB_WORK" = "1" ]; then
+    warn "本次需要停机执行数据库工作：$DB_REASONS。"
+  else
+    ok "纯代码发布：无待应用迁移、无 schema/seed 变化；P7 将跳过 migrate/seed/行数核对。"
+  fi
+}
 
 # ---------------------------------------------------------------------------
 # [R] 回滚模式：用服务器上的 .next.old / public/handbook.old 换回上一版产物
@@ -518,7 +745,7 @@ MIGLIST
     ok "迁移经扫描为纯增量（无 DROP/MODIFY/CHANGE/TRUNCATE/UPDATE）。"
   fi
 elif [ "$HAVE_OLD" = "1" ]; then
-  say "本次没有新增迁移（migrate deploy 仍会跑一遍，幂等）。"
+  say "本次没有新增迁移文件；数据库是否还有历史待应用迁移，以接下来 P2 的实际版本核对为准。"
 else
   warn "无法比对迁移列表（缺旧提交对象）；请人工确认本次是否带迁移。"
 fi
@@ -544,9 +771,16 @@ if [ "$HAVE_OLD" = "1" ] && ! git -C "$REPO_ROOT" diff --quiet "$OLD_SHA..$TARGE
   say "lockfile 有变化：服务器会执行 pnpm install --frozen-lockfile + db:generate（P6）。"
 fi
 
+assess_db_plan
+
+if [ "$DB_WORK" = "1" ]; then
+  DB_PLAN_LABEL="需要（$DB_REASONS）"
+else
+  DB_PLAN_LABEL="跳过（纯代码发布）"
+fi
 say ""
-ok "评估完成。接下来：本地构建（数分钟）→ 备份 → 上传 → 更新代码 → 停机窗口（秒级）→ 切换 → 冒烟。"
-confirm "按以上计划开始部署？（本地构建数分钟；停机窗口在 P7，秒级）"
+ok "评估完成。接下来：本地构建（数分钟）→ 备份 → 上传 → 更新代码 → 数据库阶段：$DB_PLAN_LABEL → 切换 → 冒烟。"
+confirm "按以上计划开始部署？（本地构建数分钟；数据库阶段：$DB_PLAN_LABEL；停机窗口为数据库阶段与切换阶段的秒级停机）"
 
 # ---------------------------------------------------------------------------
 # [P3] 本地构建与打包（服务器完全不动；构建耗时在停机窗口之外）
@@ -690,6 +924,7 @@ if ! [ "${B_SIZE:-0}" -gt 10240 ] 2>/dev/null; then
 fi
 ok "备份通过闸门：$B_TABLES 张表 / $B_INSERTS 条 INSERT / $B_SIZE 字节。"
 note "回滚数据库用的就是这份（skill 第 9 节模板）。"
+[ "$DB_WORK" = "1" ] || note "本次为纯代码发布：备份仍然保留，不因跳过数据库阶段而省略。"
 
 # ---------------------------------------------------------------------------
 # [P5] 上传产物并暂存校验（服务仍在运行）
@@ -723,21 +958,29 @@ ok "暂存产物校验通过（commit / BUILD_ID / 文档 三项断言）。（�
 # ---------------------------------------------------------------------------
 step 6 "更新服务器代码与依赖（服务仍在运行）"
 
-say "git fetch（GitHub 时通时断，最多 4 次重试）…"
-FETCH_OUT="$(remote_script <<'REMOTE'
-cd /opt/zafu-pchospital-web
+say "git fetch（单次超时 ${FETCH_TIMEOUT}s，最多 ${FETCH_MAX_ATTEMPTS} 次；失败立即切本地 bundle）…"
+FETCH_STARTED=$SECONDS
+FETCH_OUT="$(remote_script <<REMOTE
+cd $APP_DIR
 OK=0
-for i in 1 2 3 4; do
-  if GIT_TERMINAL_PROMPT=0 timeout 120 git fetch origin main --quiet; then OK=1; break; fi
-  echo "fetch 第 $i 次失败"; sleep 3
+TRIES=0
+for i in \$(seq 1 $FETCH_MAX_ATTEMPTS); do
+  TRIES=\$i
+  if GIT_TERMINAL_PROMPT=0 timeout $FETCH_TIMEOUT git fetch origin main --quiet; then OK=1; break; fi
+  echo "fetch 第 \$i 次失败"
+  if [ "\$i" -lt "$FETCH_MAX_ATTEMPTS" ]; then sleep 2; fi
 done
-echo "FETCH_OK=$OK"
+echo "FETCH_OK=\$OK"
+echo "FETCH_TRIES=\$TRIES"
 REMOTE
 )"
-printf '%s\n' "$FETCH_OUT" | grep -v '^FETCH_OK=' || true
+FETCH_WAIT_SECONDS=$((SECONDS - FETCH_STARTED))
+printf '%s\n' "$FETCH_OUT" | grep -vE '^FETCH_(OK|TRIES)=' || true
 FETCH_OK="$(printf '%s\n' "$FETCH_OUT" | sed -n 's/^FETCH_OK=//p')"
+FETCH_TRY_COUNT="$(printf '%s\n' "$FETCH_OUT" | sed -n 's/^FETCH_TRIES=//p')"
 
 if [ "$FETCH_OK" = "1" ]; then
+  ok "服务器 fetch 成功（等待 ${FETCH_WAIT_SECONDS}s，尝试 ${FETCH_TRY_COUNT} 次）。"
   remote_script <<REMOTE
 set -e
 cd $APP_DIR
@@ -747,7 +990,7 @@ chown -R $ZAFU_USER:$ZAFU_USER .git
 echo "代码已更新：\$(git log --oneline -1 | cat)"
 REMOTE
 else
-  warn "服务器连不上 GitHub（4 次重试全失败）—— 改用本地 bundle 传提交（skill 第 4 节兜底）。"
+  warn "服务器 fetch 失败（等待 ${FETCH_WAIT_SECONDS}s，尝试 ${FETCH_TRY_COUNT} 次）—— 改用本地 bundle 传提交（skill 第 4 节兜底）。"
   BUNDLE_BRANCH="deploy-bundle-$$"
   BUNDLE_FILE="$BUILD_DIR/pc-bundle-$TARGET_SHA.bundle"
   git -C "$REPO_ROOT" branch -f "$BUNDLE_BRANCH" "$TARGET_SHA" >/dev/null
@@ -771,21 +1014,23 @@ REMOTE
   rm -f "$BUNDLE_FILE"
 fi
 
-say "更新服务器上的文档源码检出（.docs-source；7A 下不影响产物，保持状态一致而已）…"
-remote_script <<'REMOTE'
+say "更新服务器上的文档源码检出（.docs-source；fetch 超时 ${DOCS_FETCH_TIMEOUT}s，最多 ${DOCS_FETCH_MAX_ATTEMPTS} 次，失败只告警）…"
+DOCS_FETCH_STARTED=$SECONDS
+remote_script <<REMOTE
 cd /opt/zafu-pchospital-web/.docs-source 2>/dev/null || { echo "（服务器没有 .docs-source，跳过）"; exit 0; }
 OK=0
-for i in 1 2 3; do
-  if GIT_TERMINAL_PROMPT=0 timeout 120 git fetch origin main --quiet && git merge --ff-only origin/main >/dev/null 2>&1; then OK=1; break; fi
-  sleep 2
+for i in \$(seq 1 $DOCS_FETCH_MAX_ATTEMPTS); do
+  if GIT_TERMINAL_PROMPT=0 timeout $DOCS_FETCH_TIMEOUT git fetch origin main --quiet && git merge --ff-only origin/main >/dev/null 2>&1; then OK=1; break; fi
+  if [ "\$i" -lt "$DOCS_FETCH_MAX_ATTEMPTS" ]; then sleep 2; fi
 done
-if [ "$OK" = "1" ]; then
+if [ "\$OK" = "1" ]; then
   chown -R zafu-web:zafu-web /opt/zafu-pchospital-web/.docs-source
-  echo "docs-source 已更新：$(git log --oneline -1 | cat)"
+  echo "docs-source 已更新：\$(git log --oneline -1 | cat)"
 else
   echo "! 服务器 docs-source 更新失败（7A 部署不受影响：文档产物已打进 .next/public/handbook）"
 fi
 REMOTE
+DOCS_FETCH_WAIT_SECONDS=$((SECONDS - DOCS_FETCH_STARTED))
 
 say "依赖与 Prisma Client（注意：pnpm install 在锁文件没变时会跳过 postinstall，db:generate 必须单独跑）…"
 remote_script <<'REMOTE'
@@ -800,23 +1045,31 @@ REMOTE
 ok "服务器代码 / 依赖 / Prisma Client 就绪。（线上一直跑着旧产物，全程未受影响）"
 
 # ---------------------------------------------------------------------------
-# [P7] 【停机】迁移 + seed + 行数核对
+# [P7] 数据库变更（需要时）；纯代码发布保持服务运行
 # ---------------------------------------------------------------------------
-step 7 "【停机】迁移 + seed + 行数核对"
-confirm "即将停止线上服务进入停机窗口（通常 10-60 秒）。现在开始？"
+if [ "$DB_WORK" != "1" ]; then
+  step 7 "数据库变更阶段（纯代码发布，跳过）"
+  ok "纯代码发布：跳过停机阶段的 migrate / seed / 全表行数核对。"
+  note "服务保持运行；P8 才停止服务做产物切换。"
+  note "P4 的全量备份仍然保留，不因纯代码发布省略。"
+else
+  step 7 "【停机】数据库变更（迁移 + seed + 行数核对）"
+  say "数据库阶段原因：$DB_REASONS"
+  confirm "即将停止线上服务执行数据库变更（通常 10-60 秒）。现在开始？"
 
-STOP_TS="$(remote 'date +%s')"
-DOCS_SYNC_STOPPED=1
-remote_script <<'REMOTE'
+  STOP_TS="$(remote 'date +%s')"
+  DOCS_SYNC_STOPPED=1
+  remote_script <<'REMOTE'
 set -e
 systemctl stop docs-sync.timer docs-sync.service 2>/dev/null || true
 systemctl stop zafu-pchospital-web
 echo "服务已停：$(date '+%H:%M:%S')"
 REMOTE
-note "docs-sync 定时器与线上服务已停（脚本退出时会把定时器放回去）。"
+  SERVICE_STOPPED=1
+  note "docs-sync 定时器与线上服务已停（脚本退出时会把定时器放回去）。"
 
-say "迁移前快照（停机后、迁移前，全表行数）…"
-remote_script <<'REMOTE'
+  say "迁移前快照（停机后、迁移前，全表行数）…"
+  remote_script <<'REMOTE'
 set -e
 set -a; . /opt/zafu-pchospital-db/.env; set +a
 count_of() { docker exec zafu-pchospital-db-greatsql-1 mysql -uroot -p"$GREATSQL_ROOT_PASSWORD" -N -B zafu_pchospital -e "SELECT COUNT(*) FROM \`$1\`"; }
@@ -826,8 +1079,8 @@ done > /tmp/deploy-precounts.txt
 echo "迁移前行数已记录：/tmp/deploy-precounts.txt（$(wc -l < /tmp/deploy-precounts.txt) 张表）"
 REMOTE
 
-say "pnpm db:migrate:deploy（前向迁移，幂等）…"
-remote_script <<'REMOTE'
+  say "pnpm db:migrate:deploy（前向迁移，幂等）…"
+  remote_script <<'REMOTE'
 set -e
 cd /opt/zafu-pchospital-web
 pnpm db:migrate:deploy
@@ -835,8 +1088,8 @@ echo "---- seed（幂等）----"
 pnpm db:seed
 REMOTE
 
-say "迁移后核对（行数 diff + 迁移计数）…"
-remote_script <<'REMOTE'
+  say "迁移后核对（行数 diff + 迁移计数）…"
+  remote_script <<'REMOTE'
 set -e
 set -a; . /opt/zafu-pchospital-db/.env; set +a
 cd /opt/zafu-pchospital-web
@@ -855,12 +1108,27 @@ DIRS=$(ls -d prisma/migrations/*/ | wc -l)
 echo "已应用 $APPLIED / 目录 $DIRS"
 test "$APPLIED" = "$DIRS"
 REMOTE
-ok "迁移与 seed 完成，迁移计数一致。（仍处于停机窗口）"
+  ok "迁移与 seed 完成，迁移计数一致。（仍处于停机窗口）"
+fi
 
 # ---------------------------------------------------------------------------
-# [P8] 原子切换产物并启动服务
+# [P8] 原子切换产物并启动服务（纯代码发布在这里停机）
 # ---------------------------------------------------------------------------
 step 8 "原子切换产物并启动服务"
+
+if [ "$SERVICE_STOPPED" != "1" ]; then
+  confirm "即将停止服务并切换产物（秒级停机）。现在开始？"
+  STOP_TS="$(remote 'date +%s')"
+  DOCS_SYNC_STOPPED=1
+  remote_script <<'REMOTE'
+set -e
+systemctl stop docs-sync.timer docs-sync.service 2>/dev/null || true
+systemctl stop zafu-pchospital-web
+echo "服务已停：$(date '+%H:%M:%S')"
+REMOTE
+  SERVICE_STOPPED=1
+  note "docs-sync 定时器与线上服务已停（脚本退出时会把定时器放回去）。"
+fi
 
 SWAP_OUT="$(remote_script <<REMOTE
 set -e
@@ -903,6 +1171,7 @@ INTERNAL_HTTP="$(printf '%s\n' "$SWAP_OUT" | sed -n 's/^INTERNAL_HTTP=//p')"
 START_TS="$(printf '%s\n' "$SWAP_OUT" | sed -n 's/^START_TS=//p')"
 DOWNTIME=$((START_TS - STOP_TS))
 [ "$INTERNAL_HTTP" = "200" ] || die "切换后内部 curl 未返回 200（得到 ${INTERNAL_HTTP:-无}）。站点可能没起来，看 journalctl -u $SERVICE -n 50。"
+SERVICE_STOPPED=0
 ok "服务已启动，内部 curl 200；停机时长 ${DOWNTIME}s。上一版产物在 .next.old（--rollback 秒级回退）。"
 verify_runtime_commit || true
 
@@ -977,10 +1246,17 @@ else
   NOTIFY_RESULT=unknown
   warn "运行版本未能核实，通知将报告 unknown，不猜测目标 SHA。"
 fi
+finish_phase
+print_phase_timings
 say ""
 say "${C_GREEN}${C_BOLD}========== 部署完成 ==========${C_OFF}"
 say "  提交：      $OLD_SHA -> $TARGET_SHA（共 ${N_COMMITS:-?} 个提交）"
 say "  BUILD_ID：  $BUILD_ID"
+if [ "$DB_WORK" = "1" ]; then
+  say "  数据库阶段：执行（$DB_REASONS）"
+else
+  say "  数据库阶段：跳过（纯代码发布；P4 备份仍保留）"
+fi
 say "  停机时长：  ${DOWNTIME}s"
 say "  产物：      $ART（sha256 ${ART_SHA256:0:12}…，同提交下次会复用）"
 say "  数据库备份：${BACKUP_FILE:-无}"

@@ -126,6 +126,17 @@ jobs:
       - name: 检查（lint + 调色板一致性）
         run: pnpm lint
 
+      # 部署脚本的本地替身测试：不连生产、不访问网络，覆盖网络失败切 bundle、
+      # 纯代码跳过数据库阶段、历史待应用迁移、schema 无迁移中止、失败退出码与
+      # docs-sync 定时器恢复、通知记录隔离。
+      - name: 部署脚本检查与本地替身测试
+        run: |
+          set -euo pipefail
+          bash -n tools/deploy/deploy-prod.sh
+          bash -n tools/deploy/notify-result.sh
+          PYTHON_BIN="$(command -v python3 || command -v python)"
+          "$PYTHON_BIN" -B -m unittest discover -s tests/deploy -v
+
       # 完整构建：文档 + 官网。不要用 build:site 代替 —— 那会产出缺 /handbook/ 的站点。
       - name: 完整构建（文档 + 官网）
         env:
