@@ -173,53 +173,47 @@ export function RepairEditor({
     try {
       if (!serverId) {
         // 活动接待由预填接口一并返回本场出勤候选（issue #238）；其他新建场景仍用全局名册。
-        const prefillPromise = serveContext
-          ? fetch(
-              `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`,
-              { cache: "no-store" },
-            )
-          : null;
-        const membersPromise = serveContext
-          ? null
-          : fetch("/api/v1/repair-members", { cache: "no-store" });
-        const [catsResponse, meResponse] = await Promise.all([
+        const candidateUrl = serveContext
+          ? `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`
+          : "/api/v1/repair-members";
+        const [catsResponse, meResponse, candidateResponse] = await Promise.all([
           fetch("/api/v1/repair-categories", { cache: "no-store" }),
           fetch("/api/v1/me", { cache: "no-store" }),
+          fetch(candidateUrl, { cache: "no-store" }),
         ]);
         const cats = await catsResponse.json();
         const me = await meResponse.json();
+        const candidate = await candidateResponse.json();
         if (!me.success || typeof me.data?.memberProfileId !== "string") {
           setState("error");
           return;
         }
         const categories: RepairCategoryView[] = cats.success ? cats.data : [];
+        const creator = {
+          id: me.data.memberProfileId as string,
+          name: (me.data.displayName as string | null) ?? "我",
+        };
         setCategories(categories);
-        if (prefillPromise) {
-          const prefillResponse = await prefillPromise;
-          const prefillJson = await prefillResponse.json();
-          if (!prefillJson.success) {
-            setMessage(prefillJson.error?.message ?? "无法读取这条接待的预填信息。");
+        if (serveContext) {
+          if (!candidate.success) {
+            setMessage(candidate.error?.message ?? "无法读取这条接待的预填信息。");
             setState("serveError");
             return;
           }
-          const options: RepairMemberOption[] = prefillJson.data.participantOptions ?? [];
-          setMemberOptions(options);
+          const options: RepairMemberOption[] = candidate.data.participantOptions ?? [];
           const stored = readCreateDraft(draftScope);
           const wanted = new Set(stored?.participantIds ?? []);
-          const creator = {
-            id: me.data.memberProfileId as string,
-            name: (me.data.displayName as string | null) ?? "我",
-          };
           const participants = options
             .filter((option) => wanted.has(option.id) && option.id !== creator.id)
             .map((option) => ({ id: option.id, name: option.name }));
+          setMemberOptions(options);
           setRecord(
             serveDraftRecord({
               creator,
               categories,
               participants,
               stored,
-              prefill: prefillJson.data,
+              prefill: candidate.data,
             }),
           );
           if (stored && hasCreateDraftContent(stored))
@@ -227,19 +221,13 @@ export function RepairEditor({
           setState("ready");
           return;
         }
-        const membersResponse = membersPromise ? await membersPromise : null;
-        const members = membersResponse ? await membersResponse.json() : null;
-        const options: RepairMemberOption[] = members?.success ? members.data : [];
-        setMemberOptions(options);
+        const options: RepairMemberOption[] = candidate.success ? candidate.data : [];
         const stored = readCreateDraft();
         const wanted = new Set(stored?.participantIds ?? []);
-        const creator = {
-          id: me.data.memberProfileId as string,
-          name: (me.data.displayName as string | null) ?? "我",
-        };
         const participants = options
           .filter((option) => wanted.has(option.id) && option.id !== creator.id)
           .map((option) => ({ id: option.id, name: option.name }));
+        setMemberOptions(options);
         setRecord(localDraftRecord({ creator, categories, participants, stored }));
         if (stored && hasCreateDraftContent(stored))
           setMessage(repairEditorCopy.createDraftRestored);

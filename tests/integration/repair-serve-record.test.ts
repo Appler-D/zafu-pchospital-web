@@ -34,6 +34,10 @@ const ADMIN_PROFILE_ID = "e7a00000-0000-4000-8000-000000000006";
 const OTHER_USER_ID = "e7a00000-0000-4000-8000-000000000007";
 const OTHER_PROFILE_ID = "e7a00000-0000-4000-8000-000000000008";
 const SYSTEM_CATEGORY_ID = "e7a00000-0000-4000-8000-000000000009";
+const INACTIVE_USER_ID = "e7a00000-0000-4000-8000-00000000000a";
+const INACTIVE_PROFILE_ID = "e7a00000-0000-4000-8000-00000000000b";
+const DELETED_USER_ID = "e7a00000-0000-4000-8000-00000000000c";
+const DELETED_PROFILE_ID = "e7a00000-0000-4000-8000-00000000000d";
 const PREFIX = "SERVE221";
 
 let activityAt = new Date();
@@ -73,8 +77,14 @@ async function expectCode(run: () => Promise<unknown>, code: ApiErrorCode): Prom
 async function cleanupFixtures(): Promise<void> {
   const db = getDb();
   const activityIds = [ACTIVITY_ID, OTHER_ACTIVITY_ID];
-  const profileIds = [STAFF_PROFILE_ID, ADMIN_PROFILE_ID, OTHER_PROFILE_ID];
-  const userIds = [STAFF_USER_ID, ADMIN_USER_ID, OTHER_USER_ID];
+  const profileIds = [
+    STAFF_PROFILE_ID,
+    ADMIN_PROFILE_ID,
+    OTHER_PROFILE_ID,
+    INACTIVE_PROFILE_ID,
+    DELETED_PROFILE_ID,
+  ];
+  const userIds = [STAFF_USER_ID, ADMIN_USER_ID, OTHER_USER_ID, INACTIVE_USER_ID, DELETED_USER_ID];
   const registrations = await db.repairActivityRegistration.findMany({
     where: { activityId: { in: activityIds } },
     select: { id: true, repairRecordId: true },
@@ -149,15 +159,19 @@ async function prepareFixtures(): Promise<void> {
     [STAFF_USER_ID, `${PREFIX} 接待员`],
     [ADMIN_USER_ID, `${PREFIX} 管理员`],
     [OTHER_USER_ID, `${PREFIX} 其他成员`],
+    [INACTIVE_USER_ID, `${PREFIX} 停用成员`],
+    [DELETED_USER_ID, `${PREFIX} 软删成员`],
   ] as const) {
     await db.user.create({
       data: { id: userId, status: "ACTIVE", displayName, createdAt: now, updatedAt: now },
     });
   }
-  for (const [profileId, userId, realName, nickname] of [
-    [STAFF_PROFILE_ID, STAFF_USER_ID, `${PREFIX} 接待员`, null],
-    [ADMIN_PROFILE_ID, ADMIN_USER_ID, `${PREFIX} 管理员`, `${PREFIX} 管理员昵称`],
-    [OTHER_PROFILE_ID, OTHER_USER_ID, `${PREFIX} 其他成员`, null],
+  for (const [profileId, userId, realName, nickname, status, deletedAt] of [
+    [STAFF_PROFILE_ID, STAFF_USER_ID, `${PREFIX} 接待员`, null, "ACTIVE", null],
+    [ADMIN_PROFILE_ID, ADMIN_USER_ID, `${PREFIX} 管理员`, `${PREFIX} 管理员昵称`, "ACTIVE", null],
+    [OTHER_PROFILE_ID, OTHER_USER_ID, `${PREFIX} 其他成员`, null, "ACTIVE", null],
+    [INACTIVE_PROFILE_ID, INACTIVE_USER_ID, `${PREFIX} 停用成员`, null, "DISABLED", null],
+    [DELETED_PROFILE_ID, DELETED_USER_ID, `${PREFIX} 软删成员`, null, "ACTIVE", now],
   ] as const) {
     await db.memberProfile.create({
       data: {
@@ -165,7 +179,8 @@ async function prepareFixtures(): Promise<void> {
         userId,
         realName,
         nickname,
-        status: "ACTIVE",
+        status,
+        deletedAt,
         joinedAt: now,
         createdAt: now,
       },
@@ -269,9 +284,41 @@ async function serveAndRecord(
 before(async () => {
   if (!enabled) return;
   await prepareFixtures();
+  const db = getDb();
   await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
   await repairActivityStaffService.markAttendance(ACTIVITY_ID, adminActor);
   await repairActivityStaffService.markAttendance(OTHER_ACTIVITY_ID, staffActor);
+
+  // 固定排序与过滤夹具：接待员早到、管理员其次；停用 / 软删成员也「出勤」但不进入候选。
+  const now = new Date();
+  await db.repairActivityAttendance.update({
+    where: {
+      activityId_memberProfileId: { activityId: ACTIVITY_ID, memberProfileId: STAFF_PROFILE_ID },
+    },
+    data: { checkedInAt: new Date(now.getTime() - 2 * 60 * 60 * 1000) },
+  });
+  await db.repairActivityAttendance.update({
+    where: {
+      activityId_memberProfileId: { activityId: ACTIVITY_ID, memberProfileId: ADMIN_PROFILE_ID },
+    },
+    data: { checkedInAt: new Date(now.getTime() - 60 * 60 * 1000) },
+  });
+  await db.repairActivityAttendance.createMany({
+    data: [
+      {
+        id: "e7a00000-0000-4000-8000-00000000000e",
+        activityId: ACTIVITY_ID,
+        memberProfileId: INACTIVE_PROFILE_ID,
+        checkedInAt: new Date(now.getTime() - 3 * 60 * 60 * 1000),
+      },
+      {
+        id: "e7a00000-0000-4000-8000-00000000000f",
+        activityId: ACTIVITY_ID,
+        memberProfileId: DELETED_PROFILE_ID,
+        checkedInAt: new Date(now.getTime() - 4 * 60 * 60 * 1000),
+      },
+    ],
+  });
 });
 
 after(async () => {
@@ -355,9 +402,24 @@ dbTest("继续填写预填：仅接待者本人，完整电话 + 分类映射 + 
   assert.ok(prefill.categoryId, "故障类型映射到启用中的分类");
   assert.equal(prefill.activityTitle, ACTIVITY_TITLE);
   assert.deepEqual(
+    prefill.participantOptions.map((option) => option.id),
+    [STAFF_PROFILE_ID, ADMIN_PROFILE_ID],
+    "候选按出勤时间升序，且排除停用 / 软删除成员",
+  );
+  assert.deepEqual(
     prefill.participantOptions.map((option) => option.id).sort(),
     [STAFF_PROFILE_ID, ADMIN_PROFILE_ID].sort(),
     "参与人候选只含本场出勤成员",
+  );
+  assert.equal(
+    prefill.participantOptions.some((option) => option.id === INACTIVE_PROFILE_ID),
+    false,
+    "出勤但已停用的成员不进入候选",
+  );
+  assert.equal(
+    prefill.participantOptions.some((option) => option.id === DELETED_PROFILE_ID),
+    false,
+    "出勤但已软删除的成员不进入候选",
   );
   const staffOption = prefill.participantOptions.find((option) => option.id === STAFF_PROFILE_ID);
   assert.deepEqual(staffOption, {
@@ -410,6 +472,60 @@ dbTest("继续填写预填：仅接待者本人，完整电话 + 分类映射 + 
   await expectCode(
     () => repairActivityStaffService.getServePrefill(ACTIVITY_ID, registration.id, staffActor),
     "ACTIVITY_REGISTRATION_STATE_INVALID",
+  );
+});
+
+dbTest("活动接待建单：参与人必须是本场出勤成员（服务端强制）", async () => {
+  const db = getDb();
+  const registration = await checkedInRegistration(`${PREFIX} 出勤校验客户`);
+  await repairActivityStaffService.serve(ACTIVITY_ID, registration.id, staffActor);
+  const prefill = await repairActivityStaffService.getServePrefill(
+    ACTIVITY_ID,
+    registration.id,
+    staffActor,
+  );
+  const rejectedKey = `serve221-${randomUUID()}`;
+  await expectCode(
+    () =>
+      repairActivityStaffService.createServeRecord(
+        ACTIVITY_ID,
+        registration.id,
+        {
+          idempotencyKey: rejectedKey,
+          fields: { ...fieldsFromPrefill(prefill), participantIds: [OTHER_PROFILE_ID] },
+        },
+        staffActor,
+      ),
+    "VALIDATION_FAILED",
+  );
+  assert.equal(
+    (
+      await db.repairActivityRegistration.findUniqueOrThrow({
+        where: { id: registration.id },
+      })
+    ).repairRecordId,
+    null,
+    "服务端拒绝时不得占用接待登记",
+  );
+  assert.equal(
+    await db.repairRecord.count({ where: { createRequestKey: rejectedKey } }),
+    0,
+    "服务端拒绝时不得落维修单",
+  );
+
+  const record = await repairActivityStaffService.createServeRecord(
+    ACTIVITY_ID,
+    registration.id,
+    {
+      idempotencyKey: `serve221-${randomUUID()}`,
+      fields: { ...fieldsFromPrefill(prefill), participantIds: [ADMIN_PROFILE_ID] },
+    },
+    staffActor,
+  );
+  assert.deepEqual(
+    record.participants.map((participant) => participant.id),
+    [STAFF_PROFILE_ID, ADMIN_PROFILE_ID],
+    "本场出勤的额外参与人可以正常落单",
   );
 });
 

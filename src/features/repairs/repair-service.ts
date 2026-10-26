@@ -344,6 +344,29 @@ export function composeParticipantIds(
   return [...new Set([creatorMemberProfileId, ...extras].map((id) => id.trim().toLowerCase()))];
 }
 
+/**
+ * 活动接待落单：参与人必须在本场出勤（issue #238 审查）。
+ * 创建人本人也在校验集合内，防止绕过 serve 闸门直接提交。
+ */
+async function assertParticipantsAttended(
+  tx: Prisma.TransactionClient,
+  activityId: string,
+  memberProfileIds: readonly string[],
+): Promise<void> {
+  const ids = [...new Set(memberProfileIds.map((id) => id.toLowerCase()))];
+  if (ids.length === 0) return;
+  const attended = await tx.repairActivityAttendance.findMany({
+    where: { activityId, memberProfileId: { in: ids } },
+    select: { memberProfileId: true },
+  });
+  const attendedIds = new Set(attended.map((row) => row.memberProfileId.toLowerCase()));
+  if (ids.some((id) => !attendedIds.has(id))) {
+    throw new AppError("VALIDATION_FAILED", "参与维修人员必须在本场出勤", {
+      fieldErrors: { participantIds: ["只能添加本场出勤成员"] },
+    });
+  }
+}
+
 /** 仅新增关联要求成员未软删除；保留历史参与者不阻止普通编辑。 */
 export async function assertParticipantsExist(
   memberProfileIds: readonly string[],
@@ -491,6 +514,7 @@ export async function createServedRepairRecord(
   }
   const participantIds = composeParticipantIds(input.memberProfileId, fields.participantIds ?? []);
   await assertParticipantsExist(participantIds, [input.memberProfileId]);
+  await assertParticipantsAttended(tx, input.activityId, participantIds);
 
   const recordId = randomUUID();
   await tx.repairRecord.create({

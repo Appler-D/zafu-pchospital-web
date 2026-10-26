@@ -683,7 +683,9 @@ DELETE     /api/v1/admin/comments/:id
   - `POST /api/v1/member/repair-activities/:id/registrations/:registrationId/record`：接待者本人提交，
     `Idempotency-Key` 必填；在一个事务里创建 **`PENDING`** 维修记录（与成员自助提交同一套校验，
     含机型必填）、写参与人 / `SUBMITTED` 时间线 / 审计，并回写 `repair_record_id`。
-    同一幂等键重试返回原记录；登记已被其他会话建单返回 409 `ACTIVITY_REGISTRATION_STATE_INVALID`。
+    服务端按 `activityId` 复核最终参与人（含创建人）均在本场出勤，未出勤返回 400
+    `VALIDATION_FAILED` 且不占用登记。同一幂等键重试返回原记录；登记已被其他会话建单返回
+    409 `ACTIVITY_REGISTRATION_STATE_INVALID`。
 - 看板 `GET /api/v1/member/repair-activities/:id/board`：
   - `served: StaffServedRow[]` —— `SERVED` 报名（按 `servedAt` 倒序）：管理员为本场全部，
     普通成员仅**本人接待**（issue #207）；每行新增 `canFill`（本人接待且未建单）与
@@ -1028,7 +1030,6 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - `AccountNotificationServiceContract` 的 `get(applicationId, actor)` / `retry(applicationId, actor)` 承担管理端权限；`runBatch({limit?})` 只由受保护 CLI 调用（缺省 10，范围 1–50），返回无敏感值的批次统计，不提供公开发信入口。
 - PENDING → SENDING → ACCEPTED / FAILED / UNCERTAIN；明确暂时拒绝可退回 PENDING。每轮最多 4 次实际 Sender 调用，间隔 1 / 5 / 30 分钟。邮件关闭、领取和预算等待不计尝试。结果未知或领取超时停止自动重发；“ACCEPTED”仅表示已提交发信服务。
 - 运行、状态边界与发布 / 停用步骤见 [账号通知运行说明](../account-notifications.md)。
-
 
 ## 统一表格查询（issue #214）
 

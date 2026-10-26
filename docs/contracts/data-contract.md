@@ -239,6 +239,8 @@ Repository / Service 的默认读取必须加 `deletedAt: null`。身份采用�
 - 上限 `repairFieldLimits.participantMaxCount = 9`（含创建人，额外成员 ≤ 8）；候选名单默认来自
   `GET /api/v1/repair-members`（`ACTIVE` 且未软删除）。**活动接待建单例外**（issue #238）：
   候选随预填接口下发，仅本场出勤且 `ACTIVE`、未软删除的成员；姓名与昵称均可作为搜索关键字。
+  `createServedRepairRecord` 在服务端按 `activityId` 复核**最终参与人（含创建人）**均在本场出勤，
+  绕过界面直接提交未出勤成员会返回 400 `VALIDATION_FAILED`，不占用接待登记。
   存在性校验（`assertParticipantsExist`）
   仅对新增关联排除软删除成员；保留已有参与行不阻止普通编辑，移除后不能重新新增软删除成员。
   ID 去空白、统一小写后去重，非字符串输入拒绝；停用（非 ACTIVE）成员不主动新增、但历史参与行不受影响。
