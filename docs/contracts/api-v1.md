@@ -565,7 +565,9 @@ DELETE     /api/v1/admin/comments/:id
   没有新增字段或接口。
 - **首页近场活动「报名开放中优先」**：`pickNonEndedRepairActivitiesForHomePreview`
   按 OPEN → UPCOMING → FULL / CLOSED 分档，同档内 `activityAt` 升序，`ENDED` 不进预览；
-  公开列表仍按方案 B 的 `activityAt` 排序（口径见 `docs/specs/ux-r3-tech-plan.md`）。
+  公开列表将未结束活动按 `activityAt` 升序排列，再接已结束活动的 `activityAt` 降序；
+  同时间按 `createdAt` 升序、`id` 升序稳定排序，见
+  `src/features/repair-activities/repair-activity-sort.ts`。
 
 ### 活动「已结束」的判定口径（issue #79）
 

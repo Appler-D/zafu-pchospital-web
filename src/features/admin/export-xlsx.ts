@@ -23,8 +23,7 @@ const COLUMN_WIDTHS: Record<(typeof EXPORT_COLUMNS)[number]["key"], number> = {
  * 生成真正的 `.xlsx` 字节流（exceljs）。
  *
  * 为什么用库而不是手写 ZIP：`.xlsx` 是 ZIP + SpreadsheetML，手写要自己维护
- * CRC-32 与 ZIP 目录结构；本项目已批准引入 `exceljs`（见 `docs/M6-交付报告.md`
- * 的依赖说明），因此这里只负责把行数据映射成工作表。
+ * CRC-32 与 ZIP 目录结构；复用项目已有的 `exceljs`，这里只负责把行数据映射成工作表。
  *
  * 两个关键取舍：
  * - **不嵌入图片**：需求明确「图片只输出 URL / Record ID」，否则一份导出会膨胀到几十 MB；

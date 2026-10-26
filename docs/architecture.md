@@ -32,11 +32,12 @@
 ├── AGENTS.md                  # 给 AI Agent 的项目规则（必读）
 ├── README.md                  # 项目说明与上手步骤
 ├── docs/                      # 协作文档
+│   ├── README.md              # 现行文档导航与历史记录查阅
+│   ├── assets/                # README 使用的浅 / 深色首页预览
 │   ├── design-system.md       # 视觉唯一来源
 │   ├── architecture.md        # 本文件
 │   ├── database.md            # GreatSQL / Migration / Seed / 运维基线
 │   ├── contracts/             # 数据与 API 公共契约
-│   ├── phase2-development.md  # 模块状态、依赖与协作规则
 │   └── git-workflow.md        # 分支与 PR 流程
 │
 ├── prisma/
@@ -129,8 +130,7 @@
 │   └── console-probe.mjs      # 收集 console 报错与运行时异常（CDP）
 ├── tests/                     # 单元、Contract 与真实 GreatSQL 集成测试
 │
-├── .docs-source/              # 【本地产物】文档仓库检出，docs:build 缺省时自动浅克隆，已 gitignore
-└── shots/                     # 视觉验证截图（tools/inspect.mjs 产出，每个视图 normal / dark 各一张）
+└── .docs-source/              # 【本地产物】文档仓库检出，docs:build 缺省时自动浅克隆，已 gitignore
 ```
 
 ---
@@ -375,10 +375,10 @@ Browser
 
 ---
 
-## 6. Phase 2 扩展边界
+## 6. 业务扩展边界
 
-M0 只交付公共基础，不提前实现完整产品页面。M1–M7 的账号权限、维修记录、成员工作台、
-交流通知、统计、管理后台与公开数据接入按 `docs/phase2-development.md` 的依赖顺序推进。
+账号权限、维修记录、成员工作台、活动、通知、统计与管理后台复用现有领域实现；
+新增业务以负责人确认的需求为范围，以现行数据 / HTTP 契约为边界，不按早期里程碑计划重新建设。
 
 扩展时的约定：
 
