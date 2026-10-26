@@ -41,7 +41,7 @@ test("栏头计数：三个分区都带数量，排队人数单独强调", () =>
   );
   assert.ok(boardSource.includes("{board.eligible.length}"));
   assert.ok(boardSource.includes("{board.queue.length}"));
-  assert.ok(boardSource.includes("{board.served.length}"));
+  assert.ok(boardSource.includes("{board.servedCount}"));
 });
 
 test("排队卡三区：详情行「标签 + 值」成对，操作区沉底", () => {

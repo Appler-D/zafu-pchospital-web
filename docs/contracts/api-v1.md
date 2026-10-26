@@ -596,7 +596,7 @@ DELETE     /api/v1/admin/comments/:id
   成员仍在库层排除待签到人员资料、只保留排队与**本人接待**的已接待记录（issue #207），
   保留独立总数和本人出勤查询。管理员每轮独立取数分支
   由 6 项减为 3 项、成员由 5 项减为 4 项（不含鉴权及前置活动/资格读取，不等同 SQL 条数）。
-  原响应字段、排序、脱敏、权限、写操作和审计不变，进行中 5 秒/结束后 60 秒节拍不变。
+  此处记录缺省完整视图的读取基线；#236 新前端使用下方增量视图，低频明细不再每轮读取。
 
 ### 成员出勤、签到与接待的操作窗口
 
@@ -1022,7 +1022,6 @@ API / 两个步骤页的自环，不做二次 decode，非法值回退角色默�
 - PENDING → SENDING → ACCEPTED / FAILED / UNCERTAIN；明确暂时拒绝可退回 PENDING。每轮最多 4 次实际 Sender 调用，间隔 1 / 5 / 30 分钟。邮件关闭、领取和预算等待不计尝试。结果未知或领取超时停止自动重发；“ACCEPTED”仅表示已提交发信服务。
 - 运行、状态边界与发布 / 停用步骤见 [账号通知运行说明](../account-notifications.md)。
 
-
 ## 统一表格查询（issue #214）
 
 本节覆盖管理端 members、repairs、join-applications、invite-codes、audit-logs；原权限及 Service 二次校验不变。
@@ -1062,3 +1061,33 @@ QQ / 手机号沿用列表脱敏结果，不导出邮箱、凭据或内部账号
 `X-Export-Row-Count` 与 `Cache-Control: private, no-store`。
 每次成功导出写 `member.exported` / `MemberExport` 审计，摘要记录格式、行数和查询结构，
 不记录搜索词或筛选值；审计失败不返回附件。错误沿用统一 API 信封。
+
+## 活动工作台增量同步（issue #236）
+
+`GET /api/v1/member/repair-activities/:id/board?view=full|live|served|attendance`，
+缺省 `full` 保留原 `StaffBoardView`；未知 view 为 400 `VALIDATION_FAILED`。
+所有视图保持统一信封、当前 Session/账号门禁、有效成员和活动检查，成功/失败均为
+`Cache-Control: private, no-store`，不建立跨用户看板缓存。
+
+| view       | 数据                                                                                                                           | 权限与读取                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| live       | 原 activity/attended/attendanceCheckedInAt/canAdmin/eligible/queue/pendingServeRegistration，另加 servedCount、attendanceCount | activity:staff；不查询 SERVED 明细、repairRecord 关系或出勤姓名关系。servedCount 管理员全场、成员本人；attendanceCount 成员为 null，管理员为本场出勤记录数 |
+| served     | `{ served: StaffServedRow[] }`                                                                                                 | activity:staff；成员在库层仅本人，管理员全场；保留排序、旧草稿兼容、canFill/canRevert 及脱敏                                                               |
+| attendance | `{ attendanceMembers: StaffAttendanceMemberView[] }`                                                                           | activity:admin；复用 checkedInAt/id 升序与展示名回退，只含 memberProfileId/name/checkedInAt；成员 403，查询前拒绝                                          |
+
+live 用分组计数与最小字段读取替代历史/名单明细。管理员新增独立本人出勤与计数分支，
+逻辑查询数量可能增加，不能把传输缩小或拆视图等同于实际 SQL/耗时改善；需以相同夹具和
+时间窗口核对查询、读取行与关联。原完整视图仅为兼容，查询分支数不等于 SQL 条数。
+
+前端进行中 live 每 5 秒、结束后每 60 秒；served 在桌面或手机已接待分区可见时首次立即
+读取、其后每 60 秒，手机离开暂停；attendance 仅打开弹层/手动读取。写成功后立即刷新
+受影响资源，写请求不自动重试；低频明细的更新时间单独显示，不伪装成实时状态。
+
+自动 GET 失败保留快照与最后成功时间，显示失败/连续失败；进行中下次间隔
+10→20→40→60 秒，结束与历史最多 120 秒。成功仅清除本资源的同步告警并恢复基础节拍。
+401/403/404 停止本资源自动读取，手动重试仍可达。隐藏页、写操作及确认弹层暂停；
+恢复无失败时立即同步，退避期间 focus/恢复不绕过冷却。每个资源在途合并；写入、
+切活动或卸载使旧读失效，迟到明细不能改写 live 或复活结束状态。
+
+未加载/失败不代表空列表；队列成功不改变明细的成功时间和失败状态。同场刷新保留有效
+选择/草稿/滚动/焦点，切目标清空旧场状态，不让上一场可操作数据留在新目标。

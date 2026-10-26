@@ -8091,6 +8091,31 @@ html[data-theme="black-yellow"] {
   align-items: center;
   gap: var(--s-3);
 }
+
+.activity-board__sync {
+  display: grid;
+  align-content: center;
+  inline-size: 22em;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  block-size: 3.5em;
+  overflow-y: auto;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.activity-board__sync-warning {
+  color: var(--status-warning-deep);
+}
+.activity-board__sync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.activity-board__sync-row > .activity-board__sync {
+  flex: 1;
+}
 /* 「出勤成员」入口（issue #107）：工具栏尾部靠右；窄屏换行后仍贴右。 */
 .activity-board__attendance-entry {
   margin-inline-start: auto;
