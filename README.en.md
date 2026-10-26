@@ -41,13 +41,13 @@ PC Hospital provides volunteer computer support to students and staff at Zhejian
 
 <a href="https://pczafu.cn/">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="shots/01-home-desktop-dark.png" />
-    <source media="(prefers-color-scheme: light)" srcset="shots/01-home-desktop-normal.png" />
-    <img src="shots/01-home-desktop-normal.png" alt="PC Hospital website homepage preview" width="1440" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/01-home-desktop-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/01-home-desktop-normal.png" />
+    <img src="docs/assets/01-home-desktop-normal.png" alt="PC Hospital website homepage preview" width="1440" />
   </picture>
 </a>
 
-This preview reuses the existing repository gallery; the live interface may have changed. Select the image to visit the website.
+These retained homepage images illustrate the site; the live interface may have changed. Select the image to visit the website.
 
 ## Quick start
 
@@ -107,6 +107,8 @@ Documentation, copy, interface improvements, and focused bug fixes are welcome. 
 The [contribution guide](CONTRIBUTING.en.md) covers the workflow, directory layout, test databases, and a PR checklist. Documentation-only changes need formatting, link, and rule consistency checks. Add relevant verification for interaction, API, or data changes, and coordinate full checks with CI to avoid duplicate work.
 
 ## Documentation
+
+See the [maintenance document index](docs/README.md) for all guides and instructions for finding historical records.
 
 The engineering documents below are currently in Chinese; the English contribution guide explains the main entry points.
 

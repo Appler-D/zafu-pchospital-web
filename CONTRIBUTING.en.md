@@ -96,7 +96,7 @@ The Windows setup script creates `.env.test.local`, but `pnpm test:db` **does no
 
 Prefer component / DOM assertions for behavior. When visual changes need illustration, provide representative screenshots of the affected views, checking desktop, narrow layouts, focus, and overflow. Keep credentials and personal data out of public screenshots.
 
-`shots/` is a presentation gallery, not a cache for feature PRs. Gallery updates require agreement on scope and a separate change following the paired light / dark rules in [AGENTS.md](AGENTS.md).
+Keep verification screenshots outside the repository and attach only relevant images to the PR. `docs/assets/` holds the light / dark homepage previews used by the READMEs; feature PRs do not update these images routinely. Agree on scope with a maintainer before replacing them.
 
 ## 6. Open a pull request
 

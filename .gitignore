@@ -44,6 +44,9 @@ yarn-error.log*
 # 本地 Agent 工具的临时工作区（浏览器用户数据、截图脚本等），不属于仓库内容
 .codex-tmp/
 
+# 历史图库已退役；验证截图放仓库外，README 预览仅保留在 docs/assets/
+/shots/
+
 # 图集原图备份（tools/compress-gallery.mjs 自动生成，仅供重新导出用）
 public/gallery/_originals/
 public/_originals/

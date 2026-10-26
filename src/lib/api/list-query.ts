@@ -7,11 +7,8 @@ import type { ListQuery, SortDirection, SortRule } from "@/types/table";
 /**
  * 列表查询参数的解析与拼装（P0）。
  *
- * 为什么要有这一层：六个后台列表目前各自在 `*-http.ts` 里解析分页、关键字与筛选，
- * **没有一个列表支持排序**（`docs/飞书多维表格调研.md` §5 把「表头排序」列为
- * 「建议但要单独立项」）。排序要落地就必须同时贯通「URL 参数 → 路由 → Service →
- * Repository」，与其在六个文件里各写一遍 `sort` 解析，不如把规则收在这里：
- * 白名单校验、方向校验、去重、上限，只写一次。
+ * 后台列表共用分页、筛选与排序参数，贯通「URL 参数 → 路由 → Service → Repository」。
+ * 白名单校验、方向校验、去重与上限集中在这里，避免各列表重复实现。
  *
  * 三条约定：
  * 1. **白名单强制**：不在 `sortable` 里的字段一律 `VALIDATION_FAILED`，

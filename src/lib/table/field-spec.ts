@@ -16,7 +16,6 @@ import type { FieldFilterSpec, FieldKind, FieldSpec, TableViewSpec } from "@/typ
  *
  * 只有能纵向比大小的类型才右对齐：数字、日期、日期时间。**文本类一律左对齐**，
  * 包括看起来像数字的学号 —— 学号是对比用的标识符，不是量。
- * （与 `docs/飞书多维表格调研.md` §4 的第 12 条同一判断：飞书本身也不居中。）
  */
 const NUMERIC_KINDS: readonly FieldKind[] = ["number", "date", "datetime"];
 

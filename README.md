@@ -41,13 +41,13 @@
 
 <a href="https://pczafu.cn/">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="shots/01-home-desktop-dark.png" />
-    <source media="(prefers-color-scheme: light)" srcset="shots/01-home-desktop-normal.png" />
-    <img src="shots/01-home-desktop-normal.png" alt="电脑医院官网首页预览" width="1440" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/01-home-desktop-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/01-home-desktop-normal.png" />
+    <img src="docs/assets/01-home-desktop-normal.png" alt="电脑医院官网首页预览" width="1440" />
   </picture>
 </a>
 
-预览沿用仓库现有图库，线上界面可能已更新；点击图片可访问官网。
+预览为保留的首页展示图片，线上界面可能已更新；点击图片可访问官网。
 
 ## 快速开始
 
@@ -107,6 +107,8 @@ pnpm dev
 [新人贡献指南](CONTRIBUTING.md)包含完整操作、目录说明、测试库用法与 PR 检查清单。纯文档改动只检查格式、链接与规则一致性；涉及交互、接口或数据时补对应验证，完整工程检查与 CI 协调，避免重复运行。
 
 ## 文档导航
+
+完整目录与历史记录查阅方式见 [维护文档目录](docs/README.md)。
 
 | 想了解什么                           | 从这里开始                                                                                                      |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
