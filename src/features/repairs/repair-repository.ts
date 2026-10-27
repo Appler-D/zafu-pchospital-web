@@ -2,8 +2,22 @@ import { getDb } from "@/lib/db/client";
 import { AppError } from "@/lib/api/errors";
 import { Prisma } from "@/generated/prisma/client";
 
-export const repairDetailInclude = {
-  memberProfile: { include: { user: true } },
+/**
+ * 列表与详情共用的 Record 关联。
+ *
+ * 只包含 `toRepairView()` 真正读取的关系；审核记录与时间线仅在详情追加，
+ * 避免列表为不返回的字段付出多表 join 与关联用户读取成本。
+ */
+const repairRecordBaseInclude = {
+  memberProfile: {
+    select: {
+      id: true,
+      userId: true,
+      nickname: true,
+      realName: true,
+      user: { select: { displayName: true } },
+    },
+  },
   category: true,
   photos: {
     where: { deletedAt: null },
@@ -23,6 +37,14 @@ export const repairDetailInclude = {
     },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   },
+} satisfies Prisma.RepairRecordInclude;
+
+/** 维修列表：只读取列表 DTO 需要的关联。 */
+export const repairListInclude = repairRecordBaseInclude;
+
+/** 维修详情：在列表关联之外，再读取审核记录与时间线。 */
+export const repairDetailInclude = {
+  ...repairRecordBaseInclude,
   reviews: { include: { reviewer: true }, orderBy: { createdAt: "asc" } },
   timeline: { include: { actor: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.RepairRecordInclude;

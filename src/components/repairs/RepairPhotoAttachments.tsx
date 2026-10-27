@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { formatBytes, repairCopy, repairEditorCopy } from "@/config/repairs";
+import { normalizePhotoViewOrder } from "@/components/repairs/photo-order";
 import type { RepairPhotoView } from "@/types/contracts";
 
 type Props = {
@@ -31,8 +32,11 @@ export function RepairPhotoAttachments({ recordId, photos, limits, canAttach, on
   }, [photos, recordId]);
 
   function update(next: RepairPhotoView[]) {
-    setItems(next);
-    onChange(next);
+    // 列表顺序就是展示顺序；写操作成功后统一收敛为 0..n-1，避免本地保留
+    // 删除留下的空洞或重复 sortOrder，后续上传 / 换序再按旧值排序时跳位。
+    const normalized = normalizePhotoViewOrder(next);
+    setItems(normalized);
+    onChange(normalized);
   }
 
   async function upload(files: File[]) {
@@ -109,7 +113,8 @@ export function RepairPhotoAttachments({ recordId, photos, limits, canAttach, on
       if (!json.success) throw new Error(json.error.message);
       const from = items.findIndex((item) => item.id === photoId);
       if (from >= 0 && from !== sortOrder) {
-        // 服务端整条互换 sortOrder；本地也按互换更新，避免再整页重载丢焦点。
+        // 服务端按目标位置移动并重排 0..n-1；本地也按显示位置互换，
+        // 再交给 update 统一收敛序号，避免整页重载丢焦点。
         const next = [...items];
         [next[from], next[sortOrder]] = [next[sortOrder], next[from]];
         update(next);

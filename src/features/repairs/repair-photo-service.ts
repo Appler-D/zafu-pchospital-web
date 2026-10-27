@@ -67,6 +67,8 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
               "REPAIR_PHOTO_LIMIT_EXCEEDED",
               `每条记录最多上传 ${limits.maxFiles} 张照片`,
             );
+          // 先收敛历史空洞 / 重复序号，再把新照片接在有效照片末尾。
+          await normalizePhotoSortOrders(tx, locked.photos);
           const rows = [];
           for (const [index, entry] of stored.entries()) {
             rows.push(
@@ -114,8 +116,14 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
         assertCanAttachRepairPhotos(actor, locked);
         if (!locked.photos.some((item) => item.id === photoId))
           throw new AppError("REPAIR_NOT_FOUND", "照片不存在");
-        await tx.repairPhoto.update({ where: { id: photoId }, data: { deletedAt: new Date() } });
-        await timeline(tx, recordId, actor.userId, "PHOTO_REMOVED", { photoId }, new Date());
+        const now = new Date();
+        await tx.repairPhoto.update({ where: { id: photoId }, data: { deletedAt: now } });
+        // 删除后收敛剩余照片，避免补传沿用已释放的序号。
+        await normalizePhotoSortOrders(
+          tx,
+          locked.photos.filter((item) => item.id !== photoId),
+        );
+        await timeline(tx, recordId, actor.userId, "PHOTO_REMOVED", { photoId }, now);
       });
     },
 
@@ -136,19 +144,17 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
       const updated = await inSerializableTransaction(async (tx) => {
         const locked = await lockRecordForPhotoMutation(tx, recordId);
         assertCanAttachRepairPhotos(actor, locked);
-        const lockedCurrent = locked.photos.find((item) => item.id === photoId);
-        const lockedTarget = locked.photos[sortOrder];
-        if (!lockedCurrent || !lockedTarget)
+        const from = locked.photos.findIndex((item) => item.id === photoId);
+        if (from < 0 || !locked.photos[sortOrder])
           throw new AppError("VALIDATION_FAILED", "照片顺序无效");
-        if (lockedTarget.id !== photoId)
-          await tx.repairPhoto.update({
-            where: { id: lockedTarget.id },
-            data: { sortOrder: lockedCurrent.sortOrder },
-          });
-        const photo = await tx.repairPhoto.update({
-          where: { id: photoId },
-          data: { sortOrder },
-        });
+        // 按数组位置移动后整体重排 0..n-1：既执行换位，也收敛历史空洞 / 重复序号。
+        const photos = [...locked.photos];
+        if (from !== sortOrder) {
+          const [moved] = photos.splice(from, 1);
+          photos.splice(sortOrder, 0, moved!);
+        }
+        await normalizePhotoSortOrders(tx, photos);
+        const photo = await tx.repairPhoto.findUniqueOrThrow({ where: { id: photoId } });
         await timeline(
           tx,
           recordId,
@@ -193,6 +199,22 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
 }
 
 export const repairPhotoService = createRepairPhotoService(localRepairPhotoStorage);
+
+/**
+ * 有效照片的顺序不变量：始终为 0..n-1 的连续序号。
+ *
+ * 只在新上传 / 删除 / 换序后调用（同一记录行锁内），不改读路径；
+ * 历史数据里的空洞或重复序号会在下一次写操作后自然收敛。
+ */
+async function normalizePhotoSortOrders(
+  tx: Prisma.TransactionClient,
+  photos: ReadonlyArray<{ id: string; sortOrder: number }>,
+): Promise<void> {
+  for (const [index, photo] of photos.entries()) {
+    if (photo.sortOrder === index) continue;
+    await tx.repairPhoto.update({ where: { id: photo.id }, data: { sortOrder: index } });
+  }
+}
 
 /**
  * 锁定维修记录并按真实状态复核照片权限。
