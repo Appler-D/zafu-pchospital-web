@@ -3690,6 +3690,13 @@ html[data-theme="black-yellow"] {
   .member-workspace {
     padding-block: clamp(5.75rem, 10vh, 7rem) var(--s-8);
   }
+  /* 消息通知：成员页使用紧凑页头，不继承官网首屏留白。 */
+  .member-notifications-workspace.page-head {
+    padding-block: clamp(1.5rem, 3vw, 2.5rem) var(--s-8);
+  }
+  .member-notifications-workspace .sec-title {
+    font-size: clamp(2rem, 3vw, 3rem);
+  }
   .member-workspace__content {
     display: grid;
     gap: clamp(1.75rem, 4vw, 3rem);
