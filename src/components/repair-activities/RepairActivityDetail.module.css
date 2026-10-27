@@ -163,6 +163,66 @@
   margin-block: var(--s-3) var(--s-4);
 }
 
+.queue {
+  min-width: 0;
+  padding: var(--s-5);
+  border: 1px solid var(--line);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--r-base);
+}
+
+.queueHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.queueResult {
+  display: grid;
+  align-content: start;
+  gap: var(--s-2);
+  min-block-size: 8rem;
+  padding-block: var(--s-3);
+}
+
+.queueResult p {
+  margin: 0;
+}
+
+.queueCount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.queueCount strong {
+  color: var(--ink);
+  font-size: var(--t-2xl);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.queueHint,
+.queueGuidance {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  line-height: 1.7;
+}
+
+.queueGuidance {
+  margin: 0;
+  padding-block-start: var(--s-3);
+  border-block-start: 1px solid var(--line);
+}
+
+.queueWarning {
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+
 @media (min-width: 1100px) {
   .layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));

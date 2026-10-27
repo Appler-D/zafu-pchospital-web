@@ -11,6 +11,7 @@ import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToas
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 import { RepairActivityPrecautions } from "@/components/repair-activities/RepairActivityPrecautions";
 import { RepairActivityPreparation } from "@/components/repair-activities/RepairActivityPreparation";
+import { RepairActivityQueue } from "@/components/repair-activities/RepairActivityQueue";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -390,6 +391,8 @@ export function RepairActivityDetail({ activityId }: Props) {
           </div>
         </dl>
       </header>
+
+      <RepairActivityQueue key={activity.id} activityId={activity.id} />
 
       <AdminToast toast={notice} onDismiss={() => setNotice(null)} />
       {problem ? (
