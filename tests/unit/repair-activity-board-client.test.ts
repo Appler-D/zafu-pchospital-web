@@ -155,7 +155,7 @@ async function mount(
     if (!(index in slots)) slots[index] = { current: initial };
     return slots[index];
   });
-  t.mock.method(React, "useEffect", (effect: () => void | (() => void), deps?: unknown[]) => {
+  const effectHook = (effect: () => void | (() => void), deps?: unknown[]) => {
     const index = effectCursor++;
     if (!mounted) {
       effectSlots[index] = { deps };
@@ -166,8 +166,15 @@ async function mount(
     if (previous && !depsChanged(previous.deps, deps)) return;
     previous?.cleanup?.();
     effectSlots[index] = { deps, cleanup: runEffect(effect) };
+  };
+  t.mock.method(React, "useEffect", effectHook);
+  t.mock.method(React, "useLayoutEffect", effectHook);
+  t.mock.method(React, "useMemo", (factory: () => unknown, deps?: unknown[]) => {
+    const index = callbackCursor++;
+    if (!callbackSlots[index] || depsChanged(callbackSlots[index].deps, deps))
+      callbackSlots[index] = { deps, callback: factory() };
+    return callbackSlots[index].callback;
   });
-  t.mock.method(React, "useLayoutEffect", () => {});
   t.mock.method(React, "useCallback", (callback: unknown, deps?: unknown[]) => {
     const index = callbackCursor++;
     if (!callbackSlots[index] || depsChanged(callbackSlots[index].deps, deps))

@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -71,9 +72,14 @@ function BoardAlert({ message }: { message: string }) {
 
 export function MemberRepairActivityBoard({ activityId }: Props) {
   const router = useRouter();
-  const currentActivity = useRef({ id: activityId });
-  if (currentActivity.current.id !== activityId) currentActivity.current = { id: activityId };
-  const activityTarget = currentActivity.current;
+  const activityTarget = useMemo(() => ({ id: activityId }), [activityId]);
+  const currentActivity = useRef<typeof activityTarget | null>(null);
+  useLayoutEffect(() => {
+    currentActivity.current = activityTarget;
+    return () => {
+      currentActivity.current = null;
+    };
+  }, [activityTarget]);
   const copy = memberRepairActivitiesCopy.board;
   const [clock, setClock] = useState(() => Date.now());
   const [serverEnded, setServerEnded] = useState(false);
@@ -175,7 +181,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     media.addEventListener("change", resize);
     return () => media.removeEventListener("change", resize);
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // 只有换目标才清空操控状态；同场刷新不碰弹窗草稿与有效选择。
     setMobilePane(null);
     setServerEnded(false);

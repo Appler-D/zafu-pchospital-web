@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createBoardReader } from "./board-reader";
 
 export function useBoardResource<T>(
@@ -10,23 +10,22 @@ export function useBoardResource<T>(
 ) {
   const [, render] = useState(0);
   const settings = useRef(options);
-  settings.current = options;
-  const slot = useRef<{ id: string; reader: ReturnType<typeof createBoardReader<T>> } | null>(null);
-  if (!slot.current || slot.current.id !== activityId) {
-    slot.current?.reader.dispose();
-    slot.current = {
-      id: activityId,
-      reader: createBoardReader<T>({
+  useLayoutEffect(() => {
+    settings.current = options;
+  });
+  // 创建本身无副作用；被 React 放弃的 render 不得终止仍在屏幕上的读取器。
+  const reader = useMemo(
+    () =>
+      createBoardReader<T>({
         url: `/api/v1/member/repair-activities/${activityId}/board?view=${view}`,
         interval: () => settings.current.interval,
         paused: () => settings.current.paused,
         changed: () => render((value) => value + 1),
         succeeded: (data) => settings.current.succeeded?.(data),
       }),
-    };
-  }
-  const reader = slot.current.reader;
-  useEffect(() => {
+    [activityId, view],
+  );
+  useLayoutEffect(() => {
     // Strict Mode 的 setup/cleanup 会复用实例；清理只失效请求，不把实例永久关闭。
     return () => reader.invalidate();
   }, [reader]);

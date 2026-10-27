@@ -8094,7 +8094,7 @@ html[data-theme="black-yellow"] {
 
 .activity-board__sync {
   display: grid;
-  align-content: center;
+  align-content: safe center;
   inline-size: 22em;
   max-inline-size: 100%;
   min-inline-size: 0;
