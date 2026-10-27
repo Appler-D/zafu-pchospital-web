@@ -11,7 +11,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/auth/request";
 import type { AccountAccessView, SessionPrincipal } from "@/types/contracts";
 
 /**
- * 页面侧的门禁执行点（issue #146 任务 6）。
+ * 页面侧的门禁执行点。
  *
  * 与业务 API 的 `authenticateRequest` 共用 `resolveAccountAccess` 同一份判定：
  * 有效 Session / 账号资格 → 必须改密 → 当前模式需要邮箱且无有效豁免
@@ -41,7 +41,7 @@ export async function pageReturnCandidate(): Promise<string | null> {
 /**
  * 页面守卫共用的第一步：有效 Session / 账号资格。
  *
- * 拿不到会话时去登录页，并**带上当前业务页作为候选原目标**（任务 6 返修 F4）：
+ * 拿不到会话时去登录页，并**带上当前业务页作为候选原目标**：
  * 不带的话 `/login` 的 `returnTo` 无值可用，登录接口再怎么校验也接不出原目标，
  * 「先撞登录页再回原处」这条链就断了。此处只可能带形状合法的业务 pathname。
  */

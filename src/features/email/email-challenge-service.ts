@@ -39,7 +39,7 @@ import {
 } from "@/types/contracts";
 
 /**
- * 邮箱验证码挑战服务（issue #146 §4/§5）。
+ * 邮箱验证码挑战服务（/§5）。
  *
  * 发送顺序固定为三段（§5.2）：
  * 1. 短事务：预占额度 / 冷却 + 作废旧挑战 + 建待发送挑战（`PENDING`）；
@@ -128,7 +128,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
     try {
       expiresAt = await inSerializableTransaction(async (tx) => {
         // ① 原子预占全部额度与冷却 —— 未预占成功不调用 SMTP（抛错即整体回滚，无消耗）。
-        //    预占在**锁齐全部桶之后**取时并把它返回（issue #146 返修 F3 补充）：
+        //    预占在**锁齐全部桶之后**取时并把它返回（补充）：
         //    锁等待 / 可串行化重试的经过时间都体现在预占时刻上，挑战的
         //    createdAt / expiresAt 与冷却 / 窗口全部以该时刻为准，不沿用请求开始快照。
         const txNow = await preoccupyEmailSendQuota(tx, {
@@ -217,7 +217,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
       challengeId,
       outcome,
       context,
-      // 传时间提供者：结果记录事务拿到挑战行锁后重新取时（issue #146 返修 F3）。
+      // 传时间提供者：结果记录事务拿到挑战行锁后重新取时。
       now: () => this.now(),
     });
 
@@ -241,7 +241,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
   /**
    * 独立校验一次验证码（**不消费**）。
    *
-   * 账号级串行化（issue #146 返修 F1）：按（账号, 用途）锁定失败计数行后，
+   * 账号级串行化：按（账号, 用途）锁定失败计数行后，
    * 「检查阻断 → 判定验证码 / 状态 → 记失败」在同一事务里完成 —— 重发前后的不同
    * 挑战、换 IP 与并发请求都无法在「读到未阻断」之后各自继续：5 次上限精确成立。
    * 失败计数与该次失败审计随决策事务**先行提交**，之后才向调用方抛业务错误。
@@ -262,7 +262,7 @@ export class EmailChallengeService implements EmailChallengeServiceContract {
         : null;
 
     // IP 校验请求桶：每次调用计一次（与账号失败桶共同生效）。超限回滚本次计数并拒绝；
-    // 时间以提供者传入，桶锁等待完成后才取时（issue #146 返修 F3 补充）。
+    // 时间以提供者传入，桶锁等待完成后才取时（补充）。
     try {
       await inSerializableTransaction((tx) =>
         consumeEmailVerifyIpQuota(tx, context.ipAddress ?? null, () => this.now()),
@@ -559,7 +559,7 @@ export async function consumeEmailChallenge(
  *
  * - 只有仍为 `PENDING` 且未过期的**本代**挑战可以从「已接受」转 `ACTIVE`：
  *   迟到的发送结果不得复活已被后续签发替代（`INVALIDATED`）的挑战；
- * - 判定时间在拿到挑战行锁之后重新取得（issue #146 返修 F3）—— 等待锁期间
+ * - 判定时间在拿到挑战行锁之后重新取得—— 等待锁期间
  *   跨过有效期时，迟到的「已接受」不得再激活挑战；
  * - 失败 / 不确定的挑战保持 `PENDING`（不可验证），到期由清理收走，不恢复发送；
  * - 挑战行已被清理时同样只记录一条丢弃审计。

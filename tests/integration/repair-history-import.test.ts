@@ -24,7 +24,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 历史修机数据导入的落库通道集成测试（issue #72，PR #73 评审 4）。
+ * 历史修机数据导入的落库通道集成测试（）。
  *
  * 单测只覆盖 `classifyHistoryRows` 纯逻辑；「直接落 APPROVED」「三条 history_import
  * timeline」「审计行」「行指纹重复导入跳过」必须打到真库才测得出来。
@@ -62,7 +62,7 @@ async function cleanupFixtures(): Promise<void> {
     await db.auditLog.deleteMany({
       where: { targetType: "RepairRecord", targetId: { in: recordIds } },
     });
-    // 参与行先于记录删除（issue #114 起导入记录都带创建人参与行，RESTRICT 会挡住）。
+    // 参与行先于记录删除（导入记录都带创建人参与行，RESTRICT 会挡住）。
     await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
@@ -281,7 +281,7 @@ dbTest("导入直接落 APPROVED，写齐 timeline 与审计；重名拒收行�
   assert.equal(record.categoryId, CATEGORY_ID);
   assert.equal(record.durationMinutes, 45);
   assert.equal(record.deletedAt, null);
-  // 导入记录同样落创建人参与行（issue #114 不变量）：导入按「匹配到的成员」当创建人。
+  // 导入记录同样落创建人参与行（不变量）：导入按「匹配到的成员」当创建人。
   assert.deepEqual(
     await db.repairRecordParticipant.findMany({
       where: { repairRecordId: record.id },

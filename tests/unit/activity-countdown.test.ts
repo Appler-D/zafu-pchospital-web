@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { signupCountdownParts } from "../../src/components/repair-activities/activity-format";
 
-// issue #187：报名开始倒计时（服务器时间校正由组件负责，这里只验证纯拆解）。
+// 报名开始倒计时（服务器时间校正由组件负责，这里只验证纯拆解）。
 
 test("报名倒计时：分 / 秒补零，整小时不省略", () => {
   assert.deepEqual(signupCountdownParts(65_000), {

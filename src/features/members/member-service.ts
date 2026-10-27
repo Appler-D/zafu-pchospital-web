@@ -97,7 +97,7 @@ export class MemberService implements MemberServiceContract {
       }
       return { member: await this.getView(replay.memberProfileId) };
     }
-    // 初始密码规则（issue #93）：QQ 后 6 位，5 位老号取整串。
+    // 初始密码规则：QQ 后 6 位，5 位老号取整串。
     const secret = initialPasswordFromQq(normalizeQq(input.qq));
     const member = await inSerializableTransaction(async (tx) => {
       const sourceId = randomUUID();
@@ -168,7 +168,7 @@ export class MemberService implements MemberServiceContract {
       });
       return { memberProfileId, passwordCreated };
     });
-    // 建档成功后在独立事务里补录历史暂存行（issue #72 评审 1）：新成员可能「先修过机、
+    // 建档成功后在独立事务里补录历史暂存行：新成员可能「先修过机、
     // 才注册」——导入时姓名对不上只能暂存，这里按姓名自动认领，历史数据只导入一次。
     // 放在创建事务之外：补录失败绝不能连累建档，且失败的暂存行保留、重跑导入也能补。
     await claimHistoryForNewMember({
@@ -428,10 +428,10 @@ export class MemberService implements MemberServiceContract {
   }
 
   /**
-   * 管理员重置成员密码（issue #113 起改为**临时密码**）：6 位安全随机数字、1 小时有效、
+   * 管理员重置成员密码：6 位安全随机数字、1 小时有效、
    * 首次登录原子消费、强制改密、撤销全部旧 Session。与账号恢复共用签发核心。
    *
-   * 注意与发放路径的区别：`create` 与招募发放保持 QQ 后 6 位初始密码（issue #93 规则），
+   * 注意与发放路径的区别：`create` 与招募发放保持 QQ 后 6 位初始密码（规则），
    * 只有手动重置走临时密码。
    */
   async resetPassword(memberId: string, actor: AuthorizedActor): Promise<MemberMutationResult> {
@@ -455,7 +455,7 @@ export class MemberService implements MemberServiceContract {
   }
 
   /**
-   * 账号恢复（issue #113）：按 QQ 精确定位账号，返回管理操作所需的最小信息。
+   * 账号恢复：按 QQ 精确定位账号，返回管理操作所需的最小信息。
    *
    * 管理员可以没有成员档案（`ADMIN` 直建），恢复能力按 `userId` 定位，不要求出现在
    * 成员列表里；查询只认精确 QQ，不做模糊匹配 —— 这是恢复入口，不是账号检索平台。
@@ -710,7 +710,7 @@ function clean(value?: string): string | undefined {
   return value?.trim() || undefined;
 }
 
-/* ------------------------------------------------ 账号恢复（issue #113） */
+/* ------------------------------------------------ 账号恢复 */
 
 /** 只保留后台展示与判定的两个角色码；过滤口径与 `authService.readPrincipal` 一致。 */
 function memberAdminRoles(codes: string[]): RoleCode[] {
@@ -718,7 +718,7 @@ function memberAdminRoles(codes: string[]): RoleCode[] {
 }
 
 /** 事务内校验恢复资格；不合格直接抛对应错误，合格返回目标用户（供结果组装）。
- *  资格判定口径在 `@/features/auth/account-recovery`（issue #146 起邮箱找回复用同一份）。 */
+ *  资格判定口径在 `@/features/auth/account-recovery`（邮箱找回复用同一份）。 */
 async function assertResetTargetUsable(
   tx: Prisma.TransactionClient,
   userId: string,

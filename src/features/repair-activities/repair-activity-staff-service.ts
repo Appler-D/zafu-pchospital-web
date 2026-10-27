@@ -58,7 +58,7 @@ export type StaffRegistrationView = {
   phoneMasked: string;
   issueType: RepairActivityIssueType;
   issueTypeLabel: string;
-  /** 机型，选填（issue #68）：接待落单时随维修记录一起带过去。 */
+  /** 机型，选填：接待落单时随维修记录一起带过去。 */
   deviceModel: string | null;
   status: string;
   checkedInAt: string | null;
@@ -70,13 +70,13 @@ export type StaffRegistrationView = {
 /** 已接待行：报名视图 + 对应维修单状态（`null` = 记录缺失、已软删除或尚未建单）。 */
 export type StaffServedRow = StaffRegistrationView & {
   recordStatus: RepairStatus | null;
-  /** 当前操作者能否撤销这次接待：未建单，且是接待者本人或活动管理员（issue #166 / #221）。 */
+  /** 当前操作者能否撤销这次接待：未建单，且是接待者本人或活动管理员。 */
   canRevert: boolean;
-  /** 只有接待者本人、且还没建单时才能「继续填写」（issue #221）。 */
+  /** 只有接待者本人、且还没建单时才能「继续填写」。 */
   canFill: boolean;
 };
 
-/** 待补建的接待（issue #221）：登记已接待，但维修单还没创建。 */
+/** 待补建的接待：登记已接待，但维修单还没创建。 */
 export type StaffPendingServe = {
   registrationId: string;
   name: string;
@@ -84,17 +84,14 @@ export type StaffPendingServe = {
   activityTitle: string;
 };
 
-/**
- * 撤销接待（issue #221）：未建单的接待直接恢复登记；旧 serve 草稿（PR #221 之前）
- * 仍可撤销，并返回被删除的草稿 id（过渡期兼容，清理见 #223）。
- */
+/** 存量接待草稿撤销时会删除未提交草稿及照片。 */
 export type RevertServeResultView = {
   registration: StaffRegistrationView;
   deletedRecordId?: string;
 };
 
 /**
- * 出勤成员条目（issue #107）：只下发展示名与签到时间，
+ * 出勤成员条目：只下发展示名与签到时间，
  * 不含 QQ、手机号、学号等身份字段。
  */
 export type StaffAttendanceMemberView = {
@@ -108,22 +105,22 @@ export type StaffBoardView = {
   attended: boolean;
   attendanceCheckedInAt: string | null;
   /**
-   * 当前账号是否具备活动管理员权限（`activity:admin`，issue #108）：
+   * 当前账号是否具备活动管理员权限（`activity:admin`）：
    * 决定「待签到」区与「撤回」按钮的可见性；签到 / 撤回接口同样只对管理员开放。
    */
   canAdmin: boolean;
   /**
-   * 本场出勤成员（按签到时间升序，issue #107）。仅对管理员下发，
-   * 成员恒为空数组（数据最小化，issue #108）。
+   * 本场出勤成员（按签到时间升序）。仅对管理员下发，
+   * 成员恒为空数组（数据最小化）。
    */
   attendanceMembers: StaffAttendanceMemberView[];
-  /** 可签到（REGISTERED）。仅对管理员下发，成员恒为空数组（数据最小化，issue #108）。 */
+  /** 可签到（REGISTERED）。仅对管理员下发，成员恒为空数组（数据最小化）。 */
   eligible: StaffRegistrationView[];
   /** 排队（CHECKED_IN，按 checkedInAt ASC） */
   queue: StaffRegistrationView[];
   /** 本场已接待（按 servedAt 倒序）；常驻区块的数据来源。 */
   served: StaffServedRow[];
-  /** 全局拦截：本成员存在「已接待但未建单」的登记时非 null（issue #221）。 */
+  /** 全局拦截：本成员存在「已接待但未建单」的登记时非 null。 */
   pendingServeRegistration: StaffPendingServe | null;
 };
 
@@ -131,7 +128,7 @@ export type ServeResultView = {
   registration: StaffRegistrationView;
 };
 
-/** 继续填写时从登记行 / 活动预填的字段（issue #221）：完整电话只下发给接待者本人。 */
+/** 继续填写时从登记行 / 活动预填的字段：完整电话只下发给接待者本人。 */
 export type ServePrefillView = {
   registrationId: string;
   activityId: string;
@@ -143,7 +140,7 @@ export type ServePrefillView = {
   categoryId: string | null;
   repairDate: string;
   /**
-   * 参与维修人员候选（issue #238）：仅本场出勤且 ACTIVE 的成员，按出勤时间升序。
+   * 参与维修人员候选：仅本场出勤且 ACTIVE 的成员，按出勤时间升序。
    * 姓名与昵称一并下发供搜索，不含 QQ、手机号、学号等身份字段。
    */
   participantOptions: RepairMemberOption[];
@@ -189,7 +186,7 @@ async function requireStaffMember(actor: AuthorizedActor) {
   return repairRepository.activeMemberForUser(actor.userId);
 }
 
-/** 签到 / 撤回收紧为活动管理员（issue #108）：权限之外仍要求有效成员档案。 */
+/** 签到 / 撤回收紧为活动管理员：权限之外仍要求有效成员档案。 */
 async function requireAdminMember(actor: AuthorizedActor) {
   requirePermission(actor, "activity:admin");
   return repairRepository.activeMemberForUser(actor.userId);
@@ -237,7 +234,7 @@ async function countEffective(activityId: string): Promise<number> {
 }
 
 /**
- * 「已接待但未建单」判据（issue #221，看板与 serve 拦截共用）。
+ * 「已接待但未建单」判据（看板与 serve 拦截共用）。
  *
  * 接待只占登记行（`SERVED` + 接待人），维修单在成员提交时才创建；
  * `repairRecordId` 为空即表示这次接待还没有补建维修记录。
@@ -427,7 +424,7 @@ export const repairActivityStaffService = {
           where: {
             activityId,
             deletedAt: null,
-            // 成员只取「排队 + **本人**接待」（issue #207）：他人接待的客户资料（含脱敏
+            // 成员只取「排队 + **本人**接待」：他人接待的客户资料（含脱敏
             // 电话与记录状态）在库层就不进入成员请求，而不是前端隐藏。管理员仍是全部有效报名。
             ...(canAdmin
               ? { status: { in: [...EFFECTIVE_REGISTRATION_STATUSES] } }
@@ -445,7 +442,7 @@ export const repairActivityStaffService = {
           },
         }),
         findPendingServe(member.id),
-        // 出勤名单仅管理员视图需要；成员在库层就不取（issue #108）。
+        // 出勤名单仅管理员视图需要；成员在库层就不取。
         canAdmin
           ? getDb().repairActivityAttendance.findMany({
               where: { activityId },
@@ -492,15 +489,15 @@ export const repairActivityStaffService = {
           row.repairRecord && !row.repairRecord.deletedAt
             ? (row.repairRecord.status as RepairStatus)
             : null;
-        // 待补建 = 接待已占位、维修单还没创建（issue #221）。
+        // 待补建 = 接待已占位、维修单还没创建。
         const pendingRecord = row.repairRecordId === null;
-        // 旧 serve 草稿（PR #221 之前）：登记仍关联未提交的 DRAFT，过渡期保留撤销入口（清理见 #223）。
+        // 存量接待草稿撤销时会删除未提交草稿及照片。
         const legacyDraft =
           row.repairRecordId !== null && recordStatus === "DRAFT" && !row.repairRecord?.submittedAt;
         return {
           ...toStaffReg(row),
           recordStatus,
-          // 撤销接待：未建单或旧 serve 草稿；本人或活动管理员（issue #166 / #221）。
+          // 撤销接待：未建单或旧 serve 草稿；本人或活动管理员。
           canRevert:
             (pendingRecord || legacyDraft) &&
             (canAdmin || row.servedByMemberProfileId === member.id),
@@ -672,11 +669,11 @@ export const repairActivityStaffService = {
   },
 
   /**
-   * 撤销接待（issue #221）：把接错客户的已接待报名恢复成接待前状态。
+   * 撤销接待：把接错客户的已接待报名恢复成接待前状态。
    *
    * - 新流程（登记未建单）：直接恢复，没有维修记录 / 照片需要删除；
-   * - **旧数据过渡**（PR #221 之前的接待草稿，登记仍关联 `repairRecordId`）：保留原撤销能力，
-   *   仅当记录仍是 `DRAFT` 且未提交时删除草稿及照片，并清理评论 / 收藏 / 通知（#195）；
+   * - **旧数据过渡**（之前的接待草稿，登记仍关联 `repairRecordId`）：保留原撤销能力，
+   *   仅当记录仍是 `DRAFT` 且未提交时删除草稿及照片，并清理评论 / 收藏 / 通知；
    *   已提交 / 已审核 / 已撤回的接待不能撤销（属于审核流程）。
    *
    * 权限：接待者本人或活动管理员（`activity:admin`）。每一步都写审计。
@@ -729,7 +726,7 @@ export const repairActivityStaffService = {
           select: { storageKey: true },
         });
         // 社区与通知子表以 RESTRICT 引用记录：作者能读自己的 DRAFT，就可能留下
-        // 评论 / 收藏 / 通知（审查 #195），不先清掉删记录会撞外键、把撤销打成 500。
+        // 评论 / 收藏 / 通知，不先清掉删记录会撞外键、把撤销打成 500。
         const commentIds = (
           await tx.repairComment.findMany({
             where: { repairRecordId: record.id },
@@ -813,12 +810,12 @@ export const repairActivityStaffService = {
   },
 
   /**
-   * 「继续填写」的预填（issue #221）：接待者本人从登记行 / 活动读取表单初始值。
+   * 「继续填写」的预填：接待者本人从登记行 / 活动读取表单初始值。
    *
    * 只有「已接待且未建单」的登记可读；完整电话沿用按需查看审计
    * （`repair_activity.registration_phone.viewed`）。
    *
-   * issue #238：同时下发本场出勤且在职的参与人候选，供接待建单的成员选择器
+   * 同时下发本场出勤且在职的参与人候选，供接待建单的成员选择器
    * 按姓名 / 昵称搜索；不再让该场景使用全局成员名册。
    */
   async getServePrefill(
@@ -900,7 +897,7 @@ export const repairActivityStaffService = {
   },
 
   /**
-   * 提交即建单（issue #221）：接待者本人补完表单后，创建 PENDING 维修记录并关联登记。
+   * 提交即建单：接待者本人补完表单后，创建 PENDING 维修记录并关联登记。
    *
    * 不落草稿：整个「建记录 + 参与人 + 时间线 + 关联登记」在一条事务里，
    * 并发 / 重试由 `createServedRepairRecord` 的行锁与幂等键兜底。
@@ -959,7 +956,7 @@ export const repairActivityStaffService = {
         throw new AppError("ACTIVITY_REGISTRATION_STATE_INVALID", "仅排队中的报名可接待");
       }
 
-      // 全局拦截（issue #79 第 6 项，issue #221 起按登记行判定）：本成员存在已接待但
+      // 全局拦截（按登记行判定）：本成员存在已接待但
       // 还没建单的客户时，任何活动都不能再接单。客户端已先行拦截，这里是并发兜底。
       const pending = await tx.repairActivityRegistration.findFirst({
         where: pendingServeWhere(member.id),

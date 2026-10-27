@@ -5,7 +5,7 @@ import test from "node:test";
 import { memberRepairActivitiesCopy } from "../../src/config/repair-activities";
 
 /**
- * 工作台改版（issue #107 后续）的接线契约。
+ * 工作台改版（后续）的接线契约。
  *
  * runtime 面薄（页面结构与样式重排），真正会悄悄坏掉的是接线：
  * 页头把静态标题换成活动名、栏头计数绑错数组、排队卡三区被打回两列混排。

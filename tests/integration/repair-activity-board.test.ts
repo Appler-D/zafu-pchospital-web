@@ -25,7 +25,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 成员接待台「签到入队 / 撤回」的集成测试（issue #79-3，真实 GreatSQL）。
+ * 成员接待台「签到入队 / 撤回」的集成测试（-3，真实 GreatSQL）。
  *
  * 前端为批量签到加了二次确认（纯客户端），本条链路仍必须打到真实路由才有意义：
  * 出勤校验（403）→ 签到入队（REGISTERED → CHECKED_IN）→ 撤回（CHECKED_IN →
@@ -33,10 +33,10 @@ const dbTest = enabled ? test : test.skip;
  * 状态与审计必须同时对齐 —— 服务层用事务写状态 + `appendAuditLog`，只查状态无法
  * 发现审计漏写。
  *
- * issue #108 起签到 / 撤回收紧为 `activity:admin`（成员调路由 = 403），看板按
+ *  起签到 / 撤回收紧为 `activity:admin`（成员调路由 = 403），看板按
  * `canAdmin` 决定是否下发「待签到」并给出角色开关；本文件补上这两条的服务端断言。
  *
- * issue #107 起看板向管理员下发 `attendanceMembers`（出勤名单：排序 / 展示名回退 /
+ *  起看板向管理员下发 `attendanceMembers`（出勤名单：排序 / 展示名回退 /
  * 成员恒空数组），同样在本文件钉住。
  *
  * 独立的 UUID 段 `e7900000-…` 与标题前缀 "REG79 " —— 清理一律按这两者限定，
@@ -56,7 +56,7 @@ const ABSENT_STAFF_PROFILE_ID = "e7900000-0000-4000-8000-000000000007";
 /** 未标记出勤的管理员（签到 / 撤回收紧为 activity:admin 后的出勤 403 用例用）。 */
 const ABSENT_ADMIN_USER_ID = "e7900000-0000-4000-8000-000000000008";
 const ABSENT_ADMIN_PROFILE_ID = "e7900000-0000-4000-8000-000000000009";
-/** 出勤名单用例：签到时间早于接待员的第二位出勤成员（issue #107 排序 / 名字解析用）。 */
+/** 出勤名单用例：签到时间早于接待员的第二位出勤成员（排序 / 名字解析用）。 */
 const EARLY_USER_ID = "e7900000-0000-4000-8000-000000000010";
 const EARLY_PROFILE_ID = "e7900000-0000-4000-8000-000000000011";
 
@@ -129,7 +129,7 @@ async function cleanupFixtures(): Promise<void> {
   await db.repairActivityRegistration.deleteMany({ where: { activityId: { in: activityIds } } });
   await db.repairActivityAttendance.deleteMany({ where: { activityId: { in: activityIds } } });
   if (recordIds.length > 0) {
-    // 参与行（issue #114）先于记录删除：接待落单的记录带创建人参与行。
+    // 参与行先于记录删除：接待落单的记录带创建人参与行。
     await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
@@ -504,7 +504,7 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
     (await repairActivityService.getPublicQueue(ACTIVITY_ID)).waitingCount,
     initialQueue + 1,
   );
-  // issue #108：签到 / 撤回收紧为 activity:admin，普通成员调用一律 403。
+  // 签到 / 撤回收紧为 activity:admin，普通成员调用一律 403。
   const memberActor = { ...staffActor, permissions: permissionsForRoles(["MEMBER"]) };
   await assert.rejects(
     () => repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], memberActor),
@@ -514,7 +514,7 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
     () => repairActivityStaffService.withdraw(ACTIVITY_ID, first.id, memberActor),
     { code: "FORBIDDEN" },
   );
-  // 成员仍可接待：serve 保持 activity:staff。issue #221 起接待只占登记行，不建草稿。
+  // 成员仍可接待：serve 保持 activity:staff。 起接待只占登记行，不建草稿。
   await repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], staffActor);
   const served = await repairActivityStaffService.serve(ACTIVITY_ID, first.id, memberActor);
   assert.equal(
@@ -846,7 +846,7 @@ dbTest("看板合并读取：复用管理员计数和本人出勤，成员不读
   });
   assert.equal(registrationRead.length, 2);
   const filter = registrationRead[1]!.where!;
-  // issue #207：成员在库层只取排队 + 本人接待，不再按「CHECKED_IN / SERVED」整体读取。
+  // 成员在库层只取排队 + 本人接待，不再按「CHECKED_IN / SERVED」整体读取。
   assert.equal(filter.status, undefined);
   assert.deepEqual((filter as { OR?: unknown }).OR, [
     { status: "CHECKED_IN" },

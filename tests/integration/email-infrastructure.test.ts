@@ -33,7 +33,7 @@ import type { AuthorizedActor, PublicRequestContext } from "../../src/types/cont
 import { integrationTestsEnabled } from "./db-guard";
 
 /**
- * 邮箱验证与重置授权基础设施（issue #146）。
+ * 邮箱验证与重置授权基础设施。
  *
  * 命名空间：全部夹具挂固定 UUID（`e146…`），每次 `prepareFixtures` 按 userId 精确清理再重建；
  * 邮箱地址与 IP 用固定值，计数桶按同一份键构造器算摘要清理 —— 跨运行不串状态。
@@ -1374,7 +1374,7 @@ dbTest("清理服务：只删保留期外的终结 / 过期记录与失效计数
       now,
       batchSize: 50,
       // 候选选出后、删除前，该桶被并发请求续用（窗口顺延、计数增长）：
-      // 删除条件必须复检「仍过期且无活动阻断」，不得把续用过的桶一并删掉（F2 返修）。
+      // 删除条件必须复检「仍过期且无活动阻断」，不得把续用过的桶一并删掉。
       beforeCounterDelete: async () => {
         await db.emailSecurityCounter.update({
           where: { bucketKeyDigest: digestEmailBucketKey(renewedCounterKey) },

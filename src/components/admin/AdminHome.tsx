@@ -9,16 +9,7 @@ import { adminCopy, adminNavGroups } from "@/config/admin";
 import type { AdminDashboardSummary } from "@/features/admin/admin-dashboard";
 import { buildCommitInfo } from "@/lib/build-info";
 
-/**
- * 管理后台首页（重构版）
- *
- * 信息层次：标题与日期 → 待办数字带（待审核维修 / 待跟进报名 / 发放失败 /
- * 可用邀请码 / 成员总数，逐卡点击进入对应模块）→ 全模块目录（与侧栏同分组，
- * 每项一句说明）。数字来自 `/api/v1/admin/dashboard`；某一项查不出来显示「—」，
- * 不画成 0（0 是「没有待办」）。三项行动计数全 0 时给一句「清零」反馈。
- *
- * 窄屏：数字卡两列、目录砖两列，全部可单手点按。
- */
+/** 待办与模块目录；加载失败与零待办分别显示。 */
 
 export function AdminHome() {
   const copy = adminCopy.home;
@@ -71,7 +62,6 @@ export function AdminHome() {
           </h1>
           <p className="dash-hero__meta">
             {today ? <span>{today}</span> : null}
-            <span>{copy.lead}</span>
             <span
               className="dash-hero__version"
               title={

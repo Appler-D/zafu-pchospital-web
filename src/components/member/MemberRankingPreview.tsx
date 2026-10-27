@@ -2,19 +2,6 @@ import { RankingRow } from "@/components/rankings/RankingRow";
 import { memberCopy } from "@/config/member";
 import type { MemberRankingPreview } from "@/types/contracts";
 
-/**
- * 工作台「维修排行」预览（本学年 + 维修数量，前 3 名）。
- *
- * 三种状态可区分：
- * - `available: false`（区块加载失败）→ 由外层按 `degraded` 渲染局部错误，
- *   本组件返回 `null`，**不在这里把失败画成空榜**；
- * - 正常 → 前 3 名 + 「我的排名」。
- *
- * 这里只做预览，不再带「查看完整排行榜」的入口：榜单页收在侧栏足部的「设置」里，
- * 预览区块保持原样（数据、字段、`degraded` 语义都不变）。
- *
- * 预览与完整榜单**共用同一个 `RankingRow`**，保证同一份数据在两处呈现一致。
- */
 export function MemberRankingPreviewView({ preview }: { preview: MemberRankingPreview }) {
   if (!preview.available) return null;
 

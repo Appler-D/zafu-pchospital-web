@@ -30,7 +30,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 多参与者链路集成测试（issue #114，真实 GreatSQL）：
+ * 多参与者链路集成测试（真实 GreatSQL）：
  * 建档 / 编辑（整体替换语义）/ 存在性校验 / 上限；
  * 审核通知发给全部参与者（审核人除外）；统计按**参与关系**双计（成员列表、排名、
  * 分类分布、个人摘要四个口径）；管理端 PATCH 替换参与者并写审计前后值；

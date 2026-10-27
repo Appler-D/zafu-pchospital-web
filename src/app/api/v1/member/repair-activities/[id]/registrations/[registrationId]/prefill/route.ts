@@ -7,7 +7,7 @@ import { authenticateRequest } from "@/lib/auth/request";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 /**
- * 继续填写接待记录时的预填（issue #221）：从登记行 / 活动读取机主、电话、机型、
+ * 继续填写接待记录时的预填：从登记行 / 活动读取机主、电话、机型、
  * 分类与活动日，不返回维修记录本身。完整电话沿用按需查看审计。
  */
 export async function GET(

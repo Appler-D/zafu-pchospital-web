@@ -40,7 +40,7 @@ function openDatePicker(event: ReactMouseEvent<HTMLInputElement>) {
 }
 
 /**
- * 新建页的本地初始记录（issue #162）：没有服务端 ID / 版本，照片为空。
+ * 新建页的本地初始记录：没有服务端 ID / 版本，照片为空。
  * 照片上限在首次建档后由服务端详情补齐，因此这里用 Infinity 占位（提示文案同步改为通用口径）。
  */
 function localDraftRecord(input: {
@@ -85,7 +85,7 @@ function localDraftRecord(input: {
 }
 
 /**
- * 活动接待「继续填写」的本地初始记录（issue #221）：
+ * 活动接待「继续填写」的本地初始记录：
  * 本机暂存优先，其余字段从登记行 / 活动预填。
  */
 function serveDraftRecord(input: {
@@ -130,19 +130,19 @@ export function RepairEditor({
   serveContext,
 }: {
   /**
-   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，提交时才建档（#222）。
+   * 编辑既有记录时传 ID；新建页**不传**：表单先在本地填写，提交时才建档。
    */
   recordId?: string;
-  /** 新建流程不再暴露「草稿」（issue #72）：只留提交审核；编辑存量草稿与退回记录仍可保存。 */
+  /** 新建流程不再暴露「草稿」：只留提交审核；编辑存量草稿与退回记录仍可保存。 */
   allowSaveDraft?: boolean;
   /** 从活动看板进入时，提交成功后返回该看板继续接待。 */
   returnActivityId?: string;
-  /** 活动接待「继续填写」（issue #221）：预填来自登记行，提交时创建维修单并关联接待。 */
+  /** 活动接待「继续填写」：预填来自登记行，提交时创建维修单并关联接待。 */
   serveContext?: { activityId: string; registrationId: string };
 }) {
   const router = useRouter();
   const createMode = !recordId;
-  /** 活动接待补单的本地暂存按报名分桶（issue #221）。 */
+  /** 活动接待补单的本地暂存按报名分桶。 */
   const draftScope = serveContext?.registrationId;
   const serverId = recordId ?? "";
   /** 新建会话的幂等键：重复点提交 / 上传重试都不会多建草稿。 */
@@ -150,8 +150,8 @@ export function RepairEditor({
   const [record, setRecord] = useState<RepairDetailView>();
   const [categories, setCategories] = useState<RepairCategoryView[]>([]);
   /**
-   * 参与维修人员的候选名单（issue #114）：普通场景为全部活跃成员；
-   * 活动接待建单改用预填接口下发的本场出勤成员（issue #238）。
+   * 参与维修人员的候选名单：普通场景为全部活跃成员；
+   * 活动接待建单改用预填接口下发的本场出勤成员。
    */
   const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "error" | "forbidden" | "serveError">(
@@ -172,7 +172,7 @@ export function RepairEditor({
     setState("loading");
     try {
       if (!serverId) {
-        // 活动接待由预填接口一并返回本场出勤候选（issue #238）；其他新建场景仍用全局名册。
+        // 活动接待由预填接口一并返回本场出勤候选；其他新建场景仍用全局名册。
         const candidateUrl = serveContext
           ? `/api/v1/member/repair-activities/${serveContext.activityId}/registrations/${serveContext.registrationId}/prefill`
           : "/api/v1/repair-members";
@@ -292,7 +292,7 @@ export function RepairEditor({
     setRecord((current) => (current ? { ...current, [key]: value } : current));
   }
   /** 保存当前表单，返回服务端视图 —— `PATCH` 返回的是列表视图（无 `reviews` / `timeline`），故用合并。 */
-  /** 表单字段 → 新建 / 补单请求体（issue #221 起两处共用）。 */
+  /** 表单字段 → 新建 / 补单请求体（两处共用）。 */
   function draftFieldsOf(current: RepairDetailView) {
     return {
       repairDate: current.repairDate,
@@ -302,10 +302,10 @@ export function RepairEditor({
       ownerPhone: current.ownerPhone,
       deviceModel: current.deviceModel,
       // 不再发送 `content`：字段已从表单退场，`undefined` 即「不动」——
-      // 老记录的正文不会被这里清空（issue #79 第 6 项）。
+      // 老记录的正文不会被这里清空。
       remark: current.remark,
       result: current.result ?? defaultRepairResult,
-      // 参与维修人员（issue #114）：只发送额外成员（不含创建人本人），服务端整体替换。
+      // 参与维修人员：只发送额外成员（不含创建人本人），服务端整体替换。
       participantIds: current.participants
         .filter((participant) => participant.id !== current.member.id)
         .map((participant) => participant.id),
@@ -338,7 +338,7 @@ export function RepairEditor({
       setBusy(false);
     }
   }
-  /** 接待补单提交（issue #221）：直接建 PENDING 记录并关联登记，不落草稿。 */
+  /** 接待补单提交：直接建 PENDING 记录并关联登记，不落草稿。 */
   async function submitServe() {
     if (!record || !serveContext) throw new Error("接待信息缺失，请返回活动重试");
     const response = await fetch(
@@ -361,14 +361,14 @@ export function RepairEditor({
     setSubmitted(true);
   }
 
-  /** 「暂存返回」（issue #221）：只存本机 sessionStorage，不创建服务端草稿。 */
+  /** 「暂存返回」：只存本机 sessionStorage，不创建服务端草稿。 */
   function saveAndReturn() {
     if (!record || !serveContext) return;
     writeCreateDraft(snapshotOf(record), draftScope);
     router.push(`/member/repair-activities/${encodeURIComponent(serveContext.activityId)}`);
   }
 
-  /** 新建「提交即建单」（#222）：直接创建 PENDING，不落草稿。 */
+  /** 新建「提交即建单」：直接创建 PENDING，不落草稿。 */
   async function createSubmit() {
     if (!record) throw new Error("记录尚未加载");
     const response = await fetch("/api/v1/repairs", {
@@ -394,7 +394,7 @@ export function RepairEditor({
 
   async function submit() {
     if (busy) return;
-    // 机型提交必填（issue #218）：先在客户端给出可读提示，服务端还会再校验一次。
+    // 机型提交必填：先在客户端给出可读提示，服务端还会再校验一次。
     if (!record?.deviceModel?.trim()) {
       setMessage(repairEditorCopy.deviceModelRequired);
       return;
@@ -437,7 +437,7 @@ export function RepairEditor({
       setBusy(false);
     }
   }
-  /** 添加参与成员（issue #114）：创建人固定第一行、不可移除；候选里排除已加入的人。 */
+  /** 添加参与成员：创建人固定第一行、不可移除；候选里排除已加入的人。 */
   function addParticipant(memberProfileId: string) {
     if (!record || !memberProfileId) return;
     setRecord((current) => {
@@ -470,7 +470,7 @@ export function RepairEditor({
     setRecord((current) => (current ? { ...current, photos: json.data.photos } : current));
   }
   async function upload(files: File[]) {
-    // 新建/接待补单提交前没有记录，照片入口已在界面隐藏（#222）。
+    // 新建/接待补单提交前没有记录，照片入口已在界面隐藏。
     if (createMode) return;
     if (!files.length || !record) return;
     const selected = files;
@@ -721,9 +721,7 @@ export function RepairEditor({
             onAdd={addParticipant}
             onRemove={removeParticipant}
           />
-          <p className="field__hint">
-            {allowSaveDraft ? repairEditorCopy.requiredNote : repairEditorCopy.requiredNoteCreate}
-          </p>
+          {allowSaveDraft ? <p className="field__hint">{repairEditorCopy.requiredNote}</p> : null}
           {serveContext ? <p className="field__hint">{repairEditorCopy.serveSubmitNote}</p> : null}
           <p className="field__hint">
             {(allowSaveDraft
@@ -731,7 +729,6 @@ export function RepairEditor({
               : repairEditorCopy.resultDefaultHintSubmitOnly
             ).replace("{result}", repairResultLabels[defaultRepairResult])}
           </p>
-          {serverId ? <p className="field__hint">当前版本：{record.version}</p> : null}
           <div className="signup__actions">
             {allowSaveDraft ? (
               <Button type="submit" disabled={busy}>

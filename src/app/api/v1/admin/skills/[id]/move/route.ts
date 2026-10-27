@@ -7,7 +7,7 @@ import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
 export const runtime = "nodejs";
 
 /**
- * M6 第五轮：把技能标签拖到指定位置（`{beforeId: string | null}`）。
+ * 把技能标签拖到指定位置（`{beforeId: string | null}`）。
  *
  * 与 `POST /reorder`（上移 / 下移一格）并存：拖动会一次跨越任意格数，
  * 用 `reorder` 模拟要发 N 次请求、写 N 条审计，所以单独给一个「落点」入口。

@@ -261,7 +261,7 @@ async function seedRepair(
       deletedAt: options.deleted ? now : null,
     },
   });
-  // 参与行（issue #114）：统计口径已切到参与关系，直建的夹具记录也必须带创建人参与行，
+  // 参与行：统计口径已切到参与关系，直建的夹具记录也必须带创建人参与行，
   // 否则排名 / 摘要 / 分类分布都会把它算成 0。
   await db.repairRecordParticipant.create({
     data: {
@@ -284,7 +284,7 @@ async function seedRepair(
  * 的月份里，从而把榜单成员集合收敛成可预期的本文档 fixture。
  */
 /**
- * 固定时钟（issue #178：学年不再可配置）：把「现在」钉在上海 2020-10-15，
+ * 固定时钟（学年不再可配置）：把「现在」钉在上海 2020-10-15，
  * 学年窗口即 2020–2021，继续与本文件之外的「今天/本月」fixture 隔离。
  * 需要精确断言的用例把 `CONTROLLED_NOW` 传给服务，生产调用一律走默认的当前时刻。
  */
@@ -292,7 +292,7 @@ const CONTROLLED_NOW = new Date("2020-10-15T12:00:00.000Z");
 const CONTROLLED_YEAR_START = "2020-09-01";
 const CONTROLLED_YEAR_END = "2021-08-31";
 const CONTROLLED_MONTH = "2020-10";
-/** 本文件自己的分类：不再依赖 m0 创建的 `M2_TEST`（issue #184）。 */
+/** 本文件自己的分类：不再依赖 m0 创建的 `M2_TEST`。 */
 const M5_CATEGORY_ID = "91000000-0000-4000-8000-000000000005";
 const M5_CATEGORY_CODE = "M5_TEST";
 /** 受控窗口内的一天，用于聚合测试。 */
@@ -330,7 +330,7 @@ async function cleanupFixtures(): Promise<void> {
     const inProfiles = { in: profileIds };
     const inUsers = { in: userIds };
 
-    // #115 的设置保存会写审计；先清理本文件操作者的审计，避免 actor_user_id 外键阻止删账号。
+    // 设置保存会写审计；先清理本文件操作者的审计，避免 actor_user_id 外键阻止删账号。
     await db.auditLog.deleteMany({ where: { actorUserId: inUsers } });
     await db.notification.deleteMany({
       where: {
@@ -345,7 +345,7 @@ async function cleanupFixtures(): Promise<void> {
       where: { authorMemberProfileId: inProfiles, parentCommentId: null },
     });
     await db.repairFavorite.deleteMany({ where: { memberProfileId: inProfiles } });
-    // 参与行（issue #114）先于记录删除。
+    // 参与行先于记录删除。
     await db.repairRecordParticipant.deleteMany({
       where: {
         OR: [{ memberProfileId: inProfiles }, { record: { memberProfileId: inProfiles } }],
@@ -366,7 +366,7 @@ async function cleanupFixtures(): Promise<void> {
   await db.repairCategory.deleteMany({ where: { code: M5_CATEGORY_CODE } });
 }
 
-/** 每个用例前：清掉本文件上一轮的数据，并确保自己的测试分类存在（不依赖 m0，issue #184）。 */
+/** 每个用例前：清掉本文件上一轮的数据，并确保自己的测试分类存在（不依赖 m0）。 */
 async function prepareFixtures(): Promise<void> {
   await cleanupFixtures();
   await getDb().repairCategory.create({
@@ -434,7 +434,7 @@ function monthBoundaryDays(): { first: string; last: string; lastOfPrevious: str
   };
 }
 
-/* issue #75：月/学期区间的两端都是「某日 00:00（上海）」的 UTC 时刻，
+/* 月/学期区间的两端都是「某日 00:00（上海）」的 UTC 时刻，
    而 `repair_date` 是 DATE 列。区间被整体挪一天时，「上月末」与「本月末」
    两条记录会**互换**：只断言「本月 = 2 条」的写法看不见这个 bug
    （原来的用例正是这样漏掉的）。所以下面两个边界用例一律**逐成员**区分。 */

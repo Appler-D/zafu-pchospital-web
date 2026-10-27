@@ -20,7 +20,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 活动报名「选填机型」的集成测试（真实 GreatSQL，issue #68）。
+ * 活动报名「选填机型」的集成测试（真实 GreatSQL）。
  *
  * 这条链路横跨三个组件，任何一段断开都只有真库能测出来：
  *   公开报名（写 deviceModel）→ 接待台签到排队 → 接待落单（把机型复制进维修记录）。
@@ -103,7 +103,7 @@ async function cleanupFixtures(): Promise<void> {
   await db.repairActivityRegistration.deleteMany({ where: { activityId: ACTIVITY_ID } });
   await db.repairActivityAttendance.deleteMany({ where: { activityId: ACTIVITY_ID } });
   if (recordIds.length > 0) {
-    // 参与行（issue #114）先于记录删除：接待落单的记录带创建人参与行。
+    // 参与行先于记录删除：接待落单的记录带创建人参与行。
     await db.repairRecordParticipant.deleteMany({ where: { repairRecordId: { in: recordIds } } });
     await db.repairRecord.deleteMany({ where: { id: { in: recordIds } } });
   }
@@ -210,7 +210,7 @@ async function registerCheckInAndServe(input: {
     await repairActivityStaffService.markAttendance(ACTIVITY_ID, staffActor);
     await repairActivityStaffService.checkIn(ACTIVITY_ID, [registrationId], staffActor);
     await repairActivityStaffService.serve(ACTIVITY_ID, registrationId, staffActor);
-    // issue #221：接待只占登记行；机型从预填进入「提交即建单」的维修记录。
+    // 接待只占登记行；机型从预填进入「提交即建单」的维修记录。
     const prefill = await repairActivityStaffService.getServePrefill(
       ACTIVITY_ID,
       registrationId,
@@ -351,7 +351,7 @@ dbTest("接待补单（提交即建单）把机型写入维修记录", async () 
 
   const record = await getDb().repairRecord.findUniqueOrThrow({ where: { id: repairRecordId } });
   assert.equal(record.deviceModel, "ThinkPad X1 Carbon");
-  // issue #221：提交即建单，直接进入待审核；内容 / 时长来自成员填写。
+  // 提交即建单，直接进入待审核；内容 / 时长来自成员填写。
   assert.equal(record.status, "PENDING");
   assert.equal(record.content, null);
   assert.equal(record.durationMinutes, 30);

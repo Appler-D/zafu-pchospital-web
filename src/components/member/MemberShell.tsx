@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { MemberNav } from "@/components/member/MemberNav";
 
 /**
- * MemberShell —— 成员端外壳（T-P0-3）
+ * MemberShell —— 成员端外壳
  *
  * 左导航 + 主内容槽，对标 `admin-shell`。渲染在 `app/member/layout.tsx`，
  * 客户端导航之间保持挂载，切页时侧栏不重建。

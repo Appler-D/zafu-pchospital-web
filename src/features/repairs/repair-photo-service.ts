@@ -195,7 +195,7 @@ export function createRepairPhotoService(storage: RepairPhotoStorage) {
 export const repairPhotoService = createRepairPhotoService(localRepairPhotoStorage);
 
 /**
- * 锁定维修记录并按真实状态复核照片权限（issue #226）。
+ * 锁定维修记录并按真实状态复核照片权限。
  *
  * 审核服务更新同一行状态；这里先 `FOR UPDATE` 再读，保证「审核已通过」不会被并发补传绕过。
  */

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { repairFieldLimits } from "@/config/repairs";
 
 /**
- * 历史修机数据导入（issue #72）——纯解析与匹配逻辑，不碰数据库。
+ * 历史修机数据导入——纯解析与匹配逻辑，不碰数据库。
  *
  * 数据来自腾讯在线文档表单（两张收集表的真实列结构已核对，见 tools 脚本说明）。
  * 必需列只有姓名/日期/正文三列；时长与分类列可能整列缺失，由 `--default-duration`
@@ -126,7 +126,7 @@ export type ValidHistoryRow = {
 };
 
 /**
- * 姓名尚未在册、但其余字段全部有效的行（issue #72 评审 1）。
+ * 姓名尚未在册、但其余字段全部有效的行。
  * 先落 `repair_history_pending` 暂存，等该姓名的新成员注册/建档后由自动补录认领；
  * `fingerprint` 与 `ValidHistoryRow.idempotencyKey` 同一套算法（不含成员归属），
  * 因此「暂存 → 认领」与「重跑 CLI 直接导入」天然去重，谁先到都不会重复入库。
@@ -167,7 +167,7 @@ export function normalizeHistoryDate(value: string): string | null {
 
 /**
  * 维修时长文本 → 整数分钟。表单里是自由文本（"30分钟/1h/半小时/1小时05分/20"），
- * 口径为社团确认的规则（issue #72 历史数据收集表适配）：
+ * 口径为社团确认的规则（历史数据收集表适配）：
  * `X分钟|分|min(s)` 按分钟；`X小时|Xh` 按 60 倍；`半小时` 30；`两小时` 120；
  * `X小时Y分` 相加；**纯数字 ≤12 按小时、>12 按分钟**；其余（"一次"、中文数字等）拒收转人工。
  */
@@ -249,7 +249,7 @@ export function historyRowKey(row: {
 /**
  * 按姓名匹配成员、按名称匹配分类，产出可导入行、待认领行与逐行拒收原因。
  * 重名（同名多位在册成员）不猜归属，整组拒收转人工。
- * 收集表实况适配（口径均经社团确认，issue #72）：
+ * 收集表实况适配（口径均经社团确认）：
  * - 维修人员一格多人 → 归属第一人，原文进备注留痕；
  * - 姓名前粘连班级号（「计算机233蔡廷耀」）→ 剥离前缀后匹配，并在备注留痕；
  * - 无时长列/空值 → `options.defaultDurationMinutes` 补录并留痕；

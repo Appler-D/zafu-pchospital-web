@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { parseBuildCommit } from "../../src/lib/build-info";
 
-// issue #189：后台版本显示只接受合法 commit，非法值一律显示「未知」。
+// 后台版本显示只接受合法 commit，非法值一律显示「未知」。
 
 test("构建版本：完整 SHA 规整为小写并取前 7 位", () => {
   assert.deepEqual(parseBuildCommit("  5FDC1F8A1B2C3D4E5F60718293A4B5C6D7E8F901 \n"), {

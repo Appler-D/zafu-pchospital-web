@@ -9,7 +9,7 @@ export const repairDetailInclude = {
     where: { deletedAt: null },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   },
-  /** 参与维修人员（issue #114）：创建人恒排第一；只取展示名所需的最小字段。 */
+  /** 参与维修人员：创建人恒排第一；只取展示名所需的最小字段。 */
   participants: {
     include: {
       memberProfile: {
@@ -60,8 +60,8 @@ export const repairRepository = {
   },
   /**
    * 本人最近一条「空白草稿」：所有业务字段为空、无有效照片、仍是 DRAFT。
-   * 新建页进页面即建档（issue #72），复用空白草稿避免成员反复进出攒下一堆空记录
-   * （PR #73 评审 3）。`result` 建档即写默认值，不作为「空白」判据。
+   * 新建页进页面即建档，复用空白草稿避免成员反复进出攒下一堆空记录
+   * 。`result` 建档即写默认值，不作为「空白」判据。
    */
   async latestEmptyDraft(memberProfileId: string) {
     return getDb().repairRecord.findFirst({
@@ -69,7 +69,7 @@ export const repairRepository = {
         memberProfileId,
         status: "DRAFT",
         deletedAt: null,
-        // 已撤回的草稿不算空白草稿：它带着提交痕迹（issue #165），不能被新建流程复用。
+        // 已撤回的草稿不算空白草稿：它带着提交痕迹，不能被新建流程复用。
         submittedAt: null,
         repairDate: null,
         durationMinutes: null,

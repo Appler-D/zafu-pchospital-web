@@ -149,7 +149,7 @@ export async function listRepairMemberOptions(actor: AuthorizedActor) {
 /**
  * 正式摘要只在唯一正式谓词上追加**参与关系**与可选日期范围。
  *
- * issue #114 起，统计归属从「维修人单字段」切到「参与关系」：参与人也计入自己的
+ *  起，统计归属从「维修人单字段」切到「参与关系」：参与人也计入自己的
  * 次数与时长（时长不分人，记录上的 `duration_minutes` 对全部参与者生效）。
  * 关系过滤用 `some`，一条记录只会命中一次，值不会因参与行重复而放大。
  */
@@ -160,7 +160,7 @@ function approvedForMember(
   return approvedRepairWhere({
     participants: { some: { memberProfileId } },
     // `repair_date` 是 DATE 列：区间必须换成日期边界再交给查询构造器，
-    // 否则本月/学年统计会被整体挪一天（issue #75）。
+    // 否则本月/学年统计会被整体挪一天。
     repairDate: range ? toDateOnlyBounds(range) : undefined,
   });
 }
@@ -243,7 +243,7 @@ export async function listMemberRecentRepairs(
  * 成员工作队列与最近操作。可包含未通过记录，因此与 `listMemberRecentRepairs` 区分开，
  * 返回条目带显式 `status`，禁止冒充「已通过维修」。
  *
- * 口径（issue #114）：仍按**创建人**（`memberProfileId`）—— 草稿/待审/退回都是
+ * 口径：仍按**创建人**（`memberProfileId`）—— 草稿/待审/退回都是
  * 「我要去处理的事」，只有创建人能编辑与提交；参与者不该在自己队列里看到别人的作业。
  */
 export async function listMemberWorkQueue(memberProfileId: string): Promise<MemberWorkQueue> {
@@ -257,7 +257,7 @@ export async function listMemberWorkQueue(memberProfileId: string): Promise<Memb
   return { draftCount, pendingCount, rejectedCount };
 }
 
-/** 最近操作（issue #114 口径：仍按创建人）——「我在弄的记录」的最新动态。 */
+/** 最近操作（口径：仍按创建人）——「我在弄的记录」的最新动态。 */
 export async function listMemberRecentActivity(
   memberProfileId: string,
   limit: number,
@@ -289,7 +289,7 @@ function available(value: number): MetricValue {
 }
 
 /**
- * 摘要取值链（issue #79 第 6 项）：备注优先，老记录的 `content` 回退；
+ * 摘要取值链：备注优先，老记录的 `content` 回退；
  * 两者皆空时占位「未填写备注」。压平换行、截断到 60 个码点，不泄露完整长文本。
  */
 function excerpt(remark: string | null, content: string | null): string {
@@ -330,7 +330,7 @@ export function listWhere(
   const visibility: Prisma.RepairRecordWhereInput = actor.permissions.includes("repair:review")
     ? {}
     : { OR: [{ memberProfile: { userId: actor.userId } }, { status: "APPROVED" }] };
-  // 管理端默认不显示草稿（issue #220）：未显式选择状态时，「全部」= 非草稿；
+  // 管理端默认不显示草稿：未显式选择状态时，「全部」= 非草稿；
   // 显式 status=DRAFT 仍可查看 / 导出草稿。成员视角不变（成员必须看到自己的草稿）。
   const status =
     !input.status &&
@@ -341,7 +341,7 @@ export function listWhere(
       ? ({ not: "DRAFT" } as const)
       : input.status;
   const query = input.query?.trim();
-  // 案例库准入（issue #134）：并集条件必须经 AND 数组注入 —— 返回值已有顶层 `OR`
+  // 案例库准入：并集条件必须经 AND 数组注入 —— 返回值已有顶层 `OR`
   // 承载关键词搜索，Prisma 同一对象内两个同名键后者覆盖前者，另开顶层 `OR`
   // 会把关键词搜索静默顶掉。单条记录维度过滤，双标记录天然只命中一次。
   const conditions: Prisma.RepairRecordWhereInput[] = [
@@ -393,16 +393,14 @@ export function listWhere(
   return {
     deletedAt: null,
     AND: conditions,
-    // 「维修成员」筛选（issue #114）：按**参与过**匹配，不是只看创建人 ——
+    // 「维修成员」筛选：按**参与过**匹配，不是只看创建人 ——
     // 管理端要能查出「某人参与过的全部记录」；创建人恒有参与行，旧口径被完全覆盖。
     participants: input.memberId ? { some: { memberProfileId: input.memberId } } : undefined,
     categoryId: input.categoryId,
     status,
     result: input.result,
     repairDate: {
-      // `repair_date` 是 DATE 列：走日期边界，且结束日用「次日零点」这个排他上界。
-      // 原来的 `lte: T00:00:00.000Z` 只是**碰巧**正确 —— 它依赖 Prisma 把过滤值按 UTC
-      // 日历日截断；一旦截断行为消失，当天 00:00 之后创建的记录会被整体漏掉。
+      // DATE 列按 UTC 日历日比较，须使用日期边界。
       gte: input.repairDateFrom ? requireDateOnly(input.repairDateFrom, "起始日期") : undefined,
       lt: input.repairDateTo ? nextDay(requireDateOnly(input.repairDateTo, "结束日期")) : undefined,
     },
@@ -414,7 +412,7 @@ export function listWhere(
           { remark: { contains: query } },
           // 机主姓名可搜；机主电话不参与搜索（隐私口径见任务书 3.3）。
           { ownerName: { contains: query } },
-          // 成员名按**任一参与者**匹配（issue #114）；创建人恒有参与行，行为与旧口径兼容。
+          // 成员名按**任一参与者**匹配；创建人恒有参与行，行为与旧口径兼容。
           {
             participants: {
               some: {

@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  *
  * 断点由设计系统统一决定，页面不要自行改动。
  * 导航项来自 src/config/navigation.ts，新增页面只改配置。
- * 「成员登录」是独立账号入口（T-P0-1），不进 mainNav。
+ * 「成员登录」是独立账号入口，不进 mainNav。
  *
  * 显示模式切换入口（ThemeSwitcher）挂在两处导航的收尾位置：
  * 桌面索引栏底部、移动端顶栏右侧，两处共用同一份状态。

@@ -8,7 +8,6 @@ export const loginCopy = {
   brandName: "ZAFU PC HOSPITAL",
   eyebrow: "Member Access",
   title: "成员登录",
-  lead: "登录电脑医院综合服务平台，继续处理维修记录与成员事务。",
   qqLabel: "QQ 号",
   qqPlaceholder: "请输入已绑定的 QQ 号",
   passwordLabel: "密码",
@@ -35,7 +34,6 @@ export const registerCopy = {
   brandName: "ZAFU PC HOSPITAL",
   eyebrow: "Invite Register",
   title: "邀请码注册",
-  lead: "持有效邀请码登记成员身份并设置登录密码。没有邀请码请走公开招新。",
   groupInvite: "① 邀请码",
   groupIdentity: "② 身份信息",
   groupPassword: "③ 设置密码",
@@ -69,7 +67,7 @@ export const registerCopy = {
   backHome: "返回首页",
 } as const;
 
-/** T-P0-2 账号菜单：挂在成员 / 管理侧栏足部。T-P1-4 增加双角色壳层切换。 */
+/** 账号菜单：挂在成员 / 管理侧栏足部。增加双角色壳层切换。 */
 export const accountMenuCopy = {
   /** `displayName` 为空时的降级展示名 */
   fallbackName: "成员",

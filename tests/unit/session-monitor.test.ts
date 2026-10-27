@@ -6,7 +6,7 @@ import test, { type TestContext } from "node:test";
 import type { AccountAccessView } from "../../src/types/contracts";
 
 /**
- * 真实 `SessionMonitor` 的排期与「允许停留」断言（issue #146 任务 6 返修 F1 + F4）。
+ * 真实 `SessionMonitor` 的排期与「允许停留」断言。
  *
  * 打的是客户端组件本体（只替换 hook 的存储与 `usePathname` 的取值），时钟与定时器由
  * `node:test` 的 mock timers 接管：不存在「等真到期」，也没有把公式抄进测试再自证。
@@ -262,7 +262,7 @@ test("网络异常后不拿已过期的豁免排期：按固定间隔重试，�
   assert.equal(ui.calls.length, 2, "豁免到点照常复查，这一次请求失败");
 
   // 失败响应不能把已过期的豁免当成排期依据（0ms 连发），也不能因为还留着两小时后的
-  // Session 时间就等两小时（返修 S1）：按固定退避重试。
+  // Session 时间就等两小时：按固定退避重试。
   ui.tick(MINUTE - SECOND);
   await ui.settle();
   assert.equal(ui.calls.length, 2, "失败后按固定间隔重试，不是 0ms 连发");

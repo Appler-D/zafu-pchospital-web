@@ -155,7 +155,7 @@ async function loadRows(input: JoinApplicationExportInput): Promise<JoinApplicat
     ticketNo: record.ticketNo,
     recruitmentCycle: record.recruitmentCycle,
     realName: record.realName,
-    // 历史报名（issue #147 迁移前）两列为 NULL：导出空字符串，不出现字面量 `null`。
+    // 历史报名（迁移前）两列为 NULL：导出空字符串，不出现字面量 `null`。
     studentId: record.studentId ?? "",
     className: record.className ?? "",
     qq: record.qqNormalized,

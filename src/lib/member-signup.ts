@@ -41,7 +41,7 @@ export type MemberSignupResult = MemberSignupReceipt | MemberSignupFailure;
  * 必填与格式约束由原生约束校验（required / pattern / maxLength）负责，
  * 这里是「用户已经填对」之后的清理：去掉首尾空白、去掉 QQ 与手机号里的
  * 分隔符（138 0000 0000 这类写法很常见）；姓名只去首尾空白，内部字符与
- * 空格原样保留（issue #147 返修：此前会删掉姓名里的全部空白）。
+ * 空格原样保留。
  * 邮箱复用服务端同源的 normalizeEmail；失败抛出含 fieldErrors.email 的 AppError，调用方就地呈现。
  */
 export function normalizeMemberSignup(data: FormData): MemberSignupInput {

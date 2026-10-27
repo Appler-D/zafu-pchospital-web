@@ -67,7 +67,7 @@ export const homePublicAnalytics = {
   label: "Service Records",
   statsTitle: "维修统计",
   total: "累计服务设备",
-  /** 学年口径（issue #178）：`{academicYear}` 由服务端下发的同一段区间替换，如「2026–2027 学年维修」。 */
+  /** 学年口径：`{academicYear}` 由服务端下发的同一段区间替换，如「2026–2027 学年维修」。 */
   year: "{academicYear}维修",
   duration: "累计维修时长",
   countUnit: "台",

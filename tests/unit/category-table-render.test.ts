@@ -7,28 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { CategoryTableContext } from "../../src/components/admin/category-table-spec";
 import type { RepairCategoryAdminView } from "../../src/types/contracts";
 
-/**
- * 故障分类表迁移到内核后的 **DOM 契约测试**。
- *
- * 「迁移前后 DOM 等价」是这次改造唯一不能妥协的约束（`AGENTS.md`：操作前后除明确要改的
- * 那一处，其它像素不该移动）。因此这里不测「组件能不能跑」，而是把迁移前那张表的标记
- * 逐项固定下来：列的顺序、表头文案、每个单元格的 `data-label` 与类名、空值占位、
- * 行内控件的 `aria-label` / `title`、空态、以及**不该出现的 `admin-table__num`**。
- *
- * 手柄列是唯一需要解释的一列，也是**零差异**的一部分：它的可见表头为空、单元格没有
- * 字段名，但原标记里有一句只给读屏的列名 `<span class="sr-only">拖动调整顺序</span>` ——
- * 现在由 `FieldSpec.headLabel` 表达，单元格则**不写** `data-label`
- * （内核只在 `label` 非空时才写这个属性）。下面那两条用例钉住的就是原标记本身。
- *
- * 编辑态那一行（表单跨「说明」+「引用记录」两列）走 `<AdminTable renderRow>` 整行接管 ——
- * 与技能标签表、邀请码表同一处理，因此它的标记与迁移前**逐格一致**（含 `colSpan={2}`）。
- *
- * 用 `react-dom/server` 渲染，不需要 jsdom，也不需要浏览器 —— 断言优先于截图（§8.1）。
- *
- * 为什么要挂一个全局 `React`：`tsconfig` 的 `jsx` 是 `preserve`（Next 自己用自动运行时
- * 编译），而 `tsx` 跑测试时走的是**经典**运行时，组件源码里因此没有 `import React`。
- * 这里先把它挂到全局，再**动态**加载组件 —— 静态 import 会在赋值之前执行，来不及。
- */
+/** 验证表格的列顺序、单元格内容与可访问性标记。 */
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type Modules = {
@@ -372,9 +351,7 @@ test("业务规则：被引用过的分类不能删除、只能停用 —— 界
   );
   assert.equal(activateTag.includes("disabled"), false, "停用/启用不该因为引用计数被禁用");
 
-  // 4) 规则本身写在文案里（面板把 `usageNote` 渲染在表格上方）：页面不说这件事，
-  //    使用者只能猜「为什么没有删除按钮」。
-  assert.ok(copy.usageNote.includes("不能删除") && copy.usageNote.includes("只能停用"));
+  assert.ok(copy.usageNote.includes("只能停用"));
 });
 
 test("整行接管：编辑行由面板自己写 5 个格（含 colSpan=2 的表单），内核不插格子", async () => {

@@ -7,18 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { JoinApplicationTableContext } from "../../src/components/admin/join-application-table-spec";
 import type { JoinApplicationStatus, JoinApplicationSummary } from "../../src/types/contracts";
 
-/**
- * 招募报名表迁移到内核后的 **DOM 契约测试**。
- *
- * 「迁移前后 DOM 等价」是这次改造唯一不能妥协的约束（`AGENTS.md`：除明确要改的那一处，
- * 其它像素不该移动）。因此这里把迁移前那张表的标记逐项固定下来：列的顺序与文案、
- * `data-label`、内容列类名、空值行、脱敏联系方式的拼接方式、状态标签的三档样式。
- *
- * 用 `react-dom/server` 渲染，不需要 jsdom（项目没装）。
- *
- * 全局 `React`：`tsconfig` 的 `jsx` 是 `preserve`，`tsx` 跑测试走**经典**运行时，
- * 组件源码里因此没有 `import React`。必须先挂全局、再动态 import。
- */
+/** 验证表格的列顺序、单元格内容与可访问性标记。 */
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type Modules = {
@@ -155,7 +144,7 @@ test("常规行：data-label、脱敏联系方式、提交时间逐项对齐", a
   assert.match(submitted, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
   // 账号发放按既有文案显示。
   assert.ok(html.includes(admin.provisionStatusLabels.NOT_REQUIRED));
-  // 两个行内动作：「详情」始终可点；「通过」（issue #95）对可审核状态可点。
+  // 两个行内动作：「详情」始终可点；「通过」对可审核状态可点。
   assert.ok(html.includes(copy.action.detail));
   assert.ok(html.includes(copy.action.approve));
   assert.match(

@@ -11,20 +11,7 @@ import { Icon } from "@/components/ui/Icon";
 import { adminCopy, adminNavGroups } from "@/config/admin";
 import type { AdminDashboardSummary } from "@/features/admin/admin-dashboard";
 
-/**
- * 后台导航（工作台重构版）
- *
- * 桌面（≥1100px）：左侧栏，11 个模块按「待办 / 维修业务 / 成员与账号 / 内容配置 / 数据」
- * 平铺，足部保留返回官网与账号菜单。窄屏：侧栏收成顶部一条（品牌 + 返回官网 + 账号），导航交给底部
- * 固定的标签栏（首页 / 审核 / 招募 / 成员 / 更多），其余 8 个模块收进「更多」抽屉。
- *
- * 「维修审核」与「招募审核」带待办角标（待审核数 / 待跟进报名数），
- * 侧栏条目与底部标签共用同一份数据：挂载时从 `/api/v1/admin/dashboard` 取一次，
- * 让管理员在后台任何页面都能看到积压。请求失败就不显示角标（角标是增强信息）。
- *
- * 渲染在 `src/app/admin/layout.tsx`：客户端切页侧栏不重建、角标不丢。
- * prefetch 按意图触发（hover / focus / touchstart），挂载不全量预取。
- */
+/** 后台持久导航；待办角标加载失败时隐藏，导航按意图预取。 */
 
 export type AdminNavProps = {
   /** 服务端已认证的展示名，交给账号菜单做首屏乐观渲染 */

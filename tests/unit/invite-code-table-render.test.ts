@@ -7,27 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { InviteCodeTableContext } from "../../src/components/admin/invite-code-table-spec";
 import type { InviteCodeAdminView } from "../../src/types/contracts";
 
-/**
- * 邀请码表迁移到内核后的 **DOM 契约测试**。
- *
- * 「迁移前后 DOM 等价」是这次改造唯一不能妥协的约束（`AGENTS.md`：除明确要改的那一处，
- * 其它像素不该移动）。因此这里不测「组件能不能跑」，而是把迁移前那张表的标记逐项固定下来：
- * 列的顺序与文案、`data-label`、类名、空值行、状态标签、按钮的禁用态。
- *
- * 两类断言：
- *
- * 1. **常规行**：由 spec 推导，与迁移前的 `<td>` 逐项对齐；
- * 2. **`renderRow` 整行接管**：邀请码的「调整策略」把中间四列合成一个 `colSpan` 表单，
- *    内核要保证「接管这一行的格子」的同时 `<tr>` 属性（`data-row-id`）与列宽照旧。
- *    接管那一行本身是面板里的内联 JSX（依赖表单状态），SSR 渲染不到，因此这里测的是
- *    **机制**：给一个返回节点的 `renderRow`，看格子被换掉、`<tr>` 属性还在；
- *    给一个返回 `null` 的，看它老老实实走逐列渲染。
- *
- * 用 `react-dom/server` 渲染，不需要 jsdom（项目没装）。
- *
- * 全局 `React`：`tsconfig` 的 `jsx` 是 `preserve`，`tsx` 跑测试走**经典**运行时，
- * 组件源码里因此没有 `import React`。必须先挂全局、再动态 import。
- */
+/** 验证表格的列顺序、单元格内容与可访问性标记。 */
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type Modules = {

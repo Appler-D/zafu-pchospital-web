@@ -31,7 +31,7 @@ import {
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
 
-/** 管理端维修列表的筛选：日期走 DATE 列边界，结束日必须含全天（与 issue #75 同源）。 */
+/** 管理端维修列表的筛选：日期走 DATE 列边界，结束日必须含全天（与  同源）。 */
 test("维修列表日期筛选：DATE 列边界 + 结束日含全天", () => {
   const actor = { userId: "u1", permissions: ["repair:review"] as const };
   const where = listWhere(
@@ -155,7 +155,7 @@ test("维修状态机只接受任务书规定流转", () => {
   assert.equal(isRepairTransitionAllowed("REJECTED", "PENDING"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "APPROVED"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "REJECTED"), true);
-  // 撤回审核已下线（issue #222）：待审核不能回到草稿。
+  // 撤回审核已下线：待审核不能回到草稿。
   assert.equal(isRepairTransitionAllowed("PENDING", "DRAFT"), false);
   assert.equal(isRepairTransitionAllowed("APPROVED", "DRAFT"), false);
   assert.equal(isRepairTransitionAllowed("DRAFT", "APPROVED"), false);
@@ -172,7 +172,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
     content: null,
     result: "COMPLETED",
   };
-  // 无正文、无照片即可通过（issue #79 第 6 项：正文与照片退出提交门槛）。
+  // 无正文、无照片即可通过（正文与照片退出提交门槛）。
   validateSubmission(complete);
 
   assert.throws(
@@ -189,11 +189,11 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
       }),
     (e) => e instanceof AppError && e.code === "REPAIR_SUBMISSION_INCOMPLETE",
   );
-  // 机主姓名 / 电话必填（issue #79 第 6 项）：缺哪项报哪项的 fieldErrors。
+  // 机主姓名 / 电话必填：缺哪项报哪项的 fieldErrors。
   for (const [field, patch] of [
     ["ownerName", { ownerName: null }],
     ["ownerPhone", { ownerPhone: null }],
-    // 机型提交必填（issue #218）：历史记录不回填，只在提交这一刻要求。
+    // 机型提交必填：历史记录不回填，只在提交这一刻要求。
     ["deviceModel", { deviceModel: null }],
   ] as const) {
     assert.throws(
@@ -213,7 +213,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
       e.code === "REPAIR_SUBMISSION_INCOMPLETE" &&
       e.fieldErrors?.ownerPhone !== undefined,
   );
-  // 维修时长提交必填（issue #72）：其余项齐了但缺时长要拦下。
+  // 维修时长提交必填：其余项齐了但缺时长要拦下。
   assert.throws(
     () => validateSubmission({ ...complete, durationMinutes: null }),
     (e) =>
@@ -270,7 +270,7 @@ test("草稿校验：机主字段可空，填了则受上限与格式约束；�
   assert.equal(normalizeDraftFields({ ownerPhone: "138-0013-8000" }).ownerPhone, "13800138000");
   assert.equal(normalizeDraftFields({ ownerPhone: "" }).ownerPhone, null);
   assert.equal(normalizeDraftFields({}).ownerName, undefined, "未提交的字段保持 undefined（不动）");
-  // 机型（issue #218）：草稿可空、填了 trim、超长在草稿阶段就拦。
+  // 机型：草稿可空、填了 trim、超长在草稿阶段就拦。
   assert.equal(normalizeDraftFields({ deviceModel: " 联想 小新 " }).deviceModel, "联想 小新");
   assert.equal(normalizeDraftFields({ deviceModel: "   " }).deviceModel, null);
   assert.equal(normalizeDraftFields({}).deviceModel, undefined, "未提交的机型保持不动");
@@ -464,7 +464,7 @@ function recordRow(overrides: Record<string, unknown> = {}) {
       userId: "u1",
       user: { displayName: null },
     },
-    // 参与者（issue #114）：默认只有创建人本人（迁移回填后的常态形状）。
+    // 参与者：默认只有创建人本人（迁移回填后的常态形状）。
     participants: [
       {
         memberProfileId: "m1",

@@ -63,7 +63,7 @@ export type MemberOverviewSettled = [
   PromiseSettledResult<MemberWorkQueue>,
 ];
 
-/** 解析当前应为哪个月与哪个学年区间；学年固定为 9/1 → 次年 9/1（issue #178），不存在「未配置」。 */
+/** 解析当前应为哪个月与哪个学年区间；学年固定为 9/1 → 次年 9/1，不存在「未配置」。 */
 export function resolveMemberRanges(now: Date): { monthRange: UtcRange; yearRange: UtcRange } {
   const monthRange = shanghaiMonthRange(now);
   const yearRange = shanghaiAcademicYearRange(now);

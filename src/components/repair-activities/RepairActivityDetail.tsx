@@ -37,7 +37,7 @@ export function RepairActivityDetail({ activityId }: Props) {
   const copy = repairActivitiesPage.detail;
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [activity, setActivity] = useState<RepairActivityPublicView | null>(null);
-  /** 服务器时间与本机时间之差：倒计时以服务器为准，避免本机时钟偏差（issue #187）。 */
+  /** 服务器时间与本机时间之差：倒计时以服务器为准，避免本机时钟偏差。 */
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [problem, setProblem] = useState("");
@@ -634,7 +634,7 @@ export function RepairActivityDetail({ activityId }: Props) {
         </div>
       </div>
 
-      {/* 提交前确认完整声明，成功后在同一弹层展示到场准备（issue #208）。
+      {/* 提交前确认完整声明，成功后在同一弹层展示到场准备。
           服务端同样强制同意，绕开确认直接打接口会拿到 400。 */}
       {pendingSignup ? (
         <ConfirmDialog

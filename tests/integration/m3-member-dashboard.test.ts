@@ -29,7 +29,7 @@ const dbTest = enabled ? test : test.skip;
 
 /**
  * 固定时钟（上海 2026-10-15 12:00）：用例里的「今天」不再随运行时刻变化，
- * 避免跨月 / 学年边界（尤其 8/31→9/1）时统计窗口与断言错位（issue #183）。
+ * 避免跨月 / 学年边界（尤其 8/31→9/1）时统计窗口与断言错位。
  */
 const FIXED_NOW = new Date("2026-10-15T04:00:00.000Z");
 const FIXED_TODAY = "2026-10-15";
@@ -89,7 +89,7 @@ async function prepareFixtures(): Promise<void> {
   await db.repairPhoto.deleteMany({
     where: { record: { memberProfile: { realName: { startsWith: "M3 " } } } },
   });
-  // 参与行（issue #114）先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
+  // 参与行先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
   await db.repairRecordParticipant.deleteMany({
     where: { record: { memberProfile: { realName: { startsWith: "M3 " } } } },
   });
@@ -211,7 +211,7 @@ async function createApprovedRepair(
     },
     owner,
   );
-  // 照片是选填附件（issue #79 第 6 项）：这里仍上传一张，顺带覆盖照片路径。
+  // 照片是选填附件：这里仍上传一张，顺带覆盖照片路径。
   const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
   await repairPhotoService.upload(
     draft.id,
@@ -487,7 +487,7 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   const today = FIXED_TODAY;
   await createApprovedRepair(owner, { repairDate: today, durationMinutes: 90 });
   await createApprovedRepair(owner, { repairDate: today, durationMinutes: 30 });
-  // 第一条草稿带上正文内容：空白草稿会被「进页面即建档」的复用逻辑拦下（PR #73 评审 3），
+  // 第一条草稿带上正文内容：空白草稿会被「进页面即建档」的复用逻辑拦下，
   // 这里需要「1 条草稿 + 1 条空白草稿（随后转待审）」两条并存的场景。
   await repairService.createDraft(
     { idempotencyKey: randomUUID(), content: "工作台草稿正文，等待补充照片后提交。" },
@@ -530,7 +530,7 @@ dbTest("M3 工作台只统计本人已通过记录且不计入草稿待审退回
   assert.equal(dashboard.repairSummary.totalApprovedCount.status, "AVAILABLE");
   assert.equal(dashboard.repairSummary.totalApprovedDurationMinutes.value, 120);
   assert.equal(dashboard.repairSummary.monthApprovedCount.value, 2);
-  // 学年口径固定可算（issue #178）：两条已通过都发生在今天 → 学年计数与本月一致。
+  // 学年口径固定可算：两条已通过都发生在今天 → 学年计数与本月一致。
   assert.equal(dashboard.repairSummary.yearApprovedCount.status, "AVAILABLE");
   assert.equal(dashboard.repairSummary.yearApprovedCount.value, 2);
   // M5 起正式统计统一由 Analytics 入口产出，来源标注随之改为 M5_ANALYTICS。

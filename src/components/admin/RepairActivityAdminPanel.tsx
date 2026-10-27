@@ -225,7 +225,6 @@ export function RepairActivityAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-repair-activities-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 

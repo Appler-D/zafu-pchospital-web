@@ -72,7 +72,7 @@ export type NotificationStatus = ValueOf<typeof NotificationStatus>;
 
 /* ------------------------------------------------------------------ M5 统计 */
 
-/** 统计范围。`ACADEMIC_YEAR` 固定为 9/1 → 次年 9/1（issue #178）；ALL_TIME 不附加任何日期条件。 */
+/** 统计范围。`ACADEMIC_YEAR` 固定为 9/1 → 次年 9/1；ALL_TIME 不附加任何日期条件。 */
 export const AnalyticsScope = ["MONTH", "ACADEMIC_YEAR", "ALL_TIME"] as const;
 /** 排行主指标。时长始终以整数分钟入库与比较，小时只在 UI 层格式化。 */
 export const RankingMetric = ["REPAIR_COUNT", "DURATION_MINUTES"] as const;
@@ -100,7 +100,7 @@ export type RepairExportInput = Omit<RepairListInput, "page" | "pageSize">;
 export type RepairExportRow = {
   repairDate: string;
   memberName: string;
-  /** 参与成员（issue #114）：全部参与者、「、」连接；创建人也在列（便于单列回答「谁做过这条」）。 */
+  /** 参与成员：全部参与者、「、」连接；创建人也在列（便于单列回答「谁做过这条」）。 */
   participantNames: string;
   ownerName: string;
   ownerPhone: string;
@@ -201,7 +201,7 @@ export type AuthSessionResult = SessionPrincipal & {
 };
 
 /**
- * 账号在当前门禁档位下的访问结论（issue #146 任务 6）。
+ * 账号在当前门禁档位下的访问结论。
  *
  * 判定顺序固定：有效 Session / 账号资格 → 必须改密 → 当前模式需要邮箱且无有效豁免 →
  * 合法原目标或角色默认页。每次受保护请求都按**当次服务端持久化状态**重判，
@@ -248,7 +248,7 @@ export type SubmitJoinApplicationInput = {
   /** 报名通知地址，必填；不代表已验证的账号邮箱。 */
   email: string;
   /**
-   * 学号 / 班级（issue #147）：**必填**。约束与邀请码注册同一来源
+   * 学号 / 班级：**必填**。约束与邀请码注册同一来源
    * （`src/lib/security/normalization.ts`）：学号 trim 后 1–32 字符、保留前导零、不唯一；
    * 班级 trim 后 1–80 字符。历史报名没有这两列（读模型保持可空），新提交由服务端保证必填。
    */
@@ -312,7 +312,7 @@ export type JoinApplicationDetail = JoinApplicationView & {
   ticketNo: string;
   recruitmentCycle: string;
   realName: string;
-  /** 学号 / 班级（issue #147）：历史报名为 `null`（迁移前没有这两列），界面显示 `—`。 */
+  /** 学号 / 班级：历史报名为 `null`（未填写），界面显示 `—`。 */
   studentId: string | null;
   className: string | null;
   qq: string;
@@ -332,7 +332,7 @@ export type JoinApplicationDetail = JoinApplicationView & {
   }>;
 };
 
-/** 更正报名通知邮箱（issue #161）：邮箱只作通知用，账号邮箱仍由登录后验证绑定。 */
+/** 更正报名通知邮箱：邮箱只作通知用，账号邮箱仍由登录后验证绑定。 */
 export type CorrectJoinNotificationEmailInput = { email: string };
 
 /**
@@ -376,7 +376,7 @@ export type RedeemInviteCodeInput = {
   realName: string;
   qq: string;
   phone: string;
-  /** 学号 / 班级（issue #147）：**必填**，约束来源与公开招募同一份（`normalization.ts`）。 */
+  /** 学号 / 班级：**必填**，约束来源与公开招募同一份（`normalization.ts`）。 */
   studentId: string;
   className: string;
   password: string;
@@ -401,7 +401,7 @@ export type MemberRegistrationResult = {
 };
 
 /**
- * 邀请码注册成功的响应载荷（issue #146 任务 6）：注册结果 + 服务端统一落点。
+ * 邀请码注册成功的响应载荷：注册结果 + 服务端统一落点。
  *
  * 注册本身不新增邮箱字段：先完成注册与建会话，再由 `accountAccess` 决定下一步
  * （需要验证邮箱时进邮箱步骤，否则进角色默认页）。前端不再固定跳 `/member`。
@@ -435,12 +435,12 @@ export type MemberView = {
 export type MemberMutationResult = {
   member: MemberView;
   initializationSecret?: string;
-  /** 临时密码到期时间（issue #113）：仅管理员重置 / 账号恢复签发时存在。 */
+  /** 临时密码到期时间：仅管理员重置 / 账号恢复签发时存在。 */
   temporaryExpiresAt?: string;
 };
 
 /**
- * 「账号恢复」精确查询入口（issue #113）：按 QQ 精确定位账号，返回管理操作所需的
+ * 「账号恢复」精确查询入口：按 QQ 精确定位账号，返回管理操作所需的
  * 最小信息 —— 不含 QQ / 手机号明文，不返回密码状态细节，避免变成账号检索平台。
  *
  * `blockedReason` 与登录资格判定（`readPrincipal`）同义：
@@ -523,7 +523,7 @@ export type MemberListEntry = {
   /** 账号是否被停用。`memberProfile.status` 为 `REVOKED` 时用户仍可能保留管理员角色。 */
   userStatus: UserStatus;
   /**
-   * 技能标签（第六轮验收：成员表要能直接看到，不必为此打开详情）。
+   * 技能标签。
    *
    * 只带展示需要的三个字段，顺序与成员端一致（按标签库的 `sortOrder`）；
    * 完整标签库在 `/api/v1/admin/skills`。**不是敏感信息**，与 QQ / 手机号不同 ——
@@ -623,11 +623,11 @@ export type RepairCategoryAdminView = RepairCategoryView & {
 export type RepairMemberOption = {
   id: string;
   name: string;
-  /** 姓名 / 昵称（issue #238）：仅活动接待预填候选下发，用于姓名与昵称双关键字匹配。 */
+  /** 姓名 / 昵称：仅活动接待预填候选下发，用于姓名与昵称双关键字匹配。 */
   realName?: string | null;
   nickname?: string | null;
 };
-/** 参与维修的成员（issue #114）：`id` 为成员档案 id，创建人恒排第一。 */
+/** 参与维修的成员：`id` 为成员档案 id，创建人恒排第一。 */
 export type RepairParticipantView = { id: string; name: string };
 export type RepairTimelineView = {
   id: string;
@@ -648,14 +648,14 @@ export type RepairView = {
   /** 创建人（主维修人，即 `repair_records.member_profile_id`），列表与详情均以他为准。 */
   member: { id: string; name: string };
   /**
-   * 参与维修的成员（issue #114）：含创建人本人、创建人恒排第一。
+   * 参与维修的成员：含创建人本人、创建人恒排第一。
    * 时长不分人：记录的 `durationMinutes` 对全部参与者生效（每人各自计入统计）。
    */
   participants: RepairParticipantView[];
   repairDate: string | null;
   durationMinutes: number | null;
   category: RepairCategoryView | null;
-  /** 机型（issue #68 / #218）：成员在表单填写（提交审核必填），活动接待时会先带出报名机型；历史记录可能为 null。 */
+  /** 机型：成员在表单填写（提交审核必填），活动接待时会先带出报名机型；历史记录可能为 null。 */
   deviceModel: string | null;
   /** 机主（客户）姓名：接待落单带自报名，手工建单由成员填写；旧数据为 null。 */
   ownerName: string | null;
@@ -685,7 +685,7 @@ export type RepairDetailView = RepairView & {
   timeline: RepairTimelineView[];
   canEdit: boolean;
   /**
-   * 记录本人能否在详情页补照片（issue #226）。
+   * 记录本人能否在详情页补照片。
    *
    * `DRAFT` / `REJECTED` 与「本人未审核的 `PENDING`」为 true；审核通过后 false。
    * 仅控制界面入口，服务端仍会在照片写接口内复核。
@@ -698,7 +698,7 @@ export type RepairDetailView = RepairView & {
    * 照片上传上限，以服务端 `.env`（`UPLOAD_MAX_BYTES` / `UPLOAD_MAX_FILES_PER_REPAIR`）为准。
    *
    * 随详情一起下发，是为了让前端提前拦下超限文件、并把真实数字写进提示 ——
-   * 前端各写一份常量会出现「提示说 10 MB、服务端按 5 MB 拒绝」（issue #68）。
+   * 前端各写一份常量会出现「提示说 10 MB、服务端按 5 MB 拒绝」。
    */
   photoLimits: { maxBytes: number; maxFiles: number };
 };
@@ -709,7 +709,7 @@ export type RepairDraftFields = {
   ownerName?: string | null;
   ownerPhone?: string | null;
   /**
-   * 机型（issue #218）：成员填写 / 修改，提交审核时必填；草稿允许为空（活动落单可能还没带出）。
+   * 机型：成员填写 / 修改，提交审核时必填；草稿允许为空（活动落单可能还没带出）。
    * 缺省（`undefined`）表示「不动」，`null` / 空白表示清空。
    */
   deviceModel?: string | null;
@@ -717,14 +717,14 @@ export type RepairDraftFields = {
   result?: RepairResult | null;
   remark?: string | null;
   /**
-   * 参与维修人员（issue #114）：**不含创建人本人**的成员档案 id 列表，按添加顺序。
+   * 参与维修人员：**不含创建人本人**的成员档案 id 列表，按添加顺序。
    * 缺省（`undefined`）表示「不动」；显式空数组表示「清空额外参与者」。
    * 服务端按整体替换处理：去重、去掉创建人本人、校验成员存在。
    */
   participantIds?: string[];
 };
 export type CreateRepairDraftInput = RepairDraftFields & { idempotencyKey: string };
-/** 提交即建单（#222）：与草稿同形，但直接创建 PENDING 记录。 */
+/** 提交即建单：与草稿同形，但直接创建 PENDING 记录。 */
 export type CreateSubmittedRepairInput = RepairDraftFields & { idempotencyKey: string };
 export type UpdateRepairInput = RepairDraftFields & { version: number };
 export type SubmitRepairInput = { version: number; idempotencyKey: string };
@@ -775,7 +775,7 @@ export type RepairListInput = TableListInput & {
   isDifficult?: boolean;
   isTypical?: boolean;
   /**
-   * 案例库准入（issue #134）：`"ANY"` 表示「被标记为典型案例或疑难案例之一」
+   * 案例库准入：`"ANY"` 表示「被标记为典型案例或疑难案例之一」
    * （并集）。与 `isTypical` / `isDifficult` 的关系：那两个是**平铺 AND** 语义
    * （都传=要求两条都标），表达不了并集，故另立此字段。
    * 缺省 = 不过滤；`RepairExportInput` 继承它但导出不传，行为零变化。
@@ -797,7 +797,7 @@ export type RepairListResult = TableListExtras & {
 /**
  * 新增故障分类。
  *
- * `code` 与 `sortOrder` 都**改由系统生成**（M6 第三轮验收）：
+ * `code` 与 `sortOrder` 都**改由系统生成**：
  * - `code` 是稳定标识，管理员不该为了加一个「散热清灰」去编一个英文 code，
  *   留空时由 `stableCodeFromName` 按名称生成（见 `src/lib/stable-code.ts`）；
  * - `sortOrder` 留空时排到末尾，顺序由列表里的「上移 / 下移」调整
@@ -826,7 +826,7 @@ export type UpdateRepairCategoryInput = {
 /** 技能标签库管理视图。`usedByMemberCount` 只统计**当前生效**的成员关联，回答「停用会不会影响人」。 */
 export type SkillAdminView = SkillView & { usedByMemberCount: number };
 
-/** 技能名称上限（issue #68）：管理端新建与成员自建共用同一条规则，列宽 `VarChar(80)`。 */
+/** 技能名称上限：管理端新建与成员自建共用同一条规则，列宽 `VarChar(80)`。 */
 export const SKILL_NAME_MAX_LENGTH = 80;
 
 /** 新增技能标签。`code` / `sortOrder` 同 {@link CreateRepairCategoryInput}，由系统生成。 */
@@ -975,7 +975,7 @@ export type JoinApplicationExportRow = {
   ticketNo: string;
   recruitmentCycle: string;
   realName: string;
-  /** 学号（issue #147）：列在姓名后；历史空值导出空字符串，不写字面量 `null`。 */
+  /** 学号：列在姓名后；历史空值导出空字符串，不写字面量 `null`。 */
   studentId: string;
   className: string;
   qq: string;
@@ -1236,16 +1236,6 @@ export type RankingResult = {
   source: "M5_ANALYTICS";
 };
 
-/**
- * 工作台的本学年数量榜预览（issue #178：口径由学期改为学年）。
- *
- * 两种状态必须可区分：
- * - `available: true` —— 正常榜单（可能为空数组，表示确实无人上榜）；
- * - `available: false` —— 该区块**加载失败**，字段置空、并同时出现在
- *   `MemberDashboard.degraded` 中，页面渲染局部错误与重试。
- *   （失败语义与 M4 的 `MemberNotificationSummary` 保持一致，避免用「空榜单」冒充故障。）
- * 学年区间固定可算，因此不再有「未配置」态。
- */
 export type MemberRankingPreview =
   | {
       available: true;
@@ -1392,7 +1382,7 @@ export interface MemberServiceContract {
   ): Promise<MemberBatchToggleResult>;
   resetPassword(memberId: string, actor: AuthorizedActor): Promise<MemberMutationResult>;
   /**
-   * 账号恢复（issue #113）：按 QQ 精确查询账号（成员或管理员，管理员可以没有成员档案）。
+   * 账号恢复：按 QQ 精确查询账号（成员或管理员，管理员可以没有成员档案）。
    * 只返回最小信息；`canReset=false` 时给出与登录资格一致的 `blockedReason`。
    */
   lookupAccount(
@@ -1471,7 +1461,7 @@ export interface JoinApplicationServiceContract {
     actor: AuthorizedActor,
   ): Promise<TableListExtras & { items: JoinApplicationSummary[]; pagination: PaginationMeta }>;
   get(applicationId: string, actor: AuthorizedActor): Promise<JoinApplicationDetail>;
-  /** 更正通知邮箱（issue #161）：按通知任务状态决定是否同步任务收件地址。 */
+  /** 更正通知邮箱：按通知任务状态决定是否同步任务收件地址。 */
   correctNotificationEmail(
     applicationId: string,
     input: CorrectJoinNotificationEmailInput,
@@ -1542,9 +1532,9 @@ export interface AccountProvisionServiceContract {
 }
 
 export interface RepairServiceContract {
-  /** @deprecated 生产入口已下线（#222），仅测试夹具使用，随 #223 清理。 */
+  /** @deprecated 生产入口已下线，仅测试夹具使用。 */
   createDraft(input: CreateRepairDraftInput, actor: AuthorizedActor): Promise<RepairView>;
-  /** 新建表单的「提交即建单」：直接创建 PENDING，不落草稿（#222）。 */
+  /** 新建表单的「提交即建单」：直接创建 PENDING，不落草稿。 */
   createSubmitted(input: CreateSubmittedRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   update(recordId: string, input: UpdateRepairInput, actor: AuthorizedActor): Promise<RepairView>;
   submit(recordId: string, input: SubmitRepairInput, actor: AuthorizedActor): Promise<RepairView>;
@@ -1565,11 +1555,11 @@ export interface RepairFavoriteServiceContract {
 }
 
 // ---------------------------------------------------------------------------
-// 邮箱身份与验证基础设施（issue #146）
+// 邮箱身份与验证基础设施
 // ---------------------------------------------------------------------------
 
 /**
- * 邮箱验证码用途（issue #146）。四种用途严格隔离：验证码的 HMAC 摘要上下文
+ * 邮箱验证码用途。四种用途严格隔离：验证码的 HMAC 摘要上下文
  * 绑定用途，一种用途的验证码不能被另一种用途消费（`不得混用`）。
  *
  * - `EMAIL_BIND`：为当前账号绑定一个新邮箱（目标 = 调用方提交的新邮箱）；
@@ -1684,7 +1674,7 @@ export interface NotificationServiceContract {
   softDelete(notificationId: string, actor: AuthorizedActor): Promise<void>;
 }
 
-// 邮箱主动管理（Refs #146 / #113）；token 仅供服务端 Cookie 交付。
+// 邮箱主动管理；token 仅供服务端 Cookie 交付。
 export type EmailCodeInput = { challengeId: string; code: string };
 export type AccountEmailChallengeInput =
   | { mode: "BIND"; targetEmail: string }
@@ -1756,7 +1746,7 @@ export interface AdminAccountEmailServiceContract {
   revokeExemption(userId: string, id: string, actor: AuthorizedActor): Promise<void>;
 }
 
-// 匿名邮箱找回（Refs #146 / #113）。授权 token 只供服务端设置专用 Cookie。
+// 匿名邮箱找回。授权 token 只供服务端设置专用 Cookie。
 export type PasswordRecoveryRequestInput = { qq: string };
 export type PasswordRecoveryRequestResult = {
   challengeId: string;

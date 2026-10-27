@@ -13,7 +13,7 @@ export default async function MemberNotificationsPage() {
   const copy = communityCopy.notifications;
   return (
     <>
-      <PageHead id="member-notifications-title" index="11" label={copy.label} title={copy.title} lead={copy.lead} />
+      <PageHead id="member-notifications-title" index="11" label={copy.label} title={copy.title} />
       <Section labelledBy="member-notifications-content">
         <h2 className="sr-only" id="member-notifications-content">
           {copy.title}

@@ -6,7 +6,7 @@ import { formatShanghaiTime } from "../../src/components/repair-activities/activ
 import { memberRepairActivitiesCopy } from "../../src/config/repair-activities";
 
 /**
- * 看板「出勤成员」入口与弹层（issue #107）的接线契约。
+ * 看板「出勤成员」入口与弹层的接线契约。
  *
  * 与 `repair-activity-attendance-count.test.ts` 同一思路：runtime 面薄
  * （一个入口按钮 + 一个只读弹层），真正会悄悄坏掉的是接线与两条红线 ——

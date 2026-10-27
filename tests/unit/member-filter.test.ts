@@ -99,7 +99,7 @@ test("映射：枚举校验取值，文本走 contains", () => {
     () => memberFilterWhere([{ field: "status", op: "eq", value: "DELETED" }]),
     isValidationFailure,
   );
-  // 部门（issue #210）：枚举 eq/neq，未知部门拒绝。
+  // 部门：枚举 eq/neq，未知部门拒绝。
   assert.deepEqual(memberFilterWhere([{ field: "department", op: "eq", value: "PUBLICITY" }]), [
     { department: "PUBLICITY" },
   ]);

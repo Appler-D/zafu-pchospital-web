@@ -14,7 +14,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 活动报名免责声明的集成测试（真实 GreatSQL，issue #62 前端3）。
+ * 活动报名免责声明的集成测试（真实 GreatSQL）。
  *
  * 为什么必须打到**路由**而不是直接调 service：弹层只是把「同意」问清楚，报名接口是
  * 公开的，真正拦住绕过弹层直接发请求的是路由 + service 里那道 `consentAccepted !== true`。

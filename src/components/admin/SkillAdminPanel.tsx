@@ -171,7 +171,6 @@ export function SkillAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-skills-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 
@@ -224,19 +223,8 @@ export function SkillAdminPanel() {
           <p className="admin-note">
             {copy.usageNote} {copy.orderNote}
           </p>
-          {/* 表格本体由内核渲染（`AdminTable`）：表头、`data-label`、空态、单元格内容
-              全部来自 `skillTableSpec` 这一份定义（迁移前这三份是分开写的）。
-
-              「编辑」那一行在**行内**把说明与选用成员两列合成一个表单（`colSpan={2}`），
-              逐列渲染表达不了，因此走 `renderRow` **整行接管**（与邀请码表的「调整策略」
-              同一处理）—— `<tr>`、列宽与 `data-label` 规则仍由内核负责，接管的只是
-              「这一行里有哪些格子」。 */}
-          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))}>
-            <Button variant="ghost" disabled>
-              {tableCopy.clear}
-            </Button>
-            <span className="admin-note">{tableCopy.dragOnly}</span>
-          </AdminListToolbar>
+          {/* 列定义由 spec 提供，跨列编辑行由 renderRow 接管。 */}
+          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))} />
           <AdminTable
             spec={skillTableSpec}
             items={items}

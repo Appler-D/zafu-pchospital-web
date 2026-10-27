@@ -2,7 +2,7 @@ import { disconnectDb } from "../src/lib/db/client";
 import { purgeExpiredEmailSecurityRecords } from "../src/features/email/email-cleanup-service";
 
 /**
- * 过期邮箱安全数据清理（issue #146）。
+ * 过期邮箱安全数据清理。
  *
  * 用法：
  *   corepack pnpm email:cleanup [--batch=500] [--max-rounds=50]

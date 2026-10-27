@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: casesCopy.title };
 /**
  * `/member/cases` —— 成员案例库。
  *
- * 页头用成员端紧凑范式（issue #134）：与 `/member/rankings`、`/member/profile`
+ * 页头用成员端紧凑范式：与 `/member/rankings`、`/member/profile`
  * 同为 `Section variant="page-head" className="member-workspace"`；页面主标题是
  * `CaseLibrary` 内的 h1（其 id 由本 section 的 aria-labelledby 引用）。
  *

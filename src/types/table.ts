@@ -2,21 +2,7 @@ import type { FilterOp } from "@/lib/api/list-filter";
 import type { FilterRule } from "@/lib/api/list-filter";
 import type { ReactNode } from "react";
 
-/**
- * 后台表格内核的公共类型（P0，尚未接入任何页面）。
- *
- * 背景：M6 的六个后台列表各自维护「列宽数组 + 表头 `<th>` + 单元格渲染」三份彼此
- * 平行的列定义（例如 `MemberAdminPanel` 的 `COLUMNS` 与它下面的 `<th>` 列表）。
- * 三份定义一旦漂移，就会出现「拖列宽拖错列」「表头与内容对不上」这类问题；
- * 而**加一张新表 = 再抄一遍 700 行**，这正是验收里说的「割裂、没有 openness」。
- *
- * 这里把「一列是什么」收敛成一个 {@link FieldSpec}：宽度、标签、渲染、可排序性、
- * 单元格 class 全在一处。`<AdminTable>` 只认 spec，因此新增一张表 = 新增一份 spec。
- *
- * 本文件遵守 `AGENTS.md` §5 的目录职责：**只放类型与常量，不放实现**。
- * 实现分别在 `src/lib/api/list-query.ts`（查询参数解析）与
- * `src/lib/table/field-spec.ts`（字段默认行为）。
- */
+/** 表格列、查询与编辑的公共契约。 */
 
 /** 排序方向。与查询参数 `sort=<field>:<asc|desc>` 一一对应。 */
 export type SortDirection = "asc" | "desc";
@@ -122,12 +108,7 @@ export type FieldSpec<T, C = unknown> = {
    * 每勾一行重跑一次，既浪费又容易在拖动中打架。spec 因此保持**模块级常量**。
    */
   render: (row: T, index: number, context: C) => ReactNode;
-  /**
-   * 表头 `<th>` 的附加 class（例如成员表内容列的 `admin-table__grow`）。
-   *
-   * 保留它是为了迁移时**逐列照抄现状**：内核不猜类名，从而保证迁移前后 DOM 一致 ——
-   * 这是「像素级不回归」的前提。
-   */
+  /** 显式指定表头与单元格类名。 */
   headClassName?: string;
   /** 数据单元格 `<td>` 的附加 class（例如成员表首列的 `admin-table__member`）。 */
   cellClassName?: string;
@@ -154,13 +135,7 @@ export type FieldSpec<T, C = unknown> = {
   hidden?: boolean;
   /** 冻结列。P2 接 `position: sticky`，P0 只记录意图、不产生视觉变化。 */
   frozen?: boolean;
-  /**
-   * 就地编辑。返回 `null` 表示这一格**此刻**不可编辑（无权限、值由系统产出…）。
-   *
-   * **只适合「一个单元格就是一个标量值」的列**。复合单元格（成员表首列那样把行首控件、
-   * 姓名、昵称、「查看」放在一起的）不开它 —— 一个单元格里两层东西，点进去改哪个是
-   * 说不清的（第八轮验收的原话），那类编辑留在详情窗口里。
-   */
+  /** 仅标量单元格支持就地编辑；返回 null 表示当前不可编辑，复合字段在详情中编辑。 */
   editable?: (row: T, context: C) => CellEdit | null;
   /**
    * 列级筛选：这一列能不能加条件、能用哪些运算符、值用什么控件。

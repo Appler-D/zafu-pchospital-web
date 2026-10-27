@@ -11,7 +11,7 @@ import { adminFetch } from "@/features/admin/admin-client";
 import type { AdminAccountLookupResult, AdminAccountResetResult } from "@/types/contracts";
 
 /**
- * 账号恢复窗口（issue #113）：QQ 精确查询 → 核验本人 → 签发临时密码 → 明文结果。
+ * 账号恢复窗口：QQ 精确查询 → 核验本人 → 签发临时密码 → 明文结果。
  *
  * 为什么独立于成员详情：恢复目标可能是**没有成员档案的管理员**，成员列表里根本没有
  * 这一行；查询只在服务端按 QQ 精确匹配，不做模糊检索（这是恢复入口，不是账号平台）。

@@ -67,7 +67,7 @@ test("成员展示名与摘要截断按昵称/实名/账号名回退", () => {
     { id: "m1", name: "小林" },
   );
   assert.equal(memberRef({ id: "m2", nickname: null, realName: "林晓" }).name, "林晓");
-  // 摘要取值链（issue #79 第 6 项）：备注优先，老记录的维修内容回退，双空占位「未填写备注」。
+  // 摘要取值链：备注优先，老记录的维修内容回退，双空占位「未填写备注」。
   assert.equal(excerptText({ remark: "备注内容", content: "老正文" }), "备注内容");
   assert.equal(excerptText({ remark: "  ", content: "老正文" }), "老正文");
   assert.equal(excerptText({ remark: null, content: null }), "未填写备注");

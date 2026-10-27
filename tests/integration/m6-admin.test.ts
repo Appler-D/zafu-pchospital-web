@@ -107,7 +107,7 @@ async function prepareFixtures(): Promise<void> {
   await db.repairTimelineEvent.deleteMany({ where: { record: records } });
   await db.repairReview.deleteMany({ where: { record: records } });
   await db.repairPhoto.deleteMany({ where: { record: records } });
-  // 参与行（issue #114）先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
+  // 参与行先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
   await db.repairRecordParticipant.deleteMany({ where: { record: records } });
   await db.repairRecord.deleteMany({ where: records });
   await db.userSkill.deleteMany({ where: { memberProfileId: { in: profileIds } } });
@@ -203,7 +203,7 @@ async function draftRepair(owner: AuthorizedActor) {
   );
 }
 
-/** 建一条 PENDING（已提交待审核）的维修记录。照片现在是选填附件（issue #79 第 6 项）。 */
+/** 建一条 PENDING（已提交待审核）的维修记录。照片现在是选填附件。 */
 async function pendingRepair(owner: AuthorizedActor) {
   const updated = await draftRepair(owner);
   const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -992,7 +992,7 @@ dbTest("成员列表条目字段集稳定（QQ/手机号只出现脱敏形式）
       "qqMasked",
       "realName",
       "roles",
-      // 第六轮验收：列表要能直接显示「这个人会什么」，技能标签随列表返回
+
       "skills",
       "status",
       "studentId",

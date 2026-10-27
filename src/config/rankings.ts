@@ -9,7 +9,7 @@
 export const rankingsPage = {
   title: "维修排行",
   label: "Rankings",
-  lead: "按审核已通过的维修记录统计。仅统计已通过的记录，草稿、待审核与已退回不计入。",
+  lead: "仅统计已通过审核的维修记录",
 } as const;
 
 export const rankingsSections = {
@@ -35,11 +35,11 @@ export const rankingsCopy = {
   currentBadge: "我",
   countUnit: "次",
   durationLabel: "时长",
-  empty: "当前范围暂无上榜记录。",
-  loadFailed: "排行榜加载失败。",
+  empty: "当前范围暂无上榜记录",
+  loadFailed: "排行榜加载失败",
   reload: "重新加载",
   myRankTitle: "我的排名",
-  myRankEmpty: "当前范围暂无上榜记录。",
+  myRankEmpty: "当前范围暂无上榜记录",
   paginationPrev: "上一页",
   paginationNext: "下一页",
   paginationSummary: "第 {page} / {totalPages} 页 · 共 {total} 人上榜",

@@ -26,7 +26,7 @@ type Props = {
   onClick?: () => void;
   /** 恢复工具窗口的关闭回调：用它数「当前挂着几个弹层」。 */
   onClose?: () => void;
-  /** 登录 / 注册表单收到的候选回跳目标（返修 F4）。 */
+  /** 登录 / 注册表单收到的候选回跳目标。 */
   returnTo?: string | null;
 };
 function elements(node: ReactNode): ReactElement<Props>[] {
@@ -84,7 +84,7 @@ async function form(
   });
   t.mock.method(React, "useMemo", (factory: () => unknown) => factory());
   const destinations: string[] = [];
-  /** 「刷新状态」有没有真的重放当前 RSC 请求（返修 F3）；由服务端重算页面 props。 */
+  /** 「刷新状态」有没有真的重放当前 RSC 请求；由服务端重算页面 props。 */
   const refreshes: string[] = [];
   t.mock.method(React, "useContext", (context: unknown) => {
     if (context === AppRouterContext)
@@ -447,7 +447,7 @@ test("匿名找回在途互斥、验码后自设密码、字段错误保留授�
     ),
     false,
   );
-  // 登录 ↔ 注册切换与注册表单都带着同一个候选原目标（返修 F4）：链条不能在切换处掉链子。
+  // 登录 ↔ 注册切换与注册表单都带着同一个候选原目标：链条不能在切换处掉链子。
   assert.equal(
     login.find((e) => e.type === LoginForm)!.props.returnTo,
     undefined,

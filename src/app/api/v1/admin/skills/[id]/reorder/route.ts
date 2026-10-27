@@ -7,12 +7,7 @@ import { ReorderDirection } from "@/types/contracts";
 
 export const runtime = "nodejs";
 
-/**
- * M6：把技能标签上移 / 下移一格（`{direction: "UP" | "DOWN"}`）。
- *
- * 取代原来「让管理员填排序数字」的做法。已在首/末位时幂等成功 —— 点了一个不会改变
- * 任何东西的按钮不该收到错误。
- */
+/** 将技能标签上移或下移一位；位于边界时幂等成功。 */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = getRequestId(request.headers);
   try {

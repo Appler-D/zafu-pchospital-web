@@ -27,7 +27,7 @@ import { integrationTestsEnabled } from "./db-guard";
 import { sameOriginHeaders } from "./http-harness";
 
 /**
- * 管理员手动重置与临时密码恢复（issue #113）。
+ * 管理员手动重置与临时密码恢复。
  *
  * 命名空间：本文件的全部数据都挂在一组**固定 UUID**（`e113…`）上，每次 `prepareFixtures`
  * 按这组 userId 精确清理再重建，绝不触碰库里其它测试与开发数据。QQ 每次重建都用新随机值
@@ -703,7 +703,7 @@ dbTest("再次签发使旧凭据与旧会话失效；过期代次的改密不能
   assert.equal(login.mustChangePassword, true);
 });
 
-/* --------------------------------------- 事务排队跨过期限（首轮审查返修 3） */
+/* --------------------------------------- 事务排队跨过期限 */
 
 /** 在独立事务里按住某行锁一段时间：`locked` 拿到锁后兑现，`done` 释放后兑现。 */
 function holdRowLock(acquire: (tx: Prisma.TransactionClient) => unknown, holdMs: number) {
@@ -798,7 +798,7 @@ dbTest("事务在行锁等待中跨过受限会话期限：不得凭事务外旧
   assert.equal(await db.authSession.count({ where: { userId: MEMBER_ID, revokedAt: null } }), 1);
 });
 
-/* -------------------------------------------------- 改密落点贯通（返修 4） */
+/* -------------------------------------------------- 改密落点贯通 */
 
 dbTest("改密落点按角色贯通：无档案管理员回 /admin、成员回 /member", async () => {
   // 无成员档案的管理员：恢复 → 受限登录 → 走真实改密路由，响应必须给出 /admin。

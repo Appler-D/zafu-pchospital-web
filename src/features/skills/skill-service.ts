@@ -13,7 +13,7 @@ import { SKILL_NAME_MAX_LENGTH, type AuthorizedActor, type SkillView } from "@/t
 /**
  * 技能标签服务（M3 任务书 §9、§10.3）。
  *
- * 读取一直是成员侧能力（M3 只开放只读）；issue #68 起新增**成员自建标签**
+ * 读取一直是成员侧能力（M3 只开放只读）； 起新增**成员自建标签**
  * （`createFromMember`，业务确认无需审核）：标签库不可能预先覆盖所有人的技能，
  * 成员在资料编辑器里输入一个新名字即可新建并立即选中它。
  * 标签库的完整增删改（含停用、排序、描述）仍然只属于 M6 的 `skillAdminService`。
@@ -26,7 +26,7 @@ export const skillService = {
   },
 
   /**
-   * `POST /api/v1/skills` —— 成员自建标签（issue #68）。
+   * `POST /api/v1/skills` —— 成员自建标签。
    *
    * 三条规则：
    * 1. **同名即复用**：已有同名且启用中的标签时直接返回它，不新建、不写审计。

@@ -10,9 +10,9 @@ export const accountNotificationCopy = {
   notQueued: "未安排通知",
   afterProvision: "建档成功后安排通知",
   retry: "重试通知",
-  scheduled: "通知已安排重试。",
-  retryHint: "请先处理失败原因。重试只发送通知，不重新审核或建档；每轮最多尝试 4 次。",
-  uncertain: "发送结果无法确认，请先核查；系统不会自动重发。",
+  scheduled: "通知已安排重试",
+  retryHint: "请先处理失败原因。重试只发送通知，不重新审核或建档；每轮最多尝试 4 次",
+  uncertain: "发送结果无法确认，请先核查；系统不会自动重发",
   status: {
     PENDING: "待发送",
     SENDING: "发送中",
@@ -43,21 +43,21 @@ export function buildAccountNotificationMessage(input: {
     to: input.to,
     subject: "浙江农林大学电脑医院 · 账号通知",
     text: [
-      "你的电脑医院成员账号已准备好。",
+      "你的电脑医院成员账号已准备好",
       "官网：https://pczafu.cn",
       "登录：https://pczafu.cn/login",
       `QQ 登录账号：${input.qq}`,
       ...(input.initialPassword
         ? [
             `初始密码：${input.initialPassword}`,
-            "首次登录须修改初始密码。",
-            "使用步骤：登录 → 修改初始密码 → 验证邮箱 → 进入工作区。",
+            "首次登录须修改初始密码",
+            "使用步骤：登录 → 修改初始密码 → 验证邮箱 → 进入工作区",
           ]
         : [
-            "请使用当前密码登录；忘记密码或无法登录时请联系管理员。",
-            "使用步骤：登录 → 按页面提示完成验证 → 进入工作区。",
+            "请使用当前密码登录；忘记密码或无法登录时请联系管理员",
+            "使用步骤：登录 → 按页面提示完成验证 → 进入工作区",
           ]),
-      "报名通知邮箱尚不代表已绑定邮箱，请在登录后按提示验证。",
+      "报名通知邮箱尚不代表已绑定邮箱，请在登录后按提示验证",
     ].join("\n"),
   };
 }

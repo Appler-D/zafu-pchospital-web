@@ -37,7 +37,7 @@ export const repairService: RepairServiceContract = {
     const fields = normalizeDraftFields(input);
     validateDraftFields(fields);
     if (fields.participantIds?.length) await assertParticipantsExist(fields.participantIds);
-    // 空白建档请求复用本人最新的空白草稿（PR #73 评审 3）：
+    // 空白建档请求复用本人最新的空白草稿：
     // 新建页「进页面即建档」，成员反复进出不应攒出一串空草稿。
     if (isBlankDraftFields(fields)) {
       const reusable = await repairRepository.latestEmptyDraft(member.id);
@@ -58,7 +58,7 @@ export const repairService: RepairServiceContract = {
         include: repairDetailInclude,
       });
       await timeline(tx, created.id, actor.userId, "CREATED", { status: "DRAFT" }, now);
-      // 参与维修人员（issue #114）：创建人恒为第一行；无额外人员时也落这一行（不变量）。
+      // 参与维修人员：创建人恒为第一行；无额外人员时也落这一行（不变量）。
       await insertRepairParticipants(
         tx,
         created.id,
@@ -74,7 +74,7 @@ export const repairService: RepairServiceContract = {
   },
 
   /**
-   * 新建表单的「提交即建单」（#222）：不再先创建草稿，直接落 PENDING。
+   * 新建表单的「提交即建单」：不再先创建草稿，直接落 PENDING。
    *
    * 与成员自助提交同一套校验与时间线口径；`Idempotency-Key` 作为
    * `createRequestKey`，重试返回原记录。分类必须存在且启用，参与人含创建人。
@@ -328,7 +328,7 @@ function hasPrismaCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
-/* ---------------------------------------------------- 参与维修人员（issue #114） */
+/* ---------------------------------------------------- 参与维修人员 */
 
 /**
  * 参与维修人员的不变量与写入口径。
@@ -345,7 +345,7 @@ export function composeParticipantIds(
 }
 
 /**
- * 活动接待落单：参与人必须在本场出勤（issue #238 审查）。
+ * 活动接待落单：参与人必须在本场出勤（审查）。
  * 创建人本人也在校验集合内，防止绕过 serve 闸门直接提交。
  */
 async function assertParticipantsAttended(
@@ -445,7 +445,7 @@ export async function replaceRepairParticipants(
 }
 
 /**
- * 活动接待「提交即建单」（issue #221）。
+ * 活动接待「提交即建单」。
  *
  * 接待本身只在登记行占位（`SERVED` + 接待人，`repair_record_id` 为空），不再预建草稿；
  * 成员补完表单提交时，才在同一事务里创建 **PENDING** 维修记录并把登记行关联过来。
@@ -454,7 +454,7 @@ export async function replaceRepairParticipants(
  * - 幂等：同一表单会话携带同一个 `Idempotency-Key` 重试时，直接返回已建记录；
  *   登记已被另一会话建单则返回状态冲突，由前端回看板查看；
  * - 提交校验与成员自助提交同源（`validateDraftFields` + `validateSubmission`），
- *   不因为来自接待就放宽必填（含 #218 机型）；
+ *   不因为来自接待就放宽必填（含机型）；
  * - 时间线写 `SUBMITTED`（source=repair_activity_serve），审计沿用
  *   `repair.created_from_activity_serve`。
  */

@@ -106,7 +106,6 @@ export function AdminTableQuery<F extends Record<string, string>>({
             {tableCopy.clear}
           </Button>
         </fieldset>
-        <p className="admin-filters__hint">{tableCopy.sharing}</p>
       </form>
       <div className="admin-query__chips" aria-label={tableCopy.sort}>
         {value.sort.map((rule, index) => (
@@ -273,7 +272,6 @@ function QueryDialog<F extends Record<string, string>>({
           </select>
         </label>
         <p className="admin-conditions__hint">{tableCopy.groupHint}</p>
-        <p className="admin-conditions__hint">{tableCopy.groupApplyHint}</p>
         {problem ? (
           <p className="admin-status admin-status--error" role="alert">
             {problem}

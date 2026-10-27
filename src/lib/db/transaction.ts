@@ -6,7 +6,7 @@ import { getDb } from "@/lib/db/client";
 const RETRYABLE_TRANSACTION_CODES = new Set(["P2034"]);
 
 /**
- * 冲突重试的退避参数（issue #190）。
+ * 冲突重试的退避参数。
  *
  * 可串行化下「并发首次 INSERT 同一个索引 gap」会触发 insert-intention 死锁，P2034 是
  * **预期**结果而不是异常：立刻重试往往再次撞上同一批并发事务（观测到的就是 3 次预算

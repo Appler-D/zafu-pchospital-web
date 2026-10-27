@@ -21,10 +21,7 @@ export default async function MemberPage() {
   const isActiveMember = Boolean(principal.memberProfileId) && principal.memberStatus === "ACTIVE";
 
   if (!isActiveMember) {
-    // 管理员账号（只有 ADMIN 角色、没有成员档案）是合法存在的：M1 的账号发放与 M6 的
-    // 「新增成员」都会产生这类账号。原先这里只给一个「返回首页」，于是管理员误入
-    // `/member`（例如手输地址、或从旧的收藏/历史进来）时会看到一句「尚未开通成员身份」，
-    // 既没有解释也没有回后台的路，读起来就是「进不去了」。有 ADMIN 角色时补上后台入口。
+    // 纯管理员账号可直接前往管理后台。
     const isAdmin = principal.roles.includes("ADMIN");
     return (
       <Section variant="page-head" className="member-workspace" labelledBy="member-title">

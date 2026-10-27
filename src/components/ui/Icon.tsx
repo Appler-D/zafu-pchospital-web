@@ -143,7 +143,7 @@ const shapes: Record<IconName, ReactNode> = {
       <path d="M7 17 17 7" />
     </>
   ),
-  /* 活动工作台队列处理按钮（issue #108 审查稿）：接待=右向箭头，撤回=Undo（逆时针回转）。 */
+  /* 活动工作台队列处理按钮：接待=右向箭头，撤回=Undo（逆时针回转）。 */
   arrowRight: (
     <>
       <path d="M5 12h14" />
@@ -201,7 +201,7 @@ const shapes: Record<IconName, ReactNode> = {
   ),
   moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
   /**
-   * 拖动排序的手柄（M6 第五轮）。
+   * 拖动排序的手柄。
    *
    * 两个竖列各三个点：这是「可拖动」最通用的画法（同一条线段的 `menu` 图标
    * 会被读成「打开菜单」）。点是实心圆，因此这里单独覆盖 fill / stroke ——

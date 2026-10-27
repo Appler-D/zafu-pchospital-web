@@ -115,9 +115,9 @@ test("共用查询界面：清除和高级入口常驻，排序/条件可独立�
   );
   assert.match(html, /method="post"/);
   assert.match(html, /<fieldset[^>]*disabled/);
-  assert.match(html, /清除筛选与排序/);
+  assert.match(html, /重置/);
   assert.match(html, /高级筛选与统计/);
   assert.match(html, /通过时间/);
   assert.match(html, /面试通过/);
-  assert.match(html, /姓名、账号和其他文本条件仅保留在当前页面/);
+  assert.doesNotMatch(html, /链接保留排序|仅保留在当前页面/);
 });

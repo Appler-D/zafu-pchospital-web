@@ -8,7 +8,7 @@ import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 /**
- * 接待补单「提交即建单」（issue #221）：不落草稿，直接创建 PENDING 维修记录并关联登记。
+ * 接待补单「提交即建单」：不落草稿，直接创建 PENDING 维修记录并关联登记。
  * 幂等键复用新建表单的会话键（`Idempotency-Key` 头）。
  */
 export async function POST(

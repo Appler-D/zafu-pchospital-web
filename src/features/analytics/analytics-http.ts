@@ -10,7 +10,6 @@ import { AppError } from "@/lib/api/errors";
 import { AnalyticsScope, RankingMetric } from "@/types/contracts";
 import type { AnalyticsScope as Scope, RankingMetric as Metric } from "@/types/contracts";
 
-/** `scope` 缺省 `ACADEMIC_YEAR`（issue #178：统计口径由学期改为学年）。 */
 export function rankingScopeFilter(params: URLSearchParams): Scope {
   const raw = params.get("scope");
   if (!raw) return "ACADEMIC_YEAR";

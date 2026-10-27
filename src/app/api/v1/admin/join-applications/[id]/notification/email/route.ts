@@ -5,7 +5,7 @@ import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
 import { requirePermission } from "@/lib/auth/permissions";
 export const runtime = "nodejs";
 /**
- * 更正报名通知邮箱（issue #161）。
+ * 更正报名通知邮箱。
  *
  * 只改「发通知用的地址」，不触碰账号邮箱（账号侧走登录后的验证绑定）。
  * 状态规则在 Service 里：发送中 409；已交发信服务 / 结果未知只更新报名记录。

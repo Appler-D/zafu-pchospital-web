@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import type { SessionPrincipal } from "@/types/contracts";
 
 /**
- * AccountMenu —— 登录后账号菜单（T-P0-2 / T-P1-4）
+ * AccountMenu —— 登录后账号菜单
  *
  * 挂点：成员 / 管理侧栏足部（`variant="nav"`）。工作台 hero 不再挂一份，避免与侧栏重复。
  * 菜单项：双角色壳层切换（成员⇄管理）+ 修改密码 / 退出登录。

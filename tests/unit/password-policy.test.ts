@@ -13,7 +13,7 @@ import { hashPassword, verifyPassword } from "../../src/lib/security/secrets";
 import { initialPasswordFromQq } from "../../src/lib/security/normalization";
 
 /**
- * 密码长度策略的回归测试（第十一轮验收）。
+ * 密码长度策略的回归测试。
  *
  * 这一条来自一次真实事故：策略数字被抄在三处（表单 / 服务端校验 / `hashPassword`），
  * 结果**登录表单**上写着 `minLength={12}`，一个短口令的验收账号在前端就被拦住、

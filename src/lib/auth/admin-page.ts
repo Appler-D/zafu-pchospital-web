@@ -18,7 +18,7 @@ import { enforcePageAccountAccess, requirePagePrincipal } from "@/lib/auth/page-
  * ⚠️ `/admin` 首页也调用本守卫，因此这里**不能**把非管理员重定向到 `/admin` 自身
  * （会形成重定向自环），必须指向站内另一处合法落点：成员工作台。
  *
- * **用 `cache()` 包住**（任务 6 返修 F2）：`/admin/**` 的 layout 与 page 都要走这道判定，
+ * **用 `cache()` 包住**：`/admin/**` 的 layout 与 page 都要走这道判定，
  * `cache` 让**同一个请求**里它们共用一次求值 —— 页面级重判不会翻倍查库，也不会各算各的。
  * 请求之间不共享：每次页面 / RSC 请求都重新按数据库判定（撤销豁免立刻生效）。
  *

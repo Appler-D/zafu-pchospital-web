@@ -1152,7 +1152,7 @@ html[data-theme="black-yellow"] {
     gap: clamp(var(--s-2), calc(100svh - 800px), var(--s-5));
   }
 
-  /* 公开站「成员登录」（T-P0-1）：挂在索引栏足部，风格贴近 theme-switch */
+  /* 公开站「成员登录」：挂在索引栏足部，风格贴近 theme-switch */
   .rail__login {
     display: inline-flex;
     align-items: center;
@@ -1355,7 +1355,7 @@ html[data-theme="black-yellow"] {
     color: var(--ink-3);
   }
 
-  /* 公开站「成员登录」（T-P0-1）：浮层底部、主题切换上方 */
+  /* 公开站「成员登录」：浮层底部、主题切换上方 */
   .menu__login-row {
     margin-top: var(--s-6);
     padding-top: var(--s-4);
@@ -2956,7 +2956,7 @@ html[data-theme="black-yellow"] {
     line-height: 1.7;
     color: var(--accent-deep);
     /* 注册表单（InviteRegistrationForm）常驻这一行：空着也占一行高，
-       错误出现/消失不改面板高度，页面上已渲染的内容不会位移（issue #147 反馈规则）。 */
+       错误出现/消失不改面板高度，页面上已渲染的内容不会位移。 */
     min-height: calc(var(--t-xs) * 1.7);
   }
   .auth-login__links {
@@ -3681,7 +3681,7 @@ html[data-theme="black-yellow"] {
     text-wrap: pretty;
   }
 
-  /* ------------------------------------------ 成员工作台与个人主页（M3 / T-P0-5 / T-P2-5）
+  /* ------------------------------------------ 成员工作台与个人主页
      工作台：欢迎区（hero 主 CTA）→ 主栏（待处理 → 最近已通过）+ 辅栏（指标 / 技能可折 / 排行 / Upcoming）。
      ≥1100px 且含 .member-workspace__main 时双列；个人资料等单列页不受影响。
      加载骨架复用同一套 content/main/aside，避免宽屏 CLS。
@@ -4087,7 +4087,7 @@ html[data-theme="black-yellow"] {
     padding-left: var(--s-2);
   }
 
-  /* 加载骨架（T-P2-5）：与 ready 共用 member-workspace__content / __main / __aside，
+  /* 加载骨架：与 ready 共用 member-workspace__content / __main / __aside，
      ≥1100px 时 :has(> .member-workspace__main) 双列同样生效，降低 CLS。
      .member-skeleton 仅作标识；栅格由 .member-workspace__content 负责。 */
   .member-skeleton__bar {
@@ -4148,7 +4148,7 @@ html[data-theme="black-yellow"] {
     display: grid;
     gap: var(--s-4);
   }
-  /* 案例库紧凑页头（issue #134）：与 `.rankings-page__*` 同一紧凑尺度。
+  /* 案例库紧凑页头：与 `.rankings-page__*` 同一紧凑尺度。
      成员壳内不用官网式 PageHead —— 其 `.reveal` 元素在壳内不可见，只剩留白。 */
   .cases-page__head {
     display: grid;
@@ -4808,9 +4808,7 @@ html[data-theme="black-yellow"] {
   }
 
   /* -------------------------------------------------------------- 页脚 */
-  /* 第五轮验收：页脚是「页面结束的落款」，不是一块内容区。
-     原先上下各有 var(--s-6) / var(--s-7) 的内边距，加上两段都带 border-top 的说明，
-     整块高度接近 240px；现在压到 ~150px，三段之间只留一个 --s-3 的呼吸。 */
+  /* 页脚使用紧凑落款布局。 */
   .footer {
     border-top: 1px solid var(--line);
     padding-block: var(--s-4) var(--s-5);
@@ -4827,7 +4825,7 @@ html[data-theme="black-yellow"] {
     justify-content: space-between;
     align-items: center;
   }
-  /* 公开站 Footer「成员入口」次要链（T-P2-4）：低权重文字链，不抢主 CTA。 */
+  /* 公开站 Footer「成员入口」次要链：低权重文字链，不抢主 CTA。 */
   .footer__entry {
     margin-top: var(--s-3);
     font-family: var(--font-sans);
@@ -5250,7 +5248,7 @@ html[data-theme="black-yellow"] {
     }
   }
 
-  /* ---------------------------------------------------------- 账号菜单（T-P0-2）
+  /* ---------------------------------------------------------- 账号菜单
      挂在成员 hero 行动区，以及成员 / 管理两侧侧栏足部。
      无投影；面板用描边 + surface 底色。 */
   .account-menu {
@@ -5380,7 +5378,7 @@ html[data-theme="black-yellow"] {
     }
   }
 
-  /* ---------------------------------------------------------- 成员外壳（T-P0-3，对标 admin-shell） */
+  /* ---------------------------------------------------------- 成员外壳 */
   /* 左导航 + 主内容；渲染在 `app/member/layout.tsx`，客户端切页侧栏不重建。 */
   .member-shell {
     display: grid;
@@ -5391,7 +5389,7 @@ html[data-theme="black-yellow"] {
   body:has(.member-shell) .footer {
     display: none;
   }
-  /* 顺手弱化双导航：有成员壳时隐藏公开索引栏 / 顶栏（完整 P0.5 验收可再对 admin 对齐）。 */
+  /* 成员外壳内隐藏公开导航，避免重复。 */
   body:has(.member-shell) .rail,
   body:has(.member-shell) .topbar {
     display: none;
@@ -5520,13 +5518,13 @@ html[data-theme="black-yellow"] {
   }
   /* 后台不显示站脚。页脚里那句「浙江农林大学电脑医院 · 志愿技术服务」、英文名、年份、
      文档来源说明与备案号都属于**公开站点**的落款；后台是登录后的工作台，这些信息既没用
-     又占掉一屏看不了几行的高度（第六轮验收要求去掉）。
+     又占掉一屏看不了几行的高度。
      用 `:has()` 而不是在根 layout 判断路由：根 layout 渲染 `<Footer/>` 时并不知道当前是
      哪个路由，而 `:has()` 表达的正是「页面带后台外壳时不显示页脚」，不需要搬动路由结构。 */
   body:has(.admin-shell) .footer {
     display: none;
   }
-  /* T-P0-4：有后台壳时隐藏公开索引栏 / 顶栏，避免与 AdminNav 双导航并存。 */
+  /* 有后台壳时隐藏公开索引栏 / 顶栏，避免与 AdminNav 双导航并存。 */
   body:has(.admin-shell) .rail,
   body:has(.admin-shell) .topbar {
     display: none;
@@ -5581,7 +5579,7 @@ html[data-theme="black-yellow"] {
     letter-spacing: -0.01em;
     color: var(--ink);
   }
-  /* T-P1-3：侧栏分组，结构对齐 member-nav */
+  /* 侧栏分组，结构对齐 member-nav */
   .admin-nav__groups {
     display: grid;
     gap: var(--s-4);
@@ -5640,7 +5638,7 @@ html[data-theme="black-yellow"] {
     white-space: nowrap;
   }
 
-  /* 后台首页：全部模块次级链接（T-P1-3，非 ChannelList 大卡） */
+  /* 后台首页：全部模块次级链接 */
   .admin-workspace__hint {
     margin: 0 0 var(--s-3);
     color: var(--ink-3);
@@ -5987,7 +5985,7 @@ html[data-theme="black-yellow"] {
   }
   /* 面板 / 窗口内的一段：小标题 + 正文。段内的小标题（`.admin-panel__title`）与正文
      （`.admin-status` / `.admin-note` / `.admin-json`）都是
-     `margin: 0`，所以裸 `<div>` 里这两者会上下紧贴 —— 一段就是一格间距（issue #62 前端1）。 */
+     `margin: 0`，所以裸 `<div>` 里这两者会上下紧贴 —— 一段就是一格间距。 */
   .admin-section {
     display: grid;
     gap: var(--s-3);
@@ -6713,7 +6711,7 @@ html[data-theme="black-yellow"] {
     margin-inline-end: var(--s-2);
     color: var(--ink-4);
   }
-  /* 线上版本（issue #189）：等宽、虚线下划线提示可悬停看完整 SHA。 */
+  /* 线上版本：等宽、虚线下划线提示可悬停看完整 SHA。 */
   .dash-hero__version {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     white-space: nowrap;
@@ -7102,8 +7100,7 @@ html[data-theme="black-yellow"] {
     border: 0;
     border-radius: 0;
   }
-  /* 批量操作条已改为**列表顶栏**（这里）：常驻、未选中时按钮禁用 ——
-     既没有出现/消失，也就没有任何位移，同时「选中后能做什么」在操作前就看得见。 */
+  /* 批量操作位于列表顶栏。 */
   .admin-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -7152,22 +7149,13 @@ html[data-theme="black-yellow"] {
     block-size: 1px;
   }
 
-  /* ------------------------------------------------- 单元格与表头（第六轮） */
-  /* 表格一旦信息变多，宽度就得有退路：`.admin-table-wrap` 原来是 `overflow: hidden`
-     （只为裁圆角），列一多只会把每一列压窄，最后行内 flex 组换行、行高翻倍。
-     改成横向可滚动，列宽按内容给足，宽度不够时用户横向看，而不是被压扁。 */
+  /* ------------------------------------------------- 单元格与表头 */
+  /* 列宽不足时允许横向滚动。 */
   .admin-table-wrap {
     overflow-x: auto;
   }
-  /* 单元格一律左对齐。第九轮验收把「加入时间 / 维修记录」的右对齐撤了：
-     表里混着文本列与数字列，右对齐只让这两列看起来被推出队列（用户反馈
-     「加入时间为什么擅自改成右对齐，单元格都是左对齐 + 垂直居中好看」）。
-     等宽数字由 `.admin-contacts` / `.admin-rownum` 自己声明，不靠对齐方式。 */
-  /* 单元格里的文字只有一层：**主值 + 同行次级说明**。
-     第八轮验收推翻了「第二行小字」的做法：单元格里出现第二行会让行高不一致
-     （33px / 43px 混在一起），整张表参差，而且「一个单元格 = 一个字段值」这件事失真 ——
-     后续做单元格就地编辑时，编辑对象就不统一了。
-     次级说明用 --ink-3：--ink-4 落在行 hover 的 --surface-2 上只有 4.27:1，掉出 AA。 */
+
+  /* 主值与次级说明同行显示；次级说明使用 --ink-3，保证悬停背景上的对比度。 */
   .admin-cell__main {
     color: var(--ink);
     font-weight: 650;
@@ -7186,11 +7174,8 @@ html[data-theme="black-yellow"] {
     opacity: 0.85;
   }
 
-  /* ------------------------------------------ 行首（第八 / 第九轮验收） */
-  /* 行首与「成员」**共用同一个单元格**：第九轮之前序号单独占一列（56px），
-     复选框右边缘到姓名之间横着 25px 空白，用户反馈「复选框到成员之间还是雷霆大宽度，
-     你设计成和首列属性共享一个区域好了」。并进首列之后只剩一个固定间距，
-     而且行首随首列一起被拖动列宽。 */
+  /* ------------------------------------------ 行首 */
+  /* 行首控件与成员信息共用首列。 */
   .admin-membercell {
     display: inline-flex;
     align-items: center;
@@ -7206,10 +7191,7 @@ html[data-theme="black-yellow"] {
     user-select: none;
     vertical-align: middle;
   }
-  /* 六点手柄：**长按**才进入拖动（见 `useRowSelect`），光标与提示语都要说清楚。
-     出现时机与复选框**完全同步**（用户要求「六面骰 icon 和复选框的出现是同步的」）：
-     平时隐藏，指针进入这一行 —— 或键盘焦点可见地落进来 —— 时一起淡入。
-     用 `opacity` 而不是 `display`：它始终占着那 1rem，出现时不会把姓名挤动。 */
+  /* 手柄与复选框同步显形；使用 opacity 保留占位。 */
   .admin-rowgrip {
     display: inline-flex;
     align-items: center;
@@ -7362,7 +7344,7 @@ html[data-theme="black-yellow"] {
     inline-size: 100%;
     white-space: normal;
   }
-  /* ------------------------------------------- 可调列宽的表格（第七轮） */
+  /* ------------------------------------------- 可调列宽的表格 */
   /* `table-layout: fixed` 是列宽拖拽的前提：auto 布局会按内容重新分配宽度，
      用户拖出来的数字下一帧就被浏览器改掉。成员表与维修审核表复用它，其余列表保持 auto。
      列宽拖拽的模型（相邻两列对冲、总宽恒等于容器宽）写在
@@ -7490,15 +7472,7 @@ html[data-theme="black-yellow"] {
     opacity: 0;
     cursor: pointer;
   }
-  /* 「查看」小框：**全场最多出现一个**，跟着鼠标悬浮的那一行走（用户要求
-     「查看只跟着鼠标悬浮单元行的位置走，全场不会出现多个查看」）。
-     三条规则的顺序与权重是有意的：
-     ① 指针在表上时，先把**非悬浮行**的「查看」一律收起 —— 权重 (0,4,2) 高于下面那条
-        「按钮自己拿到焦点」的规则，所以「A 行点过查看、鼠标移到 B 行」不会再出现两个；
-     ② 悬浮的那一行显示；
-     ③ 指针不在表上时，才轮到**键盘焦点落在按钮自己身上**的那一个显示（Tab 过来看得见）。
-        这里刻意**不写** `tr:has(:focus-visible)`：焦点落在行里的复选框上时不该顺带把
-        「查看」点亮 —— 那也是「鼠标没停在这行，却冒出一个查看」。 */
+  /* 悬停时只显示当前行的查看按钮；键盘焦点仅点亮按钮自身，避免复选框焦点点亮详情入口。 */
   .admin-table--resizable tbody:hover tr:not(:hover) .admin-peek {
     opacity: 0;
   }
@@ -7720,8 +7694,7 @@ html[data-theme="black-yellow"] {
       margin-block-start: 0;
       font-size: var(--t-micro);
     }
-    /* 联系方式这类「两行小字」在宽屏改成并排，省一半行高。
-       `nowrap`：`white-space: nowrap` 管不到 flex 容器，不显式禁止会被折成两行。 */
+    /* 宽屏下联系方式并排显示。 */
     .admin-workspace .admin-contacts {
       display: inline-flex;
       gap: 0.5rem;
@@ -7965,7 +7938,7 @@ html[data-theme="black-yellow"] {
 .activity-card__footer-slot {
   visibility: hidden;
 }
-/* 报名倒计时（issue #187）：抢票式数字块，只用语义令牌。 */
+/* 报名倒计时：抢票式数字块，只用语义令牌。 */
 .activity-countdown {
   margin: var(--s-3) 0 var(--s-4);
 }
@@ -8072,10 +8045,10 @@ html[data-theme="black-yellow"] {
 .activity-board {
   display: grid;
   min-width: 0;
-  /* 改版第二轮：整栈节奏收紧到 --s-3（用户反馈「卡片上方留空过大」）。 */
+
   gap: var(--s-3);
 }
-/* 页头（issue #107 后续改版）：活动名做主标题、日期做辅行；
+/* 页头：活动名做主标题、日期做辅行；
    与首块内容的间距交给 .activity-board 的 grid gap。 */
 .activity-board__head {
   margin-bottom: 0;
@@ -8099,11 +8072,11 @@ html[data-theme="black-yellow"] {
   align-items: center;
   gap: var(--s-3);
 }
-/* 「出勤成员」入口（issue #107）：工具栏尾部靠右；窄屏换行后仍贴右。 */
+/* 「出勤成员」入口：工具栏尾部靠右；窄屏换行后仍贴右。 */
 .activity-board__attendance-entry {
   margin-inline-start: auto;
 }
-/* 出勤成员弹层名单（issue #107）：只读；桌面两列，人多由弹窗正文内部滚动，
+/* 出勤成员弹层名单：只读；桌面两列，人多由弹窗正文内部滚动，
    页面高度与三栏布局都不随人数变化。 */
 .activity-board__attendance-list {
   display: grid;
@@ -8137,18 +8110,13 @@ html[data-theme="black-yellow"] {
   font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
 }
-/* 签到确认弹窗内的错误行（改版第二轮·方案 A 后，页面级错误已改浮动提示，
-   这个常驻预留带只服务弹窗）：定高预留，错误出现 / 清空都不挤动弹窗按钮；
-   更长由内部滚动，两行以内的常见错误完整可见。 */
+/* 签到确认弹窗内的错误提示。 */
 .activity-board__feedback {
   block-size: 2lh;
   overflow-y: auto;
   overflow-wrap: anywhere;
 }
-/* 页面级错误浮条（改版第二轮·方案 A，用户预览选定）：固定在视口顶部居中，
-   与成功提示同款外观；Portal 在 body 上（高于移动端顶栏与详情窗口）。
-   不参与布局 —— 工具行与卡片之间不再需要常驻预留带，只隔网格间距，卡片紧贴。
-   不自动消失，被下一次操作清掉 / 覆盖；成功提示同时在场（罕见）时下移让位。 */
+/* 页面级错误固定显示在视口顶部居中。 */
 .activity-board__alert {
   position: fixed;
   inset-block-start: var(--s-5);
@@ -8189,7 +8157,7 @@ body:has(.admin-toast) .activity-board__alert {
   gap: var(--s-4);
 }
 @media (min-width: 1100px) {
-  /* 成员（无 modifier）：排队中 ｜ 已接待 两列；管理员：待签到 ｜ 排队中 ｜ 已接待 三列（issue #108）。 */
+  /* 成员（无 modifier）：排队中 ｜ 已接待 两列；管理员：待签到 ｜ 排队中 ｜ 已接待 三列。 */
   .activity-board__panes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
@@ -8198,7 +8166,7 @@ body:has(.admin-toast) .activity-board__alert {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-/* 手机端分区切换（issue #108 审查稿·分段滑块）：<1100px 居中胶囊、等宽分段（管理员 3 段 /
+/* 手机端分区切换（·分段滑块）：<1100px 居中胶囊、等宽分段（管理员 3 段 /
    成员 2 段），滑块只用 transform 位移（180ms、不回弹）；几何全静态，点击不推挤布局。
    prefers-reduced-motion 下由全局 0.01ms 规则压成瞬时跳位。计数在段内，等宽段保证
    数字变化不改行宽。≥1100px 隐藏切换行、恢复并排栏。 */
@@ -8279,7 +8247,7 @@ body:has(.admin-toast) .activity-board__alert {
   margin: 0;
   font-size: 1.05rem;
 }
-/* 栏头计数（issue #107 后续改版）：数量跟标题；排队人数用强调色加粗做第一读数。 */
+/* 栏头计数：数量跟标题；排队人数用强调色加粗做第一读数。 */
 .activity-board__pane-count {
   margin-inline-start: var(--s-2);
   font-weight: 800;
@@ -8308,8 +8276,7 @@ body:has(.admin-toast) .activity-board__alert {
   border-top: 1px solid var(--line);
   overflow-wrap: anywhere;
 }
-/* 排队卡改版（issue #107 后续）：整卡单列 —— 姓名信息 → 故障详情 → 操作区沉底，
-   按钮不再与正文同排抢宽（原来 ≥760px 两列并排会把正文挤成多行）。 */
+/* 排队卡按姓名、故障详情、操作区单列排列。 */
 .activity-board__row--queue {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -8328,7 +8295,7 @@ body:has(.admin-toast) .activity-board__alert {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* 详情行（issue #107 后续）：标签定宽保证跨行对齐；标签次级深灰、值主文字色加粗，
+/* 详情行（后续）：标签定宽保证跨行对齐；标签次级深灰、值主文字色加粗，
    整行比原 muted 提高一档对比度。 */
 .activity-board__queue-line {
   display: flex;
@@ -8362,7 +8329,7 @@ body:has(.admin-toast) .activity-board__alert {
 .activity-board__queue-main > div {
   min-width: 0;
 }
-/* 待签到勾选行的说明文字（电话 / 故障类型）：与详情行同一对比度档（改版）。 */
+/* 待签到勾选行的说明文字（电话 / 故障类型）：与详情行同一对比度档。 */
 .activity-board__check-meta {
   color: var(--ink-2);
   font-size: var(--t-sm);
@@ -8401,7 +8368,7 @@ body:has(.admin-toast) .activity-board__alert {
   flex-wrap: wrap;
   gap: var(--s-2);
 }
-/* 操作区沉底（issue #107 后续）：与正文用点线分隔；窄屏主按钮加宽到手指友好。 */
+/* 操作区沉底（后续）：与正文用点线分隔；窄屏主按钮加宽到手指友好。 */
 .activity-board__row-actions--foot {
   margin-top: var(--s-2);
   padding-top: var(--s-2);
@@ -8412,11 +8379,11 @@ body:has(.admin-toast) .activity-board__alert {
     flex: 1;
   }
 }
-/* 「查看维修单」由纯文字改为紧凑描边按钮（issue #107 后续：提高可辨识度）。 */
+
 .activity-board__view-btn.btn {
   padding: 0.45rem 1rem;
 }
-/* 队列处理按钮（issue #108 审查稿，观感优化）：
+/* 队列处理按钮（观感优化）：
    接待 = 描边主行动 —— 细蓝描边 + 蓝字，悬停由 .btn 基线填充为实心；
    撤回 = 幽灵 + Undo 图标，悬停转危险色（含淡底色），与接待区分、防误触。 */
 .activity-board__serve-btn.btn {

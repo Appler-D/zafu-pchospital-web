@@ -7,7 +7,7 @@ import { insertRepairParticipants, timeline } from "./repair-service";
 import type { PendingHistoryRow, ValidHistoryRow } from "./repair-history-import";
 
 /**
- * 历史修机数据落库通道（issue #72，CLI 与注册流程调用）。
+ * 历史修机数据落库通道（CLI 与注册流程调用）。
  *
  * 与活动接待一样属于「非成员手工流程」的例外：历史记录已实际完成、由管理员整批
  * 确认导入，直接写 `APPROVED`（无照片、不走 `repair_reviews`），以 timeline 与
@@ -26,7 +26,7 @@ export async function applyHistoryImport(
   let inserted = 0;
   let skipped = 0;
   for (const row of rows) {
-    // 计数放在事务外：可序列化事务遇 P2034 会重跑回调，事务内累加会重复计数（PR #73 评审）。
+    // 计数放在事务外：可序列化事务遇 P2034 会重跑回调，事务内累加会重复计数（评审）。
     const outcome = await inSerializableTransaction(async (tx) => {
       const existing = await tx.repairRecord.findUnique({
         where: { createRequestKey: row.idempotencyKey },
@@ -56,7 +56,7 @@ export async function applyHistoryImport(
           createdAt: now,
         },
       });
-      // 参与维修人员（issue #114）：历史行按「维修人员姓名」匹配出的成员本人一行。
+      // 参与维修人员：历史行按「维修人员姓名」匹配出的成员本人一行。
       await insertRepairParticipants(tx, recordId, [row.memberProfileId], now);
       await timeline(
         tx,
@@ -112,7 +112,7 @@ export async function applyHistoryImport(
 }
 
 /**
- * 暂存「姓名尚未在册」的历史行（issue #72 评审 1，CLI `--apply` 调用）。
+ * 暂存「姓名尚未在册」的历史行（CLI `--apply` 调用）。
  *
  * 与 `applyHistoryImport` 同一次运行、同一把行指纹：能直接导入的走前者，
  * 人名对不上的走这里落 `repair_history_pending` —— 于是这份历史数据**只被消费一次**，
@@ -191,7 +191,7 @@ export type HistoryClaimInput = {
 };
 
 /**
- * 把暂存的历史行补录给刚建档的成员（issue #72 评审 1）——「先修机、后注册」的自动闭环。
+ * 把暂存的历史行补录给刚建档的成员——「先修机、后注册」的自动闭环。
  *
  * 三条硬规则：
  * 1. **重名不猜**：同名在册成员不止一位时整组不认领（与导入口径一致，留人工）；
@@ -248,7 +248,7 @@ export async function claimPendingHistoryForProfile(input: HistoryClaimInput): P
             createdAt: now,
           },
         });
-        // 参与维修人员（issue #114）：认领行归新成员本人，同样先落一行。
+        // 参与维修人员：认领行归新成员本人，同样先落一行。
         await insertRepairParticipants(tx, recordId, [input.memberProfileId], now);
         await timeline(
           tx,

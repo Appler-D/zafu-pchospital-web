@@ -22,7 +22,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 审核前补照片（issue #226，真实 GreatSQL）。
+ * 审核前补照片（真实 GreatSQL）。
  *
  * 覆盖：本人未审核 PENDING 的上传 / 排序 / 删除、审核通过关闭窗口、退回后恢复、
  * 非本人 / 管理员不代传、软删除拒绝，以及「文件已写入但审核先完成」的竞态回滚。

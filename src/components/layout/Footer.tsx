@@ -10,7 +10,7 @@ import { siteConfig } from "@/config/site";
  *
  * 对应设计基准的 `.footer`。首页与其他页面共用，不重复实现。
  *
- * 「成员登录」是次要账号入口（T-P2-4）：文案与 Header 共用 `memberLoginLink`，
+ * 「成员登录」是次要账号入口：文案与 Header 共用 `memberLoginLink`，
  * 仅作低权重文字链，不进 `mainNav`、不做 solid 主按钮。文案已定为「成员登录」，与 Header 一致。
  */
 

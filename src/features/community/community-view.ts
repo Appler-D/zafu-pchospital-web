@@ -16,7 +16,7 @@ export function memberRef(row: MemberNameSource): { id: string; name: string } {
 }
 
 /**
- * 摘要取值链（issue #79 第 6 项）：备注优先，老记录的 `content` 回退；
+ * 摘要取值链：备注优先，老记录的 `content` 回退；
  * 两者皆空时占位「未填写备注」。压平换行、截断到 `limit` 个码点。
  */
 export function excerptText(

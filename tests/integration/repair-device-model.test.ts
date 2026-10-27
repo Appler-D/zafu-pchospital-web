@@ -13,10 +13,10 @@ import { integrationTestsEnabled } from "./db-guard";
 import { callRoute, sessionCookie } from "./http-harness";
 
 /**
- * 成员维修表单的「机型」字段（issue #218，真实 GreatSQL）：
+ * 成员维修表单的「机型」字段（真实 GreatSQL）：
  * 路由入参归一 → 详情回显 → 草稿可改 → 提交审核必填（退回重提同样适用）。
  *
- * 同文件还覆盖「提交即建单」（#222）的幂等复放：并发同键只落一条、软删除后复放不返回旧记录。
+ * 同文件还覆盖「提交即建单」的幂等复放：并发同键只落一条、软删除后复放不返回旧记录。
  *
  * 独立的 UUID 段 `e8c00000-…` 与姓名前缀 "DM218 "：清理只按这两者限定。
  * 机型列与活动落单复制已由 `repair-activity-device-model.test.ts` 覆盖，这里只测成员侧写入。

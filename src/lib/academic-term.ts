@@ -1,7 +1,7 @@
 /**
  * 校历时间口径：学年区间与上海时区日期边界。
  *
- * 规则（issue #178 起）：
+ * 规则（）：
  * - **学年固定**为「当年 9 月 1 日 00:00 → 次年 9 月 1 日 00:00」（Asia/Shanghai），
  *   9 月 1 日当天属于新学年；不再有「学期区间」环境变量，也就不存在「未配置」态；
  * - 日期按 `Asia/Shanghai`（UTC+8，无夏令时）自然日解释，再转换为 UTC 查询边界；
@@ -64,7 +64,7 @@ function parseShanghaiDate(
 }
 
 /**
- * 给定一个 UTC 时刻，返回它所在的**学年**区间（issue #178）。
+ * 给定一个 UTC 时刻，返回它所在的**学年**区间。
  *
  * 学年固定为 `[当年 9/1 00:00, 次年 9/1 00:00)`（Asia/Shanghai）：9 月 1 日当天
  * 即属于新学年，8 月 31 日仍属于上一学年。跨年月份（1–8 月）归属上一年开始的学年，
@@ -117,7 +117,7 @@ function utcMidnightOfShanghaiDay(instant: Date): Date {
 }
 
 /**
- * 把上海自然日区间转成 **`DATE` 列可直接比较的日期边界**（issue #75）。
+ * 把上海自然日区间转成 **`DATE` 列可直接比较的日期边界**。
  *
  * 为什么必须有这一步：`repair_records.repair_date` 是 `@db.Date`（纯日历日），
  * 而 Prisma 的查询构造器（`count` / `findMany` / `groupBy` 的 `where`）会把过滤用的

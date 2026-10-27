@@ -51,7 +51,7 @@ export class AuthService {
       : null;
     const credential = identity?.deletedAt ? null : identity?.user.passwordCredential;
 
-    // —— 临时凭据分支（issue #113）：先判定「是否临时凭据」再校验期限与消费状态。
+    // —— 临时凭据分支：先判定「是否临时凭据」再校验期限与消费状态。
     // `temporaryExpiresAt` 非空的凭据即使已过期 / 已消费，也不能落回普通密码分支 ——
     // 否则一个到期的临时口令会被当作普通密码继续可用。
     if (identity && !identity.deletedAt && credential && credential.temporaryExpiresAt !== null) {
@@ -99,7 +99,7 @@ export class AuthService {
     const sessionId = randomUUID();
     const verifiedVersion = credential.credentialVersion;
     await inSerializableTransaction(async (tx) => {
-      // 建 Session 前复核凭据代次（issue #113）：验密之后、本事务之前若有管理员重置，
+      // 建 Session 前复核凭据代次：验密之后、本事务之前若有管理员重置，
       // 旧哈希换来的一次校验结果绝不能给新一代凭据建立有效会话。
       await tx.$queryRaw`SELECT user_id FROM password_credentials WHERE user_id = ${identity.userId} FOR UPDATE`;
       const fresh = await tx.passwordCredential.findUnique({ where: { userId: identity.userId } });
@@ -135,7 +135,7 @@ export class AuthService {
   }
 
   /**
-   * 临时密码登录（issue #113）：管理员恢复签发的 6 位口令。
+   * 临时密码登录：管理员恢复签发的 6 位口令。
    *
    * 与普通登录的三处本质差别：
    * 1. 账号维度节流 —— 6 位数字可猜，只靠 (QQ, IP) 桶可换 IP 绕过；
@@ -331,7 +331,7 @@ export class AuthService {
     });
     if (!(await verifyPassword(input.currentPassword, credential.passwordHash)))
       throw new AppError("PASSWORD_CURRENT_INVALID", "当前密码错误");
-    // 恢复态（issue #113）：当前密码是本次已消费的临时密码。必须持有本次受限 Session
+    // 恢复态：当前密码是本次已消费的临时密码。必须持有本次受限 Session
     // （`authenticate` 已校验，会话过期 / 被再次签发撤销都会先失败），且禁止把新密码
     // 设回临时密码 —— 否则「消费一次」的口令会变成永久密码。
     const recovering =
@@ -363,7 +363,7 @@ export class AuthService {
           passwordHash,
           mustChangePassword: false,
           passwordChangedAt: attemptNow,
-          // 正常改密同样清理临时状态（issue #113 §5.3）：不残留到期字段误伤后续登录。
+          // 正常改密同样清理临时状态：不残留到期字段误伤后续登录。
           temporaryExpiresAt: null,
           temporaryConsumedAt: null,
           credentialVersion: { increment: 1 },
@@ -478,7 +478,7 @@ async function assertNotThrottled(keyDigest: Uint8Array<ArrayBuffer>): Promise<v
 }
 
 /**
- * 记录一次登录失败。支持多个节流键（issue #113）：临时凭据的密码错误要同时计入
+ * 记录一次登录失败。支持多个节流键：临时凭据的密码错误要同时计入
  * `(QQ, IP)` 桶与账号桶，但**只写一条审计** —— 同一次请求在审计里只应看到一次失败。
  */
 async function recordFailure(

@@ -14,7 +14,7 @@ const BLOCKED_KEY =
 const QQ_KEY = /(^|_)(qq)($|_)/i;
 const PHONE_KEY = /(phone|mobile)/i;
 /**
- * 邮箱字段（issue #146）：`email` / `targetEmail` / `emailNormalized` 都命中。
+ * 邮箱字段：`email` / `targetEmail` / `emailNormalized` 都命中。
  * 只对**字符串值**打码，布尔值（如 `emailVerified: true`）原样保留 ——
  * 脱敏规则要窄，不能把正常业务字段一起丢掉（见上面 `code` 的教训）。
  */
