@@ -39,6 +39,23 @@ model User {
 }
 """
 
+SCHEMA_WIDGET = SCHEMA + "\nmodel Widget {\n  id String @id\n}\n"
+
+SCHEMA_FORMATTED = """generator client {
+    provider = "prisma-client"
+    output = "../src/generated/prisma"
+}
+
+datasource db {
+    provider = "mysql"
+    url = env("DATABASE_URL")
+}
+
+model User {
+    id String @id @db.VarChar(36)
+}
+"""
+
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,9 +72,10 @@ def add_bytes(archive, name, content):
 
 
 class DeploySandbox:
-    def __init__(self, root, kind):
+    def __init__(self, root, kind, fetch_ok=False):
         self.root = Path(root)
         self.kind = kind
+        self.fetch_ok = fetch_ok
         self.repo = self.root / "repo"
         self.app = self.root / "server/opt/zafu-pchospital-web"
         self.tmp = self.root / "server/tmp"
@@ -103,15 +121,18 @@ class DeploySandbox:
         self.git("commit", "-m", "old release")
         self.old = self.git("rev-parse", "HEAD").stdout.strip()
 
-        if self.kind == "db":
+        if self.kind in ("db", "schema_applied"):
             write(
                 self.repo / "prisma/migrations/20260103000000_add_widget/migration.sql",
                 "CREATE TABLE `widget` (`id` int NOT NULL, PRIMARY KEY (`id`));\n",
             )
+        if self.kind in ("db", "schema_applied", "schema_without_migration", "schema_pending_existing"):
+            write(self.repo / "prisma/schema.prisma", SCHEMA_WIDGET)
+        if self.kind == "schema_format":
+            write(self.repo / "prisma/schema.prisma", SCHEMA_FORMATTED)
+        if self.kind == "db":
             write(self.repo / "prisma/seed.ts", "export {};\n// seed changed\n")
-        elif self.kind == "schema_without_migration":
-            write(self.repo / "prisma/schema.prisma", SCHEMA + "\nmodel Widget {\n  id String @id\n}\n")
-        else:
+        if self.kind in ("db_failed", "db_rolled", "db_drift", "pending_existing", "pure"):
             write(self.repo / "src/feature.ts", "export const feature = 'pure code';\n")
 
         self.git("add", ".")
@@ -146,7 +167,8 @@ class DeploySandbox:
         self.git("config", "core.eol", "lf", cwd=self.app)
         self.git("reset", "--hard", "HEAD", cwd=self.app)
         self.git("checkout", "--detach", self.old, cwd=self.app)
-        self.git("remote", "set-url", "origin", "http://127.0.0.1:9/unreachable.git", cwd=self.app)
+        origin = str(bare) if self.fetch_ok else "http://127.0.0.1:9/unreachable.git"
+        self.git("remote", "set-url", "origin", origin, cwd=self.app)
         write(self.app / ".next/BUILD_ID", "old-build-id\n")
         write(self.app / ".next/DEPLOY_COMMIT", f"commit={self.old}\nbuild_id=old-build-id\n")
         write(self.app / "public/handbook/index.html", "<html>old</html>\n")
@@ -157,13 +179,22 @@ class DeploySandbox:
         write(self.root / "gitconfig", "")
 
         applied = ["20260101000000_init", "20260102000000_base"]
-        if self.kind == "db":
-            pass
-        elif self.kind == "pending_existing":
+        extra = []
+        if self.kind in ("pending_existing", "schema_pending_existing"):
             applied = applied[:1]
+        elif self.kind == "schema_applied":
+            applied = applied + ["20260103000000_add_widget"]
+        elif self.kind == "db_failed":
+            extra = ["20260103000000_add_widget||"]
+        elif self.kind == "db_rolled":
+            extra = ["20260103000000_add_widget|2026-01-01T00:00:00Z|2026-01-02T00:00:00Z"]
+        elif self.kind == "db_drift":
+            extra = ["20269999000000_unknown|2026-01-01T00:00:00Z|"]
         with (self.db_state / "migrations.txt").open("w", encoding="utf-8") as stream:
             for name in applied:
                 stream.write(f"{name}|2026-01-01T00:00:00Z|\n")
+            for line in extra:
+                stream.write(line + "\n")
 
         self.build_id = f"fixture-build-{self.target[:10]}"
         artifact = self.build / f"pc-artifact-{self.target}.tar.gz"
@@ -205,7 +236,7 @@ class DeploySandbox:
             f'source "{(self.repo / "tools/deploy/deploy-prod.sh").as_posix()}" "$@"\n',
         )
 
-    def run_deploy(self, fail_path=""):
+    def run_deploy(self, fail_path="", extra_args=()):
         env = os.environ.copy()
         env.pop("WHALE_NOTIFY_CONFIG", None)
         env.pop("FAKE_CURL_FAIL_PATH", None)
@@ -244,6 +275,7 @@ class DeploySandbox:
                 self.log.as_posix(),
                 "--base",
                 "https://example.test",
+                *extra_args,
             ],
             cwd=self.repo,
             env=env,
@@ -282,8 +314,8 @@ class DeployFlowTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
 
-    def sandbox(self, kind):
-        return DeploySandbox(self.temp.name, kind)
+    def sandbox(self, kind, name=None, fetch_ok=False):
+        return DeploySandbox(Path(self.temp.name) / (name or kind), kind, fetch_ok=fetch_ok)
 
     def test_pure_code_skips_database_stage_and_uses_bundle(self):
         sandbox = self.sandbox("pure")
@@ -309,6 +341,8 @@ class DeployFlowTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, log)
         self.assertIn("待应用迁移：", log)
         self.assertIn("待应用迁移 1 个", log)
+        self.assertIn("schema.prisma 实质变化：是", log)
+        self.assertIn("schema.prisma 有变化且新迁移待应用", log)
         self.assertIn("迁移前快照", log)
         self.assertIn("pnpm db:migrate:deploy", log)
         self.assertIn("seed（幂等）", log)
@@ -339,7 +373,7 @@ class DeployFlowTests(unittest.TestCase):
         sandbox = self.sandbox("schema_without_migration")
         completed, log = sandbox.run_deploy()
         self.assertNotEqual(completed.returncode, 0, log)
-        self.assertIn("schema.prisma 有实质变化，但数据库没有待应用迁移", log)
+        self.assertIn("schema.prisma 有实质变化，但目标提交没有新增迁移", log)
         self.assertIn("部署在 [P2] 中断", log)
         self.assertEqual(sandbox.server_head(), sandbox.old)
         self.assertEqual(sandbox.service_state(), "active")
@@ -348,6 +382,74 @@ class DeployFlowTests(unittest.TestCase):
         payload = sandbox.notification()
         self.assertEqual(payload["status"], "failed")
         self.assertEqual(payload["smoke"], "not_run")
+
+    def test_schema_change_with_applied_new_migration_is_allowed(self):
+        sandbox = self.sandbox("schema_applied")
+        completed, log = sandbox.run_deploy()
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("schema 变化已由本次新增迁移覆盖", log)
+        self.assertIn("数据库阶段：跳过", log)
+        self.assertNotIn("迁移前快照", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertEqual(sandbox.notification()["status"], "success")
+
+    def test_schema_format_only_is_not_a_database_change(self):
+        sandbox = self.sandbox("schema_format")
+        completed, log = sandbox.run_deploy()
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("schema.prisma 实质变化：否", log)
+        self.assertIn("纯代码发布", log)
+        self.assertNotIn("目标提交没有新增迁移", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertEqual(sandbox.notification()["status"], "success")
+
+    def test_schema_change_without_new_migration_aborts_despite_existing_pending(self):
+        sandbox = self.sandbox("schema_pending_existing")
+        completed, log = sandbox.run_deploy()
+        self.assertNotEqual(completed.returncode, 0, log)
+        self.assertIn("schema.prisma 有实质变化，但目标提交没有新增迁移", log)
+        self.assertIn("部署在 [P2] 中断", log)
+        self.assertEqual(sandbox.server_head(), sandbox.old)
+        self.assertEqual(sandbox.service_state(), "active")
+        self.assertEqual(sandbox.service_state("docs-sync.timer"), "active")
+        self.assertEqual(sandbox.service_stops(), [])
+        self.assertEqual(sandbox.notification()["status"], "failed")
+
+    def test_schema_without_migration_can_be_explicitly_allowed(self):
+        sandbox = self.sandbox("schema_without_migration", name="schema_allowed")
+        completed, log = sandbox.run_deploy(extra_args=["--allow-schema-without-migration"])
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("已用 --allow-schema-without-migration 放行", log)
+        self.assertIn("数据库阶段：跳过", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertEqual(sandbox.notification()["status"], "success")
+
+    def test_migration_anomalies_abort_before_downtime(self):
+        cases = (
+            ("db_failed", "数据库存在失败或已回滚的迁移记录"),
+            ("db_rolled", "数据库存在失败或已回滚的迁移记录"),
+            ("db_drift", "数据库已应用了目标提交里不存在的迁移"),
+        )
+        for kind, marker in cases:
+            with self.subTest(kind=kind):
+                sandbox = self.sandbox(kind, name=kind)
+                completed, log = sandbox.run_deploy()
+                self.assertNotEqual(completed.returncode, 0, log)
+                self.assertIn(marker, log)
+                self.assertEqual(sandbox.server_head(), sandbox.old)
+                self.assertEqual(sandbox.service_state(), "active")
+                self.assertEqual(sandbox.service_state("docs-sync.timer"), "active")
+                self.assertEqual(sandbox.service_stops(), [])
+                self.assertEqual(sandbox.notification()["status"], "failed")
+
+    def test_fetch_success_path(self):
+        sandbox = self.sandbox("pure", name="fetch_ok", fetch_ok=True)
+        completed, log = sandbox.run_deploy()
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("服务器 fetch 成功", log)
+        self.assertNotIn("改用本地 bundle", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertEqual(sandbox.notification()["status"], "success")
 
     def test_smoke_failure_returns_nonzero_and_restores_timer(self):
         sandbox = self.sandbox("pure")

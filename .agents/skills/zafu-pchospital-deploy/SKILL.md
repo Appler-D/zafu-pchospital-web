@@ -71,8 +71,9 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 4. **数据库变更计划（P2 停机前只读核对）**：脚本读取 `_prisma_migrations`，与目标提交的
    迁移目录、`prisma/schema.prisma`、`prisma/seed.ts`、`prisma.config.ts` 比对，不再用
    「没有新增迁移文件」推断「不需要数据库操作」。
-   - 有待应用迁移 / schema 实质变化 / seed 变化 / `prisma.config.ts` 变化 → 进入 P7 数据库阶段。
-   - schema 有实质变化但没有任何待应用迁移 → **停机前中止**，先补迁移或人工确认。
+   - 有待应用迁移 / schema 实质变化且目标提交新增了迁移 / seed 变化 / `prisma.config.ts` 变化 → 进入 P7 数据库阶段；若新增迁移已应用，则可按纯代码发布跳过 P7。
+   - schema 有实质变化但目标提交**没有新增迁移** → **停机前中止**（即使数据库还有历史 pending 迁移），先补迁移；只有已人工确认 schema 与数据库一致（或变化不涉及数据库）时，才用 `--allow-schema-without-migration` 显式放行。
+   - 只跑 `prisma format` 造成的缩进/对齐/换行变化不算实质变化。
    - 数据库无法读取（表不存在、权限、连接失败）→ 保守按「需要数据库阶段」处理。
    - 以上都没有 → 纯代码发布：P7 跳过 migrate/seed/全表行数核对，服务保持运行到 P8 切换；
      **P4 全量备份仍保留，不因纯代码发布省略**。
@@ -109,6 +110,7 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 --redeploy        允许对服务器当前已部署的同一提交重复部署
 --allow-risky-migration  已人工读过含 DROP/MODIFY/UPDATE 的迁移 SQL 后放行
 --allow-env-change       已确认服务器 .env 随 .env.example 更新后放行
+--allow-schema-without-migration  已人工确认 schema 变化与数据库一致（或不涉及数据库）时放行
 ```
 
 脚本退出时会打印各阶段耗时、服务器 fetch 等待与停机窗口，便于比较「等待」和「停机」；
@@ -221,8 +223,9 @@ ssh -i "$KEY" "$DEPLOY_HOST" '
 5. **文档站资源名带哈希**（`searchindex-<hash>.js`、`pc-hospital-<hash>.css`）：不要按固定文件名 404 判断文档坏了。
 6. **不要在生产造测试数据**：想验证写路径就在本地库做；生产的读写路径用 200 / 空数组 + 表结构核对证明。
 7. **迁移一定先读 SQL**：允许的「纯增量」= CREATE / 加索引 / 幂等 INSERT；遇到 DROP / 改列先问。
-   `prisma/schema.prisma` 有实质变化但数据库没有待应用迁移时，脚本会在 P2 直接中止 ——
-   这是发布配置错误，不要用「纯代码发布」绕过。
+   `prisma/schema.prisma` 有实质变化但目标提交没有新增迁移时，脚本会在 P2 直接中止 ——
+   这是发布配置错误，不要用「纯代码发布」绕过；只改格式（缩进/对齐/换行）不会触发。
+   确实已确认 schema 与数据库一致、或变化不涉及数据库时，才用 `--allow-schema-without-migration` 放行。
 8. **内存**：生产机 1613MB + 2G swap —— **绝不要在服务器上构建**（旧路线曾四次压死机器）。
 9. **`next start` 对静态资源逐请求读盘**：换产物必须「先停服务 → 换目录 → 再起服务」，
    不停服务换目录会出现「内存里旧路由、盘上新文件」的不一致。

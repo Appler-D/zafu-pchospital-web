@@ -44,6 +44,8 @@
 #   --yes                  跳过人工确认（停机窗口确认等），非交互环境必须加
 #   --allow-risky-migration  确认已读过含 DROP/MODIFY/UPDATE 的迁移 SQL 再放行
 #   --allow-env-change       确认服务器 .env 已随 .env.example 更新再放行
+#   --allow-schema-without-migration
+#       已人工确认 schema 变化与数据库一致（或该变化不涉及数据库）时放行
 #   DEPLOY_SMOKE_QQ / DEPLOY_SMOKE_PASSWORD  可选：冒烟时做登录态验证
 #   DEPLOY_FETCH_TIMEOUT / DEPLOY_FETCH_ATTEMPTS
 #       服务器主仓库 fetch 的单次超时与尝试次数（缺省 30 秒 × 1 次，失败即走 bundle）
@@ -149,6 +151,7 @@ BUILD_DIR_OPT=""; DOCS_DIR_OPT="${DOCS_SOURCE_DIR:-}"; LOG_FILE_OPT="${DEPLOY_LO
 BASE_URL="${DEPLOY_BASE_URL:-https://pczafu.cn}"
 ALLOW_RISKY_MIGRATION="${ALLOW_RISKY_MIGRATION:-0}"
 ALLOW_ENV_CHANGE="${ALLOW_ENV_CHANGE:-0}"
+ALLOW_SCHEMA_WITHOUT_MIGRATION="${ALLOW_SCHEMA_WITHOUT_MIGRATION:-0}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -165,6 +168,7 @@ while [ $# -gt 0 ]; do
     --rollback) DO_ROLLBACK=1; shift ;;
     --allow-risky-migration) ALLOW_RISKY_MIGRATION=1; shift ;;
     --allow-env-change) ALLOW_ENV_CHANGE=1; shift ;;
+    --allow-schema-without-migration) ALLOW_SCHEMA_WITHOUT_MIGRATION=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; die "未知参数：$1" ;;
   esac
@@ -301,13 +305,13 @@ remote_script() { ssh "${SSH_OPTS[@]}" "${SSH_OPTS_KEY[@]}" "$SSH_HOST" 'bash -s
 # ---------------------------------------------------------------------------
 add_db_reason() { DB_REASONS="${DB_REASONS:+$DB_REASONS；}$1"; }
 
-# 只比较 schema 的实质内容：去掉行首/空白后的 // 注释、行尾空白与空行；
-# http:// 这类字符串里的 // 前面不是空白，不会被误删。
+# 只比较 schema 的实质内容：去掉 // 注释后，把缩进、对齐、换行等空白压成单个空格。
+# 这样只跑 prisma format 的纯格式变化不会被误判为「schema 有变化但没有迁移」。
 schema_fingerprint() {
   git -C "$REPO_ROOT" show "$1:prisma/schema.prisma" 2>/dev/null |
     sed -E 's@(^|[[:space:]])//.*$@@' |
-    sed -E 's/[[:space:]]+$//' |
-    sed '/^[[:space:]]*$/d' || true
+    tr -s '[:space:]' ' ' |
+    sed -E 's/^ //; s/ $//' || true
 }
 
 assess_db_plan() {
@@ -403,7 +407,9 @@ REMOTE
   else
     warn "无法读取 _prisma_migrations（数据库不可连、表不存在或权限不足）：按“需要数据库阶段”保守处理。"
   fi
-  say "  schema.prisma 实质变化：$([ "$SCHEMA_CHANGED" = "1" ] && echo 是 || echo 否)；seed 变化：$([ "$SEED_CHANGED" = "1" ] && echo 是 || echo 否)"
+  local new_mig_count
+  new_mig_count="$(printf '%s\n' "$NEW_MIGS" | grep -c . || true)"
+  say "  schema.prisma 实质变化：$([ "$SCHEMA_CHANGED" = "1" ] && echo 是 || echo 否)；本次新增迁移：$new_mig_count 个；seed 变化：$([ "$SEED_CHANGED" = "1" ] && echo 是 || echo 否)"
 
   if [ -n "$DB_FAILED_LIST" ]; then
     die "数据库存在失败或已回滚的迁移记录（见上）。先人工用 prisma migrate resolve 处理，再部署；
@@ -422,12 +428,21 @@ REMOTE
     add_db_reason "待应用迁移 $DB_PENDING_COUNT 个"
   fi
   if [ "$SCHEMA_CHANGED" = "1" ]; then
-    if [ "$DB_QUERY_OK" = "1" ] && [ "$DB_PENDING_COUNT" -eq 0 ]; then
-      die "prisma/schema.prisma 有实质变化，但数据库没有待应用迁移。
-    不能把它当作纯代码发布：请补对应迁移，或人工确认 schema 与数据库一致后再部署。"
+    if [ -z "$NEW_MIGS" ]; then
+      if [ "$ALLOW_SCHEMA_WITHOUT_MIGRATION" != "1" ]; then
+        die "prisma/schema.prisma 有实质变化，但目标提交没有新增迁移。
+    不能把它当作纯代码发布：请补对应迁移；若已人工确认 schema 与数据库一致（或该变化不涉及数据库），
+    用 --allow-schema-without-migration 显式放行。"
+      fi
+      warn "schema.prisma 有实质变化且没有新增迁移；已用 --allow-schema-without-migration 放行（请确认数据库已一致）。"
+    elif [ "$DB_QUERY_OK" != "1" ]; then
+      : # 已有“无法确认数据库已应用版本”，P7 会执行 migrate。
+    elif [ "$DB_PENDING_COUNT" -gt 0 ]; then
+      DB_WORK=1
+      add_db_reason "schema.prisma 有变化且新迁移待应用"
+    else
+      say "  schema 变化已由本次新增迁移覆盖（迁移已应用）。"
     fi
-    DB_WORK=1
-    add_db_reason "schema.prisma 有变化"
   fi
   if [ "$SEED_CHANGED" = "1" ]; then
     DB_WORK=1
@@ -440,6 +455,10 @@ REMOTE
 
   if [ "$DB_WORK" = "1" ]; then
     warn "本次需要停机执行数据库工作：$DB_REASONS。"
+  elif [ "$SCHEMA_CHANGED" = "1" ] && [ -n "$NEW_MIGS" ]; then
+    ok "数据库阶段可跳过：schema 变化已由本次新增迁移覆盖（迁移已应用）；P7 将跳过 migrate/seed/行数核对。"
+  elif [ "$SCHEMA_CHANGED" = "1" ]; then
+    ok "数据库阶段可跳过：schema 变化已人工确认无需数据库操作；P7 将跳过 migrate/seed/行数核对。"
   else
     ok "纯代码发布：无待应用迁移、无 schema/seed 变化；P7 将跳过 migrate/seed/行数核对。"
   fi
@@ -775,6 +794,10 @@ assess_db_plan
 
 if [ "$DB_WORK" = "1" ]; then
   DB_PLAN_LABEL="需要（$DB_REASONS）"
+elif [ "$SCHEMA_CHANGED" = "1" ] && [ -n "$NEW_MIGS" ]; then
+  DB_PLAN_LABEL="跳过（新迁移已应用）"
+elif [ "$SCHEMA_CHANGED" = "1" ]; then
+  DB_PLAN_LABEL="跳过（已人工确认 schema）"
 else
   DB_PLAN_LABEL="跳过（纯代码发布）"
 fi
@@ -1048,8 +1071,14 @@ ok "服务器代码 / 依赖 / Prisma Client 就绪。（线上一直跑着旧�
 # [P7] 数据库变更（需要时）；纯代码发布保持服务运行
 # ---------------------------------------------------------------------------
 if [ "$DB_WORK" != "1" ]; then
-  step 7 "数据库变更阶段（纯代码发布，跳过）"
-  ok "纯代码发布：跳过停机阶段的 migrate / seed / 全表行数核对。"
+  step 7 "数据库变更阶段（无待执行数据库工作，跳过）"
+  if [ "$SCHEMA_CHANGED" = "1" ] && [ -n "$NEW_MIGS" ]; then
+    ok "数据库阶段无需执行：schema 变化已由本次新增迁移覆盖（迁移已应用）；跳过 migrate/seed/行数核对。"
+  elif [ "$SCHEMA_CHANGED" = "1" ]; then
+    ok "数据库阶段无需执行：schema 变化已人工确认无需数据库操作；跳过 migrate/seed/行数核对。"
+  else
+    ok "纯代码发布：跳过停机阶段的 migrate / seed / 全表行数核对。"
+  fi
   note "服务保持运行；P8 才停止服务做产物切换。"
   note "P4 的全量备份仍然保留，不因纯代码发布省略。"
 else
@@ -1255,7 +1284,7 @@ say "  BUILD_ID：  $BUILD_ID"
 if [ "$DB_WORK" = "1" ]; then
   say "  数据库阶段：执行（$DB_REASONS）"
 else
-  say "  数据库阶段：跳过（纯代码发布；P4 备份仍保留）"
+  say "  数据库阶段：跳过（无待执行数据库工作；P4 备份仍保留）"
 fi
 say "  停机时长：  ${DOWNTIME}s"
 say "  产物：      $ART（sha256 ${ART_SHA256:0:12}…，同提交下次会复用）"
