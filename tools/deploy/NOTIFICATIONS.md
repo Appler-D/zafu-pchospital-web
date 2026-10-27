@@ -60,6 +60,10 @@ bash -n tools/deploy/deploy-prod.sh
 bash -n tools/deploy/notify-result.sh
 ```
 
+`tests/deploy/` 还包含本地替身部署流程测试：不连生产、不访问网络，覆盖网络失败切 bundle、
+纯代码跳过数据库阶段、历史待应用迁移、schema 无迁移中止、失败退出码、docs-sync 定时器恢复
+与通知记录隔离。CI 会执行 `bash -n` 与上述 unittest，无需在有生产凭据的环境运行。
+
 本地替身验证实际 EXIT 钩子的成功、构建/上传/迁移/切换/冒烟失败、回滚以及通知超时隔离。
 公网只允许负责人授权的一次 `--dry-run` 契约校验（200，不入队、不发群），不能发“测试部署成功”。
 真实群投递由下一次另行授权的真实部署验证，不是本任务的发布授权。
