@@ -483,6 +483,17 @@ DELETE     /api/v1/admin/comments/:id
   原先的 `lte: new Date("2026-09-22")` 会把当天 08:00 之后的报名全部排除，
   界面上表现为「筛同一天得到 0 条」。
 
+## 公开活动排队汇总（issue #244）
+
+`GET /api/v1/repair-activities/:id/queue` 为匿名可读接口；沿用统一信封与 requestId，成功与失败响应均为 `Cache-Control: private, no-store`，不受登录邮箱门禁影响。
+
+成功 `data` 仅包含 `{ waitingCount: number | null, observedAt: string }`。`observedAt` 为服务端查询时间（UTC ISO 字符串），不是最后一次排队变化时间。`waitingCount` 只计本活动 `deletedAt IS NULL AND status = CHECKED_IN` 的报名；未到场、已接待、软删及其他活动不计入。不返回客户/成员明细、个人队号、维修进度或预计等待时间，也不修改容量、签到或接待规则。
+
+- 报名截止前（既有现场操作窗口尚未开放），`waitingCount=null`，页面显示“签到尚未开放”；真实查询成功且无待接待报名才返回 `0`。
+- 活动软删/不存在返回既有 404 `ACTIVITY_NOT_FOUND`；上海活动日次日零点起返回 404 `ACTIVITY_ENDED`。没有新增服务截止字段或“停止接待”控制，0 人不代表仍可接待或无需等待。
+- 公开活动详情独立刷新该汇总，约每 30 秒一次、聚焦/重新可见及手动刷新时重取，隐藏/卸载时取消；不重置报名和查询表单。请求失败不伪装为 0：首次显示暂不可用，后续保留上次成功值/时间并标明更新失败；明确结束/不存在后隐藏旧值并停止轮询。
+- 活动列表不增加排队数字；小鲸鱼可以链接活动详情，不需要管理凭据或客户资料。客服配置交接见 [交接说明](../customer-whale-queue-handoff.md)。
+
 ## 活动报名免责声明（issue #62）
 
 - `POST /api/v1/repair-activities/[id]/registrations` 的 body 增加 `consentAccepted`：

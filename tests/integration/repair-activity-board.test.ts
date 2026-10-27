@@ -10,6 +10,7 @@ import { POST as POST_WITHDRAW } from "../../src/app/api/v1/member/repair-activi
 import { GET as GET_PHONE } from "../../src/app/api/v1/member/repair-activities/[id]/registrations/[registrationId]/phone/route";
 import { POST as POST_REGISTRATION } from "../../src/app/api/v1/repair-activities/[id]/registrations/route";
 import { repairActivityStaffService } from "../../src/features/repair-activities/repair-activity-staff-service";
+import { repairActivityService } from "../../src/features/repair-activities/repair-activity-service";
 import { resetRateLimitsForTests } from "../../src/lib/api/rate-limit";
 import { shanghaiToday } from "../../src/lib/shanghai-date";
 import { permissionsForRoles } from "../../src/lib/auth/permissions";
@@ -453,6 +454,7 @@ dbTest("电话读取拒绝未登录、无权限、无有效成员及跨活动 / 
 
 dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留类型、接待分类贯通", async () => {
   const db = getDb();
+  const initialQueue = (await repairActivityService.getPublicQueue(ACTIVITY_ID)).waitingCount!;
   const first = await checkInFixture();
   const second = await checkInFixture();
   const result = await postCheckIn([first.id, second.id], staffCookie, [
@@ -473,6 +475,10 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
   assert.equal(saved.issueType, "SOFTWARE_SYSTEM");
   assert.equal(saved.status, "CHECKED_IN");
   assert.equal(saved.checkedInAt?.toISOString(), rows[0].checkedInAt);
+  assert.equal(
+    (await repairActivityService.getPublicQueue(ACTIVITY_ID)).waitingCount,
+    initialQueue + 2,
+  );
   const audits = await db.auditLog.findMany({
     where: {
       action: "repair_activity.registration_issue_type_updated",
@@ -494,6 +500,10 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
   const withdrawn = await postWithdraw(first.id);
   assert.equal(withdrawn.status, 200);
   assert.equal((withdrawn.json.data as { issueType: string }).issueType, "SOFTWARE_SYSTEM");
+  assert.equal(
+    (await repairActivityService.getPublicQueue(ACTIVITY_ID)).waitingCount,
+    initialQueue + 1,
+  );
   // issue #108：签到 / 撤回收紧为 activity:admin，普通成员调用一律 403。
   const memberActor = { ...staffActor, permissions: permissionsForRoles(["MEMBER"]) };
   await assert.rejects(
@@ -507,6 +517,10 @@ dbTest("核对后批量签到：新类型与标签、成员审计、撤回保留
   // 成员仍可接待：serve 保持 activity:staff。issue #221 起接待只占登记行，不建草稿。
   await repairActivityStaffService.checkIn(ACTIVITY_ID, [first.id], staffActor);
   const served = await repairActivityStaffService.serve(ACTIVITY_ID, first.id, memberActor);
+  assert.equal(
+    (await repairActivityService.getPublicQueue(ACTIVITY_ID)).waitingCount,
+    initialQueue + 1,
+  );
   assert.equal(served.registration.repairRecordId, null, "接待不再创建维修草稿");
   const prefill = await repairActivityStaffService.getServePrefill(
     ACTIVITY_ID,

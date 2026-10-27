@@ -45,6 +45,12 @@ export type RepairActivityPublicView = {
   remaining: number;
 };
 
+/** 公开排队汇总；null 表示签到尚未开放，不代表查询失败或无人等候。 */
+export type RepairActivityQueueView = {
+  waitingCount: number | null;
+  observedAt: string;
+};
+
 export type RepairActivityAdminView = RepairActivityPublicView & {
   createdAt: string;
   updatedAt: string;
@@ -552,6 +558,30 @@ export const repairActivityService = {
       throw new AppError("ACTIVITY_ENDED", "活动已结束");
     }
     return view;
+  },
+
+  async getPublicQueue(activityId: string): Promise<RepairActivityQueueView> {
+    const row = await getDb().repairActivity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: { activityAt: true, signupClosesAt: true },
+    });
+    if (!row) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+    const end = activityEndExclusive(row.activityAt).getTime();
+    const assertNotEnded = (now: Date) => {
+      if (now.getTime() >= end) throw new AppError("ACTIVITY_ENDED", "活动已结束");
+    };
+    let now = new Date();
+    assertNotEnded(now);
+    if (now < row.signupClosesAt) {
+      return { waitingCount: null, observedAt: now.toISOString() };
+    }
+    // 只做聚合，不读取报名人员资料；与接待台的 CHECKED_IN 队列口径相同。
+    const waitingCount = await getDb().repairActivityRegistration.count({
+      where: { activityId, deletedAt: null, status: "CHECKED_IN" },
+    });
+    now = new Date();
+    assertNotEnded(now);
+    return { waitingCount, observedAt: now.toISOString() };
   },
 
   async register(
