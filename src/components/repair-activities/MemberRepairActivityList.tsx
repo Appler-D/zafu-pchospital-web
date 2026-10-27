@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { memberRepairActivitiesCopy } from "@/config/repair-activities";
 import {
-  repairActivityStatusLabels,
-  type RepairActivityStatus,
-} from "@/features/repair-activities/repair-activity-validation";
+  memberRepairActivitiesCopy,
+  memberRepairActivityStatusLabels,
+} from "@/config/repair-activities";
 import type { StaffActivityListItem } from "@/features/repair-activities/repair-activity-staff-service";
 import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
+import { memberRepairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 
 export function MemberRepairActivityList() {
   const copy = memberRepairActivitiesCopy.list;
@@ -73,10 +73,8 @@ export function MemberRepairActivityList() {
           <Card className="activity-card repair-panel">
             <div className="activity-card__head">
               <h2 className="activity-card__title">{item.title}</h2>
-              <span
-                className={item.status === "CLOSED" ? "admin-tag admin-tag--accent" : "admin-tag"}
-              >
-                {repairActivityStatusLabels[item.status as RepairActivityStatus]}
+              <span className={memberRepairActivityStatusBadgeClass(item.status)}>
+                {memberRepairActivityStatusLabels[item.status]}
               </span>
             </div>
             <dl className="activity-card__meta">
