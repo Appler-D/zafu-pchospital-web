@@ -448,6 +448,10 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 
 成员维修页使用 `.repair-page` 对齐页头与正文，卡片内容统一用 `.repair-panel` 添加内边距；
 桌面端基础信息双列，手机端单列，均沿用 `Card` 和语义间距令牌。
+成员收藏、通知与维修子页统一使用 `MemberPageHead` + `.member-page-head` 渲染页头；
+收藏 / 通知放在 `.member-compact-workspace` 的 `page-head` 区块内，维修子页沿用
+`.repair-page` 的紧凑页头间距。成员壳内不使用官网式 `PageHead`，避免 `.reveal`
+在壳内不可见以及首屏大留白。
 
 维修参与人员选择统一用 `ui/RepairParticipantPicker.tsx`，成员编辑器与后台共用。
 `.repair-participants__selected` 固定高度为 `--s-7 + --s-5`，人员标签单行排列，

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHead } from "@/components/layout/PageHead";
+import { MemberPageHead } from "@/components/member/MemberPageHead";
 import { RepairDetail } from "@/components/repairs/RepairDetail";
 import { Section } from "@/components/ui/Section";
 import {
@@ -15,12 +15,13 @@ export default async function RepairDetailPage({ params }: { params: Promise<{ i
   const { id } = await params;
   return (
     <div className="repair-page">
-      <PageHead
-        id="repair-detail-title"
-        index="08"
-        label={repairCopy.detail.label}
-        title={repairCopy.detail.title}
-      />
+      <Section variant="page-head" labelledBy="repair-detail-title">
+        <MemberPageHead
+          id="repair-detail-title"
+          label={repairCopy.detail.label}
+          title={repairCopy.detail.title}
+        />
+      </Section>
       <Section labelledBy="repair-detail-content">
         <h2 className="sr-only" id="repair-detail-content">
           维修记录内容

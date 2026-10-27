@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PageHead } from "@/components/layout/PageHead";
+import { MemberPageHead } from "@/components/member/MemberPageHead";
 import { RepairEditor } from "@/components/repairs/RepairEditor";
 import { Section } from "@/components/ui/Section";
 import { repairCopy } from "@/config/repairs";
@@ -17,13 +17,14 @@ export default async function EditRepairPage({
   const { returnActivityId } = await searchParams;
   return (
     <div className="repair-page">
-      <PageHead
-        id="edit-repair-title"
-        index="08"
-        label={repairCopy.edit.label}
-        title={repairCopy.edit.title}
-        lead={repairCopy.edit.lead}
-      />
+      <Section variant="page-head" labelledBy="edit-repair-title">
+        <MemberPageHead
+          id="edit-repair-title"
+          label={repairCopy.edit.label}
+          title={repairCopy.edit.title}
+          lead={repairCopy.edit.lead}
+        />
+      </Section>
       <Section labelledBy="edit-repair-form">
         <h2 className="sr-only" id="edit-repair-form">
           维修记录表单
