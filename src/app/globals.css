@@ -8080,6 +8080,14 @@ html[data-theme="black-yellow"] {
 .activity-board__head {
   margin-bottom: 0;
 }
+/* 页头标题行（issue #239）：标题与成员端状态徽章并排，复用活动卡标题行布局。 */
+.activity-board__title-row {
+  margin-bottom: 0;
+}
+.activity-board__title-row .sec-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .activity-board__meta {
   margin: 0;
   font-size: var(--t-sm);

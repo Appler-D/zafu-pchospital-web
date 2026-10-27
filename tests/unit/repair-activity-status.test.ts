@@ -10,9 +10,15 @@ import {
   deriveRepairActivityStatus,
   remainingCapacity,
   RepairActivityIssueType,
+  RepairActivityStatus,
   repairActivityIssueTypeLabels,
+  repairActivityStatusLabels,
 } from "../../src/features/repair-activities/repair-activity-validation";
-import { repairActivitiesPage } from "../../src/config/repair-activities";
+import {
+  memberRepairActivityStatusLabels,
+  repairActivitiesPage,
+} from "../../src/config/repair-activities";
+import { memberRepairActivityStatusBadgeClass } from "../../src/components/repair-activities/activity-status-badge";
 import { AppError } from "../../src/lib/api/errors";
 
 const base = {
@@ -74,6 +80,19 @@ test("优先级：已结束压过报名截止与报满", () => {
     }),
     "ENDED",
   );
+});
+
+test("成员端状态文案：CLOSED 显示可出勤，公开页仍为报名截止（issue #239）", () => {
+  assert.equal(memberRepairActivityStatusLabels.CLOSED, "可出勤");
+  assert.equal(repairActivityStatusLabels.CLOSED, "报名截止");
+  assert.equal(Object.values(memberRepairActivityStatusLabels).includes("报名截止"), false);
+  assert.deepEqual(
+    Object.keys(memberRepairActivityStatusLabels).sort(),
+    [...RepairActivityStatus].sort(),
+    "成员端状态文案必须覆盖全部五态",
+  );
+  assert.ok(memberRepairActivityStatusBadgeClass("CLOSED").includes("admin-tag--accent"));
+  assert.equal(memberRepairActivityStatusBadgeClass("OPEN").includes("admin-tag--accent"), false);
 });
 
 test("软删释放名额后 FULL 回到 OPEN", () => {

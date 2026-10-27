@@ -1,3 +1,5 @@
+import type { RepairActivityStatus } from "@/features/repair-activities/repair-activity-validation";
+
 /**
  * 免责声明版本（issue #62 前端3）。
  *
@@ -120,6 +122,18 @@ export const repairActivitiesPage = {
     { value: "OTHER", label: "其他故障" },
   ],
 } as const;
+
+/**
+ * 成员端活动状态文案（issue #239）：`CLOSED` 是报名截止后的可出勤窗口，
+ * 不能沿用公开页的「报名截止」；公开列表 / 详情与后台仍用公开五态文案。
+ */
+export const memberRepairActivityStatusLabels: Record<RepairActivityStatus, string> = {
+  UPCOMING: "未开始",
+  OPEN: "报名中",
+  FULL: "已报满",
+  CLOSED: "可出勤",
+  ENDED: "已结束",
+};
 
 /**
  * 成员端维修活动文案（M2）。页面与组件不得硬编码长文案。

@@ -19,3 +19,12 @@ export function repairActivityStatusBadgeClass(status: string): string {
       return "repair-tag repair-tag--draft";
   }
 }
+
+/**
+ * 成员端五态徽章（issue #239）：`CLOSED` 即可出勤窗口，用 accent 强调；
+ * 其余保持中性，与后台 `admin-tag` 体系一致。文案见
+ * `memberRepairActivityStatusLabels`。
+ */
+export function memberRepairActivityStatusBadgeClass(status: string): string {
+  return status === "CLOSED" ? "admin-tag admin-tag--accent" : "admin-tag";
+}

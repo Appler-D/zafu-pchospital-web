@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
+import { memberRepairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 import {
   formatShanghaiDateTime,
   formatShanghaiTime,
@@ -23,12 +24,17 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { repairStatusLabels } from "@/config/repairs";
-import { memberRepairActivitiesCopy, repairActivitiesPage } from "@/config/repair-activities";
+import {
+  memberRepairActivitiesCopy,
+  memberRepairActivityStatusLabels,
+  repairActivitiesPage,
+} from "@/config/repair-activities";
 import {
   activityEndExclusive,
   canOperateActivityStaff,
   sortQueueByCheckedInAt,
   type RepairActivityIssueType,
+  type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
 import type {
   StaffBoardView,
@@ -465,14 +471,22 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   /**
    * 页头（issue #107 后续改版）：小标签 + 活动名主标题 + 日期行。
    * 活动名来自看板数据，加载中就绪前先用「活动工作台」占位。
+   * 状态徽章仅在已加载看板后出现（issue #239），与成员活动列表使用同一套文案。
    */
-  function renderHead(title: string, meta?: string) {
+  function renderHead(title: string, meta?: string, status?: RepairActivityStatus) {
     return (
       <header className="member-page-head activity-board__head">
         <p className="member-section__tag">{copy.label}</p>
-        <h1 className="sec-title" id="member-activity-board-title">
-          {title}
-        </h1>
+        <div className="activity-card__head activity-board__title-row">
+          <h1 className="sec-title" id="member-activity-board-title">
+            {title}
+          </h1>
+          {status ? (
+            <span className={memberRepairActivityStatusBadgeClass(status)}>
+              {memberRepairActivityStatusLabels[status]}
+            </span>
+          ) : null}
+        </div>
         {meta ? <p className="activity-board__meta">{meta}</p> : null}
       </header>
     );
@@ -533,7 +547,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
   return (
     <div ref={boardElement} className="activity-board content-start">
-      {renderHead(board.activity.title, formatShanghaiDateTime(board.activity.activityAt))}
+      {renderHead(
+        board.activity.title,
+        formatShanghaiDateTime(board.activity.activityAt),
+        ended ? "ENDED" : board.activity.status,
+      )}
       <div className="activity-board__toolbar">
         <Button href="/member/repair-activities" variant="ghost">
           {copy.back}
