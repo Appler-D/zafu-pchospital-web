@@ -8,20 +8,7 @@ import { memberDepartmentOptions } from "@/config/member-department";
 import { adminFetch, firstFieldError } from "@/features/admin/admin-client";
 import type { MemberMutationResult } from "@/types/contracts";
 
-/**
- * 新增成员（M6 §63）。
- *
- * 校验只写原生约束属性（`required` / `pattern` / `minLength` / `maxLength`），
- * 真实规则以服务端为准 —— 与 `docs/design-system.md` §4.6 的要求一致。
- *
- * **它是窗口里的表单，不是页面末尾的一块面板**（第六轮验收）：原先点「新增成员」
- * 只是在整张表格**下面**追加一个卡片，而表格本身有一两千像素高 —— 用户看不到任何变化，
- * 有人长期以为这个按钮是坏的。现在由调用方放进 `AdminModal`，点下去窗口就出现在眼前。
- * 组件因此不再自带 `Card` 与标题（窗口已经有标题，窗口里也不该再套一层卡片）。
- *
- * 创建成功后**窗口不自动关闭**：初始密码只在响应里出现一次，随窗口一起消失就等于没发出去。
- * 表单切换成结果视图，管理员抄完再自己关。
- */
+/** 成员创建表单，由 AdminModal 承载。 */
 export function MemberCreateForm({
   onCreated,
   onClose,

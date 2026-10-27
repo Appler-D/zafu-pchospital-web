@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 }
 
 /**
- * `POST /api/v1/skills` —— 成员自建技能标签（issue #68，业务确认无需审核）。
+ * `POST /api/v1/skills` —— 成员自建技能标签（业务确认无需审核）。
  *
  * 标签库是**全体成员共享**的资源，所以除同名复用外再加一道按账号的限流：
  * 挡的是「换着名字灌标签」这种把公共列表刷脏的用法。

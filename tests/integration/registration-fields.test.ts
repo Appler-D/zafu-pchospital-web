@@ -32,7 +32,7 @@ import type { EmailMessage, EmailDeliveryOutcome } from "../../src/lib/email/mai
 import { POST as retryNotificationRoute } from "../../src/app/api/v1/admin/join-applications/[id]/notification/retry/route";
 
 /**
- * 学号 / 班级贯通（issue #147）：邀请码注册与公开招募两个入口的前后端、存储、
+ * 学号 / 班级贯通：邀请码注册与公开招募两个入口的前后端、存储、
  * 详情、导出与发放建档。
  *
  * 命名空间：`realName` 前缀 `I147 `、招募批次前缀 `I147-`、管理员 UUID `e1470000-…`；
@@ -48,7 +48,7 @@ const NAME_PREFIX = "I147 ";
 const CYCLE_PREFIX = "I147-";
 
 /**
- * 精确长度姓名（返修用例）**不带**命名空间前缀 —— 长度本身就是断言对象，
+ * 精确长度姓名**不带**命名空间前缀 —— 长度本身就是断言对象，
  * 只能按清单精确匹配清理；清单里只放本文件会写入的姓名。
  */
 const EXACT_NAME_FIXTURES = ["I1"];
@@ -1020,7 +1020,7 @@ dbTest("F08 导出：学号文本单元格、历史空单元格、公式前缀�
   assert.equal(auditsAfter - auditsBefore, 3);
 });
 
-/* ------------------------------------------------ 返修：姓名（只 trim，2–64） */
+/* ------------------------------------------------ 姓名（只 trim，2–64） */
 
 dbTest("返修：姓名 trim 后 1 / 2 / 21 / 64 / 65 字符与内部空格，两入口规则一致", async () => {
   const NAME_MESSAGE = "姓名长度应为 2–64 个字符";
@@ -1154,7 +1154,7 @@ dbTest("返修：姓名 trim 后 1 / 2 / 21 / 64 / 65 字符与内部空格，�
   assert.equal(spacedProfile.realName, spacedStored, "注册：只去首尾空白，内部空格保留");
 });
 
-/* ------------------------------------- issue #158：通知邮箱，不是验证身份 */
+/* ------------------------------------- 通知邮箱，不是验证身份 */
 dbTest("I158 新报名邮箱必填 / 严格类型与格式，规范化持久化；公开回执不披露地址", async () => {
   const beforeCount = await countMyApplications();
   for (const email of [undefined, { address: "person@example.com" }, "bad..local@example.com"]) {

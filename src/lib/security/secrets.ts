@@ -33,7 +33,7 @@ export function digestLoginThrottleKey(qq: string, ipAddress: string): Uint8Arra
 }
 
 /**
- * 账号维度节流键（issue #113）：`login_throttles` 的独立命名空间。
+ * 账号维度节流键：`login_throttles` 的独立命名空间。
  *
  * 前缀 `account:` 与登录键的 `qq:ip` 形式天然不撞键，且互相删除时按 key 精确匹配，
  * 不会把对方清掉 —— 6 位临时密码防换 IP 猜解靠这条键，普通登录的清除不能误伤它。
@@ -58,7 +58,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /**
- * 口令由**系统按规则生成**（初始密码 = QQ 后 6 位，5 位老号就是 5 位，issue #93）时用这个：
+ * 口令由**系统按规则生成**（初始密码 = QQ 后 6 位，5 位老号就是 5 位）时用这个：
  * 它不套用表单的长度策略 —— 那条规则管的是「用户自己设置口令」，而 5 位的老 QQ 号
  * 生成出来只有 5 位，套上去会直接抛错、账号发不出去。登录只校验密码本身，
  * 首次登录强制改密后用户自己设的口令仍受策略约束。

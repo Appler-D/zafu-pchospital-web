@@ -22,7 +22,7 @@ export function repairListInput(
   page: number,
   pageSize: number,
 ): RepairListInput {
-  // 案例库准入（issue #134）：URL 值 "any" 过白名单后映射为契约值 "ANY"。
+  // 案例库准入：URL 值 "any" 过白名单后映射为契约值 "ANY"。
   // 空值 = 不过滤（保持既有调用方兼容）；非法值由 oneOf 抛 400，与 status / result 同模式。
   const flagged = oneOf(value(params, "flagged"), ["any"], "flagged");
   return {
@@ -61,7 +61,7 @@ export function draftInput(body: Record<string, unknown>) {
     content: nullableString(body.content),
     result: nullableResult(body.result),
     remark: nullableString(body.remark),
-    // 参与维修人员（issue #114）：缺省表示「不动」；清理与去重在 `normalizeDraftFields`。
+    // 参与维修人员：缺省表示「不动」；清理与去重在 `normalizeDraftFields`。
     participantIds: nullableStringArray(body.participantIds),
   };
 }

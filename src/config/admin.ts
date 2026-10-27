@@ -9,23 +9,9 @@ import {
   type RoleCode,
 } from "@/types/contracts";
 
-/**
- * 管理后台的文案与导航（M6）。
- *
- * 为什么单独一份、**不并入 `src/config/navigation.ts` 的 `mainNav`**：
- * `Header` 的桌面索引栏与移动端浮层都以 `mainNav` 为唯一数据源，加进去
- * `/admin/*` 会立刻出现在全站公开导航里。后台入口只在后台内部使用。
- *
- * 章节编号：公开 01–05、成员 06–14（M-B）；管理按侧栏展示顺序 00 / 01–11（C3）。
- */
+/** 后台导航独立于公开 mainNav，避免后台入口出现在公开导航中。 */
 
-/**
- * UX R3 / C3：按侧栏展示顺序连续编号，home 保留 00。
- * 接受与旧截图编号漂移；与公开 01–05 / 成员 06–14 为各自列表内连续，不要求跨壳全局唯一。
- *
- * 注意：这些编号同时被各页 `SectionHead` 使用（页面标题里的「01 / 02」），
- * 因此工作台重构**不改号**，只重新分组 —— 分组内的编号不连续是正常的。
- */
+/** 章节编号同时用于侧栏与页面标题。 */
 export const ADMIN_SECTION_INDEX = {
   home: "00",
   members: "01",
@@ -40,16 +26,7 @@ export const ADMIN_SECTION_INDEX = {
   settings: "11",
 } as const;
 
-/**
- * 管理侧栏分组（工作台重构版）
- *
- * 全部 11 个模块按任务域平铺成 5 组，不再把「低频」入口收进足部菜单 ——
- * 藏起来的入口等于不存在的入口。窄屏（<1100px）时这 5 组不进顶栏，
- * 改由底部标签栏（首页 / 审核 / 招募 / 成员）+「更多」抽屉承接其余模块。
- *
- * 编号沿用原值、不重排（`ADMIN_SECTION_INDEX` 同时被各页 `SectionHead` 使用），
- * 因此分组内的编号不连续是正常的。
- */
+/** 后台导航按任务分组；窄屏由底部标签栏与更多抽屉承接。 */
 export type AdminNavGroup = {
   id: string;
   title: string;
@@ -221,10 +198,10 @@ export const adminShared = {
   reload: "重新加载",
   loadFailed: "加载失败，请稍后重试",
   submitting: "提交中…",
-  empty: "暂无数据。",
-  forbidden: "当前账号没有执行该操作的权限。",
-  sessionExpired: "登录状态已失效，请重新登录。",
-  batchPartial: "部分操作未成功，请查看逐条结果。",
+  empty: "暂无数据",
+  forbidden: "当前账号没有执行该操作的权限",
+  sessionExpired: "登录状态已失效，请重新登录",
+  batchPartial: "部分操作未成功，请查看逐条结果",
   close: "关闭",
   /** 一次性流程的收尾按钮（例如「新增成员」拿到初始密码之后）。 */
   done: "完成",
@@ -248,30 +225,19 @@ export const adminShared = {
     /** 按钮的无障碍名称：带上有几个条件在生效，读屏用户不必打开弹层去数。 */
     openActive: "列筛选（{count} 个条件生效中）",
     title: "列筛选条件",
-    lead: "按某一列加条件，多条之间是「并且」。它与上面的快捷筛选、关键字搜索同时生效。",
+    lead: "所有条件同时满足",
     field: "列",
     op: "运算符",
     value: "值",
     pick: "请选择",
     add: "添加条件",
     remove: "删除这条条件",
-    empty: "还没有条件。点「添加条件」选一列开始。",
+    empty: "暂无筛选条件",
     apply: "应用",
     reset: "清空条件",
     /** 有没填完的条件时「应用」是灰的，这句话说明为什么。 */
-    incomplete: "每一条都要选好列、运算符和值才能应用。",
-    limit: "最多 {count} 条条件。",
-    /**
-     * 筛选区的使用说明（issue #62 后端2）。
-     *
-     * 各列表的关键字覆盖范围与匹配方式不同（多数按「包含」，审计是精确值），
-     * 各表在自己的 `filter.hint` 里拼上对应的一句；
-     * 「并且」与日期口径是共享事实，写在这里免得几处措辞漂移。
-     */
-    note: {
-      and: "多个条件之间是「并且」。",
-      dateInclusive: "日期条件含首尾两天。",
-    },
+    incomplete: "请补全筛选条件",
+    limit: "最多 {count} 条条件",
     ops: {
       eq: "等于",
       neq: "不等于",
@@ -284,8 +250,6 @@ export const adminShared = {
   },
   /** 无限下翻列表的末尾文案。`{loaded}` / `{total}` 由 `AdminListEnd` 替换。 */
   listEnd: {
-    // 顶栏右侧已经写了「共 N 条记录」，这里再说一次总数就是同一句话连着出现两遍
-    // （第五轮验收）。列表到底只需要一个「没有更多了」的信号，不再重复数字。
     loaded: "已加载 {loaded} / 共 {total} 条",
     all: "已全部加载",
     more: "加载更多",
@@ -305,8 +269,7 @@ export const adminCopy = {
   moreCloseLabel: "关闭",
   home: {
     label: "Admin",
-    lead: "所有操作在服务端鉴权，并写入审计记录。",
-    /** 线上版本（issue #189）：构建期注入的 commit；取不到时显示「未知」。 */
+    /** 构建期注入的提交版本；未注入时显示未知。 */
     versionLabel: "线上版本",
     versionUnknown: "未知",
     versionTitle: "完整提交：{sha}",
@@ -323,32 +286,30 @@ export const adminCopy = {
     todoInvitesHint: "前往邀请码管理",
     todoMembers: "成员总数",
     todoMembersHint: "前往成员管理",
-    todoAllClear: "今天的待办已经清零。",
-    todoLoadFailed: "待办数字加载失败，请稍后重试。",
+    todoAllClear: "今天的待办已经清零",
+    todoLoadFailed: "待办数字加载失败，请稍后重试",
     retry: "重新加载",
     /** 全模块目录：与侧栏同一套分组，首页上每项带一句说明（按 href 取）。 */
     directoryTitle: "全部模块",
     directoryTag: "Modules",
     directoryDesc: {
-      "/admin/repairs": "审核、退回与修正成员提交的维修记录。",
-      "/admin/join-applications": "跟进报名、登记面试结果与账号发放。",
-      "/admin/repair-activities": "创建与管理面向公众的维修活动。",
-      "/admin/members": "检索成员、设置角色与账号状态。",
-      "/admin/invite-codes": "创建与撤销成员注册邀请码。",
-      "/admin/categories": "维护维修记录的故障分类与排序。",
-      "/admin/skills": "维护成员可选择的技能标签库。",
-      "/admin/export": "按筛选条件导出维修记录。",
-      "/admin/audit": "检索重要操作的留痕（只读）。",
-      "/admin/settings": "决定官网首页对外展示的统计。",
+      "/admin/repairs": "审核、退回与修正成员提交的维修记录",
+      "/admin/join-applications": "跟进报名、登记面试结果与账号发放",
+      "/admin/repair-activities": "创建与管理面向公众的维修活动",
+      "/admin/members": "检索成员、设置角色与账号状态",
+      "/admin/invite-codes": "创建与撤销成员注册邀请码",
+      "/admin/categories": "维护维修记录的故障分类与排序",
+      "/admin/skills": "维护成员可选择的技能标签库",
+      "/admin/export": "按筛选条件导出维修记录",
+      "/admin/audit": "检索重要操作的留痕（只读）",
+      "/admin/settings": "决定官网首页对外展示的统计",
     } as Record<string, string>,
   },
   members: {
     department: "部门",
     label: "Members",
     title: "成员管理",
-    /* 短句，且不再解释脱敏与审计的实现细节 —— 那是系统行为，不是管理员要先读的说明书。
-       界面自己会把脱敏值显示出来（`138****1234`），详情里也标了「会写审计」。 */
-    lead: "管理成员身份与角色。打开详情显示具体信息。",
+
     filter: {
       query: "姓名 / 昵称 / 学号 / 班级 / QQ / 手机号",
       status: "成员状态",
@@ -356,7 +317,7 @@ export const adminCopy = {
       all: "全部",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `关键字对以上各项都按「包含」匹配，QQ 与手机号可以只填其中几位。${adminShared.filters.note.and}`,
+      hint: "姓名、昵称、学号、班级、QQ 与手机号支持部分匹配",
     },
     table: {
       realName: "成员",
@@ -379,8 +340,8 @@ export const adminCopy = {
       /** 行首六点手柄：拖动即调整这一行的位置（`useRowDragSort`）。 */
       dragRow: "拖动调整这一行的位置",
       /** 拖动落点写库成功后的浮层提示（单行 / 整块两种说法）。 */
-      moved: "已调整该成员的顺序。",
-      movedMany: "已把 {count} 位成员一起移动到新位置。",
+      moved: "已调整该成员的顺序",
+      movedMany: "已把 {count} 位成员一起移动到新位置",
       /** 账号已停用但管理员角色仍在：跟在角色标签后面，同一行说完。 */
       roleStale: "· 已停用",
       /** 技能标签超过 2 枚时收成 `+N`；完整列表在这一格的 `title` 上。 */
@@ -396,7 +357,7 @@ export const adminCopy = {
     /** 列表顶栏右侧的总数。 */
     count: "共 {count} 名成员",
     export: {
-      note: `按当前筛选和排序导出全部匹配成员，最多 ${EXPORT_MAX_ROWS} 条。QQ 与手机号保持脱敏，不导出邮箱；每次导出都会写入审计记录。`,
+      note: `最多 ${EXPORT_MAX_ROWS} 条，QQ 与手机号脱敏，不含邮箱`,
       columns: {
         approvedRepairCount: "已通过维修次数",
         approvedRepairMinutes: "维修总时长（分钟）",
@@ -423,88 +384,86 @@ export const adminCopy = {
       nickname: "昵称",
       submit: "创建成员",
       optional: "选填",
-      hint: "QQ 号 5–11 位数字；手机号 11 位中国大陆号码。初始密码为 QQ 号后 6 位（不足 6 位取全部数字）。",
+      hint: "QQ 号 5–11 位数字；手机号 11 位中国大陆号码。初始密码为 QQ 号后 6 位（不足 6 位取全部数字）",
       created: "成员已创建，请立即把初始密码交给本人：",
-      secretRule: "初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字），首次登录后必须修改。",
+      secretRule: "初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字），首次登录后必须修改",
       /** 服务端没回初始密码时的兜底文案（正常路径不会出现）。 */
-      secretMissing: "服务端未返回初始密码，请用「重置密码」重新生成。",
+      secretMissing: "服务端未返回初始密码，请用「重置密码」重新生成",
     },
     edit: {
       title: "编辑成员资料",
       submit: "保存修改",
-      saved: "成员资料已保存。",
-      /** 启用/禁用不再是「资料已保存」：那是另一件事，反馈要说清楚做的是什么。 */
-      disabled: "成员已禁用。",
-      enabled: "成员已重新启用。",
+      saved: "成员资料已保存",
+
+      disabled: "成员已禁用",
+      enabled: "成员已重新启用",
       cancel: "收起",
     },
     roles: {
       title: "角色",
       submit: "保存角色",
-      saved: "角色已更新。",
-      hint: "不允许撤销最后一个在册管理员。",
+      saved: "角色已更新",
+      hint: "不允许撤销最后一个在册管理员",
     },
     skills: {
       title: "技能标签",
       submit: "保存技能标签",
-      saved: "技能标签已更新。",
+      saved: "技能标签已更新",
       /** 标签选择器文案（`{count}` / `{name}` / `{limit}` 由组件替换）。 */
       empty: "还没有选择技能标签",
       remaining: "还可以添加 {count} 个",
       remove: "移除标签 {name}",
       inactive: "已停用",
-      limitReached: "已达上限 {limit} 个，先移除一个再加。",
+      limitReached: "已达上限 {limit} 个，先移除一个再加",
     },
     detail: {
       title: "成员详情",
       contacts: "联系方式",
-      contactsNote: "查看明文联系方式会写入审计记录。",
+
       stats: "维修统计",
-      statsUnavailable: "维修统计暂时不可用（不影响其它管理操作）。",
+      statsUnavailable: "维修统计暂时不可用",
     },
-    /** 手动重置的二次确认（issue #113）：先核验本人，再签发临时密码。 */
+    /** 手动重置的二次确认：先核验本人，再签发临时密码。 */
     resetConfirm: {
       title: "重置密码",
-      body: "重置前请先通过原绑定联系方式（QQ / 手机号）核验本人。确认后该账号的旧密码与全部登录会话立即失效，临时密码只显示一次。",
+      body: "重置前请先通过原绑定联系方式（QQ / 手机号）核验本人。确认后该账号的旧密码与全部登录会话立即失效，临时密码只显示一次",
       confirm: "确认重置",
     },
     resetResult: {
       title: "临时密码已签发，请立即交给本人：",
       /** 到期时间行（`{time}` 由组件替换为 Asia/Shanghai 时刻）。 */
       expires: "有效期至 {time}",
-      note: "该密码 1 小时内有效、只能登录一次（受限会话最长 10 分钟），登录后必须立即修改密码。关闭本窗口后将无法再次查看。",
+      note: "临时密码 1 小时内有效，仅可登录一次，登录后须立即改密；关闭后无法再次查看",
     },
     /**
-     * 账号恢复（issue #113）：目标可以是成员或另一位管理员（含没有成员档案的管理员），
+     * 账号恢复：目标可以是成员或另一位管理员（含没有成员档案的管理员），
      * 所以入口常驻在工具栏、按 QQ 精确查询，不依赖成员列表里有没有这一行。
      */
     account: {
       action: "账号恢复",
       title: "账号恢复",
-      lead: "按 QQ 号精确查找账号，为本人签发一次性临时密码。",
+      lead: "输入完整 QQ 号查找账号",
       qq: "QQ 号",
       submit: "查询账号",
-      verifyNote: "签发前请先通过原绑定联系方式核验本人，不要仅凭姓名或手机号确认。",
+      verifyNote: "签发前请先通过原绑定联系方式核验本人，不要仅凭姓名或手机号确认",
       displayName: "姓名",
       roles: "角色",
       sign: "确认签发临时密码",
-      signNote: "签发后该账号的旧密码与全部登录会话立即失效。",
+      signNote: "签发后该账号的旧密码与全部登录会话立即失效",
       /** `blockedReason` 对应的拒绝说明（服务端同样拒绝，这里只提前告知）。 */
       blocked: {
-        SELF: "这是你自己的账号：不能自我恢复，请使用「修改密码」。",
-        DISABLED: "该账号已被禁用或删除，不能通过恢复重新启用。",
-        MEMBER_INACTIVE: "该成员身份已被撤销，恢复后也无法登录，请先在成员管理中启用。",
+        SELF: "这是你自己的账号：不能自我恢复，请使用「修改密码」",
+        DISABLED: "该账号已被禁用或删除，不能通过恢复重新启用",
+        MEMBER_INACTIVE: "该成员身份已被撤销，恢复后也无法登录，请先在成员管理中启用",
       } as Record<string, string>,
       resultTitle: "临时密码已签发，请立即交给本人：",
       resultExpires: "有效期至 {time}",
-      resultNote:
-        "该密码 1 小时内有效、只能登录一次（受限会话最长 10 分钟），登录后必须立即修改密码。关闭本窗口后将无法再次查看。",
+      resultNote: "临时密码 1 小时内有效，仅可登录一次，登录后须立即改密；关闭后无法再次查看",
     },
   },
   repairs: {
     label: "Repairs",
     title: "维修审核",
-    lead: "查看全部成员提交的维修记录，完成审核、退回、异常数据修正与案例标记。",
     filter: {
       query: "机主姓名 / 内容 / 备注 / 成员",
       status: "审核状态",
@@ -517,7 +476,7 @@ export const adminCopy = {
       all: "全部",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}「全部」不含草稿；查看草稿请把「审核状态」选为「草稿」。`,
+      hint: "支持部分匹配；「全部」不含草稿",
     },
     table: {
       repairDate: "维修日期",
@@ -555,7 +514,7 @@ export const adminCopy = {
     },
     review: {
       rejectTitle: "退回原因",
-      rejectHint: "退回必须填写原因，会同时通知提交人。",
+      rejectHint: "退回必须填写原因，会同时通知提交人",
       notePlaceholder: "说明需要申请人补充或修正的内容",
       submit: "确认退回",
       cancel: "取消",
@@ -563,17 +522,17 @@ export const adminCopy = {
     edit: {
       title: "修改异常数据",
       reason: "修改原因",
-      reasonHint: "必填。会写入记录时间线与审计，说明「为什么改」。",
+      reasonHint: "请说明修改原因",
       submit: "保存修改",
-      saved: "记录已更新，审核状态未改变。",
-      categoryInactive: "已停用的分类不能作为新值。",
+      saved: "记录已更新，审核状态未改变",
+      categoryInactive: "已停用的分类不能作为新值",
     },
     removePanel: {
       title: "软删除记录",
       reason: "删除原因",
-      hint: "软删除不会物理删除数据，统计口径会立即排除该记录。",
+      hint: "删除后该记录不再计入统计",
       submit: "确认软删除",
-      done: "记录已软删除。",
+      done: "记录已软删除",
       cancel: "取消",
     },
     flags: {
@@ -581,12 +540,12 @@ export const adminCopy = {
       difficult: "标记为疑难案例",
       typical: "标记为典型案例",
       submit: "保存标记",
-      saved: "标记已更新。",
+      saved: "标记已更新",
     },
     detail: {
       title: "记录详情",
       photos: "维修照片",
-      photosEmpty: "这条记录没有上传照片。",
+      photosEmpty: "这条记录没有上传照片",
       photosOpen: "在新标签打开原图",
       photoUnavailable: "照片暂时不可读取",
     },
@@ -594,7 +553,6 @@ export const adminCopy = {
   repairActivities: {
     label: "Activities",
     title: "维修活动",
-    lead: "创建与管理面向公众的维修活动：设定时间窗口与名额，公开端按派生状态报名。",
     table: {
       title: "标题",
       activityAt: "活动时间",
@@ -611,21 +569,21 @@ export const adminCopy = {
       activityAt: "活动时间",
       signupOpensAt: "报名开始",
       signupClosesAt: "报名截止",
-      timeHint: "报名开始须早于截止，截止不得晚于活动开始。时间按你的本地时区填写。",
+      timeHint: "报名开始须早于截止，截止不得晚于活动开始",
       submit: "创建活动",
-      created: "活动已创建。",
+      created: "活动已创建",
     },
     edit: {
       title: "编辑活动",
       submit: "保存修改",
-      saved: "活动已更新。",
+      saved: "活动已更新",
       cancel: "取消",
     },
     removePanel: {
       title: "删除活动",
-      hint: "删除后公开端不再展示本场活动；已有报名保留供审计，但不再占用公开名额。此操作不可从公开列表恢复。",
+      hint: "删除后活动不再公开展示，无法恢复",
       submit: "确认删除",
-      done: "活动已删除。",
+      done: "活动已删除",
       cancel: "取消",
     },
     action: { edit: "编辑", remove: "删除", registrations: "报名管理" },
@@ -637,7 +595,7 @@ export const adminCopy = {
       name: "姓名",
       phone: "手机号",
       issueType: "故障类型",
-      /** 机型（issue #68）：报名时选填，没填显示破折号。 */
+      /** 机型：报名时选填，没填显示破折号。 */
       deviceModel: "机型",
       status: "状态",
       createdAt: "报名时间",
@@ -645,10 +603,10 @@ export const adminCopy = {
       edit: "编辑报名",
       save: "保存报名",
       delete: "删除报名",
-      deleteHint: "删除后该报名不再占用活动名额，且不能恢复；客户如需再参加须重新报名。",
-      empty: "暂无报名记录。",
-      saved: "报名已更新。",
-      deletedDone: "报名已删除。",
+      deleteHint: "删除后释放名额，无法恢复",
+      empty: "暂无报名记录",
+      saved: "报名已更新",
+      deletedDone: "报名已删除",
       cancel: "取消",
     },
     count: "共 {count} 场活动",
@@ -656,13 +614,12 @@ export const adminCopy = {
     registered: "已报 {count}",
     /** 行内名额主文案（R3）：已报 n / 上限 m */
     capacityLine: "已报 {registered} / 上限 {capacity}",
-    /** 行内出勤文案（issue #107）：n 人。左侧字段名 / 列表列头已是「出勤」，值里不再重复 */
+    /** 行内出勤文案：n 人。左侧字段名 / 列表列头已是「出勤」，值里不再重复 */
     attendanceLine: "{count} 人",
   },
   categories: {
     label: "Categories",
     title: "故障分类",
-    lead: "维护故障分类。已被维修记录引用过的分类只能停用，不做物理删除。",
     table: {
       name: "名称",
       description: "说明",
@@ -685,23 +642,22 @@ export const adminCopy = {
     create: {
       title: "新增分类",
       name: "名称",
-      nameHint: "例如「散热 / 清灰」。标识由系统按名称生成，不需要填写。",
+      nameHint: "例如「散热 / 清灰」",
       description: "说明",
       submit: "新增分类",
-      created: "分类已创建。",
-      conflict: "该分类名称已存在，请换一个。",
+      created: "分类已创建",
+      conflict: "该分类名称已存在，请换一个",
     },
-    updated: "分类已更新。",
-    deactivated: "分类已停用。",
-    activated: "分类已启用。",
-    reordered: "顺序已调整。",
-    usageNote: "引用记录数大于 0 的分类不能删除，只能停用。",
-    orderNote: "列表顺序就是维修表单里分类下拉的顺序：拖动行首的手柄即可调整，键盘用每行的 ↑ ↓。",
+    updated: "分类已更新",
+    deactivated: "分类已停用",
+    activated: "分类已启用",
+    reordered: "顺序已调整",
+    usageNote: "已使用的分类只能停用",
+    orderNote: "拖动手柄或使用 ↑ ↓ 调整顺序",
   },
   export: {
     label: "Export",
     title: "数据导出",
-    lead: "按与维修列表相同的筛选条件导出记录。图片不嵌入表格，只输出记录 ID 与照片链接。",
     filter: {
       query: "机主姓名 / 内容 / 备注 / 成员",
       status: "审核状态",
@@ -710,7 +666,7 @@ export const adminCopy = {
       dateFrom: "起始日期",
       dateTo: "结束日期",
       all: "全部",
-      hint: `关键字在机主姓名、维修内容、备注与成员姓名 / 昵称里按「包含」匹配。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}「全部」不含草稿；需要导出草稿请把「审核状态」选为「草稿」。`,
+      hint: "支持部分匹配；「全部」不含草稿",
     },
     format: {
       label: "导出格式",
@@ -718,28 +674,24 @@ export const adminCopy = {
       xlsx: "Excel（.xlsx）",
     },
     submit: "导出",
-    note: `行数上限 ${EXPORT_MAX_ROWS} 条：超过会直接拒绝而不是截断，请缩小筛选范围。导出会写入审计记录。`,
-    done: "已开始下载，共 {count} 条记录。",
-    /* 空结果必须说清楚「为什么空」。曾经有过一次误判：导出确实拿到了 0 行，
-       但界面只回了「已开始下载」，用户打开文件才发现是空表，只能猜是功能坏了。
-       现在改成：先按同样的筛选条件统计条数（列表接口的 `pagination.total`），
-       0 条时**不落文件**，并把当时生效的筛选条件原样列出来。 */
+    note: `最多导出 ${EXPORT_MAX_ROWS} 条，超出时请缩小筛选范围`,
+    done: "已开始下载，共 {count} 条记录",
+    /* 导出前统计匹配条数；无结果时不生成文件，并显示当前筛选条件。 */
     preview: {
       loading: "正在统计匹配条数…",
-      count: "当前筛选条件匹配 {count} 条记录。",
-      zero: "当前筛选条件匹配 0 条记录，导出的文件会是空的。",
+      count: "当前筛选条件匹配 {count} 条记录",
+      zero: "当前筛选条件匹配 0 条记录，导出的文件会是空的",
       failed: "匹配条数统计失败：{message}",
     },
     emptyFiltered: "没有匹配的维修记录，未生成文件。当时生效的筛选条件：{filters}",
-    emptyNoFilter: "当前没有任何可导出的维修记录，未生成文件。",
+    emptyNoFilter: "当前没有任何可导出的维修记录，未生成文件",
     columns:
-      "导出列：维修日期、维修成员、机主姓名、机主电话、故障分类、维修结果、维修时长、审核状态、创建时间、记录 ID、维修照片链接。",
+      "导出列：维修日期、维修成员、机主姓名、机主电话、故障分类、维修结果、维修时长、审核状态、创建时间、记录 ID、维修照片链接",
   },
   /* ------------------------------------------------------------------ 批 2 */
   skills: {
     label: "Skills",
     title: "技能标签",
-    lead: "维护成员可选择的技能标签库。已被成员选用的标签只能停用，不做物理删除。",
     table: {
       name: "名称",
       description: "说明",
@@ -759,35 +711,33 @@ export const adminCopy = {
       /** 行首拖动排序手柄的无障碍名称（手柄本身是装饰性的，见 `SkillAdminPanel`）。 */
       drag: "拖动调整顺序",
     },
-    /* 「代码」「排序」两个字段不再让管理员填：
-       前者是系统的稳定标识（按名称自动生成），后者靠拖动行首手柄调整（键盘用 ↑ ↓）。 */
+
     create: {
       title: "新增技能标签",
       name: "名称",
-      nameHint: "例如「笔记本拆装」。标识由系统按名称生成，不需要填写。",
+      nameHint: "例如「笔记本拆装」",
       description: "说明",
       submit: "新增标签",
-      created: "技能标签已创建。",
-      conflict: "该技能名称已存在，请换一个。",
+      created: "技能标签已创建",
+      conflict: "该技能名称已存在，请换一个",
     },
-    updated: "技能标签已更新。",
-    deactivated: "技能标签已停用。",
-    activated: "技能标签已启用。",
-    reordered: "顺序已调整。",
-    usageNote: "停用后成员不能再新选该标签，已经选过的成员仍会看到它；标签不做物理删除。",
-    orderNote: "列表顺序就是成员端技能标签的展示顺序：拖动行首的手柄即可调整，键盘用每行的 ↑ ↓。",
+    updated: "技能标签已更新",
+    deactivated: "技能标签已停用",
+    activated: "技能标签已启用",
+    reordered: "顺序已调整",
+    usageNote: "停用后不可新选，已选标签保留",
+    orderNote: "拖动手柄或使用 ↑ ↓ 调整顺序",
   },
   inviteCodes: {
     label: "Invite",
     title: "邀请码",
-    lead: "创建与撤销成员邀请码，并调整有效期与使用次数。完整邀请码只在创建成功时显示一次，库里只存摘要。",
     filter: {
       query: "前缀 / 绑定 QQ / 手机号",
       status: "生效状态",
       all: "全部",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `码前缀不区分大小写；绑定的 QQ 与手机号要填完整号码。${adminShared.filters.note.and}`,
+      hint: "QQ 与手机号须填完整号码",
     },
     table: {
       prefix: "前缀",
@@ -804,34 +754,31 @@ export const adminCopy = {
     create: {
       title: "创建邀请码",
       maxUses: "最大使用次数",
-      maxUsesHint: "1–1000000 的正整数。用尽后状态变为「已用尽」。",
+      maxUsesHint: "1–1000000 次",
       activeFrom: "生效时间",
       expiresAt: "失效时间",
-      timeHint: "留空表示立即生效 / 长期有效。",
+      timeHint: "留空表示立即生效 / 长期有效",
       boundQq: "绑定 QQ 号",
       boundPhone: "绑定手机号",
-      bindingHint: "选填。绑定后只有该 QQ / 手机号能使用这个邀请码。",
+      bindingHint: "绑定后仅限该账号使用",
       optional: "选填",
       submit: "创建邀请码",
-      created: "邀请码已创建。",
-      plainCodeNote: "完整邀请码只显示这一次，关闭后无法再次查看，只能重新创建。",
+      created: "邀请码已创建",
+      plainCodeNote: "请保存邀请码，关闭后无法再次查看",
     },
-    /** 列表工具栏左侧的状态文字（与「创建」卡片的提示同一句，说明列表里只有前缀）。 */
-    toolbar: { status: "完整邀请码只在创建时显示一次，列表里只有前缀。" },
     policy: {
       title: "调整使用策略",
-      saved: "邀请码策略已更新。",
-      maxUsesInvalid: "最大使用次数不能小于已使用次数。",
+      saved: "邀请码策略已更新",
+      maxUsesInvalid: "最大使用次数不能小于已使用次数",
     },
-    revoked: "邀请码已撤销。",
-    notRevocable: "已撤销的邀请码不能再次撤销。",
+    revoked: "邀请码已撤销",
+    notRevocable: "已撤销的邀请码不能再次撤销",
     /** 列表顶栏右侧的总数。 */
     count: "共 {count} 条邀请码",
   },
   recruitment: {
     label: "Recruitment",
     title: "招募审核",
-    lead: "查看与筛选报名、登记面试结果、跟进账号自动发放，并按当前筛选导出报名数据。",
     filter: {
       recruitmentCycle: "招募批次",
       cyclePlaceholder: "输入完整批次，留空显示全部",
@@ -842,7 +789,7 @@ export const adminCopy = {
       submittedTo: "提交结束日",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `报名编号与姓名按「包含」匹配；QQ 与手机号要填完整号码（QQ 5–11 位、手机号 11 位）。${adminShared.filters.note.and}${adminShared.filters.note.dateInclusive}`,
+      hint: "报名编号与姓名支持部分匹配；QQ 与手机号须填完整号码",
     },
     table: {
       ticketNo: "报名编号",
@@ -855,32 +802,32 @@ export const adminCopy = {
       actions: "操作",
     },
     action: { detail: "详情", export: "导出报名数据", approve: "通过" },
-    /** 列表行内「快速通过」（issue #95）：跳过详情窗口，一步完成审核 + 账号发放。 */
+    /** 列表行内「快速通过」：跳过详情窗口，一步完成审核 + 账号发放。 */
     quickApprove: {
       title: "通过报名",
-      hint: "通过后立即创建成员账号并自动发放。初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字），首次登录后必须修改。",
-      done: "已通过，账号已发放。",
+      hint: "通过后立即创建成员账号并自动发放。初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字），首次登录后必须修改",
+      done: "已通过，账号已发放",
     },
     deletion: {
       action: "删除报名",
       title: "删除这条报名？",
-      hint: "删除后不再显示或导出此报名，并停止后续发放与通知重试。已创建的成员账号不受影响。",
-      retained: "同批次的 QQ 号和手机号仍被占用；需要重新报名时请联系管理员。",
-      done: "报名已删除。",
+      hint: "删除后不再显示或导出此报名，并停止后续发放与通知重试。已创建的成员账号不受影响",
+      retained: "同批次的 QQ 号和手机号仍被占用；需要重新报名时请联系管理员",
+      done: "报名已删除",
     },
     /** 列表工具栏右侧的总数文案；`{count}` 由组件填当前总数。 */
     count: "共 {count} 条报名",
     detail: {
       title: "报名详情",
       contacts: "联系方式",
-      contactsNote: "查看报名明文联系方式会写入审计记录。",
+
       notificationEmail: "通知邮箱",
       editNotificationEmail: "更正",
       /** 通知在途时不允许改地址：等结果出来再更正，避免「改完还以为发到了新地址」。 */
-      emailSendingNote: "通知正在发送，请等待结果后再更正。",
+      emailSendingNote: "通知正在发送，请等待结果后再更正",
       /** 已交发信服务 / 结果未知：记录可改，但已发通知不会改发。 */
-      emailSentNote: "通知已发出，更正只更新报名记录，不会改发已发通知。",
-      /** 学号 / 班级（issue #147）：历史报名未填写时显示 adminShared.none。 */
+      emailSentNote: "通知已发出，更正只更新报名记录，不会改发已发通知",
+      /** 学号 / 班级：历史报名未填写时显示 adminShared.none。 */
       student: "学号与班级",
       studentId: "学号",
       className: "班级",
@@ -889,29 +836,29 @@ export const adminCopy = {
       applicantRemark: "报名备注",
       submittedAt: "提交时间",
       reviews: "面试记录",
-      reviewsEmpty: "还没有登记过面试结果。",
+      reviewsEmpty: "还没有登记过面试结果",
       interviewedAt: "面试时间",
       internalNote: "内部备注",
     },
-    /** 更正通知邮箱（issue #161）：按通知任务状态说明保存后的效果。 */
+    /** 更正通知邮箱：按通知任务状态说明保存后的效果。 */
     emailCorrection: {
       title: "更正通知邮箱",
       current: "当前通知邮箱",
       newEmail: "新通知邮箱",
       submit: "保存更正",
       back: "返回详情",
-      saved: "通知邮箱已更正。",
-      auditNote: "更正会写入审计记录。",
-      sendingBlocked: "通知正在发送，请等待结果后再更正。",
+      saved: "通知邮箱已更正",
+
+      sendingBlocked: "通知正在发送，请等待结果后再更正",
       hints: {
-        NONE: "保存后仅更新报名记录；这条报名还没有安排账号通知。",
-        PENDING: "保存后，尚未发送的通知会改用新邮箱，无需其他操作。",
-        SENDING: "通知正在发送，请等待结果后再更正。",
-        FAILED: "保存后，请在「账号通知」中点「重试通知」；系统不会自动重发。",
+        NONE: "保存后仅更新报名记录；这条报名还没有安排账号通知",
+        PENDING: "保存后，尚未发送的通知会改用新邮箱，无需其他操作",
+        SENDING: "通知正在发送，请等待结果后再更正",
+        FAILED: "保存后，请在「账号通知」中点「重试通知」；系统不会自动重发",
         ACCEPTED:
-          "该通知已提交发信服务，无法撤回或改发。保存只更新报名记录；如本人未收到，请核对身份后使用临时密码恢复。",
+          "该通知已提交发信服务，无法撤回或改发。保存只更新报名记录；如本人未收到，请核对身份后使用临时密码恢复",
         UNCERTAIN:
-          "上次发送结果未知，不能直接重发。保存只更新报名记录；请先核查，必要时使用临时密码恢复。",
+          "上次发送结果未知，不能直接重发。保存只更新报名记录；请先核查，必要时使用临时密码恢复",
       },
     },
     review: {
@@ -924,34 +871,33 @@ export const adminCopy = {
       internalNote: "内部备注",
       optional: "选填",
       submit: "保存结果",
-      saved: "面试结果已登记。",
-      passedSaved: "已登记为面试通过，账号已发放。",
-      noteAppended: "备注已补记到面试记录。",
-      notReviewable: "该报名当前不可登记面试结果。",
-      secretNote: "初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字）；成员首次登录后必须修改。",
+      saved: "面试结果已登记",
+      passedSaved: "已登记为面试通过，账号已发放",
+      noteAppended: "备注已补记到面试记录",
+      notReviewable: "该报名当前不可登记面试结果",
+      secretNote: "初始密码为成员 QQ 号后 6 位（不足 6 位取全部数字）；成员首次登录后必须修改",
     },
     provision: {
       title: "账号发放",
       status: "当前状态",
-      pending: "发放任务处理中，若长时间未完成可以重试。",
-      succeeded: "账号已发放，成员可以用报名时登记的 QQ / 手机号登录。",
-      failed: "上次发放失败，可以安全重试（幂等，不会重复建号）。",
+      pending: "发放任务处理中，若长时间未完成可以重试",
+      succeeded: "账号已发放，成员可以用报名时登记的 QQ / 手机号登录",
+      failed: "发放失败，请重试",
       retry: "重试发放",
-      retried: "已重新发放。",
-      retryUnavailable: "只有失败的发放任务可以重试。",
+      retried: "已重新发放",
+      retryUnavailable: "只有失败的发放任务可以重试",
     },
     export: {
-      note: `按当前筛选导出报名数据，最多 ${EXPORT_MAX_ROWS} 条。文件包含 QQ 与手机号明文，每次导出都会写入审计记录。`,
+      note: `最多 ${EXPORT_MAX_ROWS} 条，含完整 QQ 与手机号，请妥善保管`,
       csv: "导出 CSV",
       xlsx: "导出 Excel",
-      done: "已开始下载，共 {count} 条报名记录。",
-      empty: "当前筛选条件下没有报名记录，未生成文件。",
+      done: "已开始下载，共 {count} 条报名记录",
+      empty: "当前筛选条件下没有报名记录，未生成文件",
     },
   },
   audit: {
     label: "Audit",
     title: "审计记录",
-    lead: "按动作、目标、操作者与时间检索重要操作留痕。审计只读：不提供修改或删除入口，摘要中的 QQ 与手机号在写入时已脱敏。",
     filter: {
       action: "动作",
       actorUserId: "操作者用户 ID",
@@ -963,7 +909,7 @@ export const adminCopy = {
       createdTo: "结束日期",
       submit: "筛选",
       reset: "清除筛选",
-      hint: `操作者、目标与请求 ID 都要填完整值（精确匹配，不按「包含」）。${adminShared.filters.note.dateInclusive}`,
+      hint: "操作者、目标与请求 ID 须填完整值",
     },
     table: {
       createdAt: "时间",
@@ -979,12 +925,11 @@ export const adminCopy = {
       title: "变更摘要",
       before: "变更前",
       after: "变更后",
-      empty: "该动作没有记录变更摘要。",
-      redactedNote: "摘要在写入时已脱敏：凭据类字段不记录，QQ 与手机号按打码写入。",
+      empty: "该动作没有记录变更摘要",
     },
     actorSystem: "系统",
     /** 列表顶栏：只读说明与总数。 */
-    readonlyNote: "审计只读，不提供修改或删除入口。",
+
     count: "共 {count} 条审计记录",
     resultLabels: { SUCCESS: "成功", FAILURE: "失败" },
     /** 动作下拉里的「全部」项，带总条数，避免出现一个空白的「全部」。 */
@@ -1008,22 +953,21 @@ export const adminCopy = {
   settings: {
     label: "Settings",
     title: "公开统计",
-    lead: "决定官网首页对外展示什么。三项开关默认全部关闭；在明确打开之前，官网不会展示任何真实统计。",
     stats: {
       title: "首页维修数据",
       enabled: "展示累计维修设备数",
-      enabledHint: "只统计已审核通过、未删除的记录，草稿与异常记录不计入。",
+      enabledHint: "仅统计已通过的记录",
       detail: "同时展示本学年维修数与累计维修时长",
-      detailHint: "需要先打开上一项；主开关关闭时本项会自动关闭。",
+      detailHint: "需先开启累计维修设备数",
     },
     rankings: {
       title: "首页排行榜",
       enabled: "展示简化排行榜",
-      enabledHint: "只展示名次、展示名与数量。",
+      enabledHint: "只展示名次、展示名与数量",
     },
     display: {
       title: "排行榜展示名",
-      hint: "选「真实姓名」或「仅昵称」时，排行榜上显示对应的名字；选「隐藏」时只显示名次与数量。",
+      hint: "隐藏姓名时仅显示名次与数量",
       modeLabels: {
         // 比 `rankingDisplayNameLabels` 更口语：这里是设置项本身，不是表格里的取值展示。
         REAL_NAME: "真实姓名",
@@ -1032,16 +976,14 @@ export const adminCopy = {
       },
     },
     submit: "保存设置",
-    saved: "公开统计设置已保存。",
+    saved: "公开统计设置已保存",
     updatedAt: "上次修改：{time} · {name}",
-    never: "尚未修改过，当前为默认值（全部关闭）。",
-    /* 「当前对外效果」原先是一串文字（「首页展示累计维修设备数。」），
-       读起来仍要在脑子里拼装出页面。改成**直接画出首页那两块**：
-       管理员判断的是「官网上会看到什么」，那就把官网长什么样摆出来。 */
+    never: "尚未修改过，当前为默认值（全部关闭）",
+    /* 首页展示预览使用示意数据。 */
     preview: {
       title: "首页预览",
-      note: "这里只预览展示方式，数值用「—」占位，排行榜的名次与人数仅为示意。保存后刷新官网首页即可查看实际效果；学年区间由日期自动推导（9/1 → 次年 9/1），无需配置。",
-      statsOff: "首页不展示维修统计。",
+      note: "以下为示意数据，保存后在首页生效",
+      statsOff: "首页不展示维修统计",
       statsTotal: "累计服务",
       statsTotalUnit: "台设备",
       statsTerm: "{academicYear}维修",
@@ -1049,7 +991,7 @@ export const adminCopy = {
       statsDuration: "累计维修时长",
       statsDurationUnit: "小时",
       placeholder: "—",
-      rankingsOff: "首页不展示排行榜。",
+      rankingsOff: "首页不展示排行榜",
       rankingsTitle: "{academicYear}维修排行",
       rankingsHidden: "已隐藏",
       /** 示意用的名次与数量（需求 §32 的例子），不是真实数据。 */

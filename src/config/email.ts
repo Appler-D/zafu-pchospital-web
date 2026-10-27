@@ -2,7 +2,7 @@ import type { EmailChallengePurpose } from "@/types/contracts";
 import { EMAIL_CHALLENGE_TTL_MS } from "@/lib/security/email-policy";
 
 /**
- * 验证码邮件的固定文案（issue #146 §5.1）。邮件只发送品牌、安全用途、验证码、
+ * 验证码邮件的固定文案。邮件只发送品牌、安全用途、验证码、
  * 期限与「非本人操作请忽略」的必要文本：**没有**客户端可控的 from / subject /
  * 模板或任意 HTML，也不发密码、重置授权令牌。
  */

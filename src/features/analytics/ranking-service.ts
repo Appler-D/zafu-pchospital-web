@@ -8,7 +8,7 @@
  * - 完整榜单与工作台预览**共用同一个 `buildRanking()`**，不写第二套排名逻辑；
  * - `currentMember` 由独立查询得到，**不受当前分页影响**；
  * - 零记录成员不入榜，此时 `currentMember` 为 `null`（页面显示「当前范围暂无上榜记录」）；
- * - 学年区间固定可算（9/1 → 次年 9/1），因此不存在「未配置」态（issue #178）。
+ * - 学年区间固定可算（9/1 → 次年 9/1），因此不存在「未配置」态。
  */
 
 import { paginationMeta } from "@/lib/api/pagination";

@@ -14,7 +14,7 @@ import {
 import type { RoleCode } from "../../src/types/contracts";
 
 /**
- * 统一账号门禁的纯判定（issue #146 任务 6）。
+ * 统一账号门禁的纯判定。
  *
  * 表驱动打在 `decideAccountAccess` 上：不连库、不读环境变量，档位作为入参给出，
  * 时间由夹具固定。真实数据库下的状态读取与 `authenticateRequest` 贯通在

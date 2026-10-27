@@ -182,7 +182,7 @@ export const skillAdminService: SkillAdminServiceContract = {
   },
 
   /**
-   * 拖动排序（M6 第五轮验收）：把 `skillId` 放到 `beforeId` 之前，`beforeId` 为 `null`
+   * 拖动排序：把 `skillId` 放到 `beforeId` 之前，`beforeId` 为 `null`
    * 表示拖到末尾。
    *
    * 与 `reorder` 的关系：`reorder` 是「一格一格挪」，本方法是「一次拖到位」。

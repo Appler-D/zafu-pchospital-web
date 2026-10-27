@@ -63,7 +63,7 @@ export async function enqueueAccountNotification(
   });
   await audit(tx, row, "queued");
 }
-/** 通知任务 → 详情视图。报名邮箱更正（issue #161）复用它返回同一口径的状态。 */
+/** 通知任务 → 详情视图。报名邮箱更正复用它返回同一口径的状态。 */
 export function toAccountNotificationView(row: AccountNotification): AccountNotificationView {
   return {
     status: row.status as AccountNotificationView["status"],

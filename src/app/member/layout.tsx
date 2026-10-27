@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * `/member/**` 的统一外壳（T-P0-3）。
+ * `/member/**` 的统一外壳。
  *
  * 守卫用较弱的 `requireMemberPage()`（登录 + 已改密），与 `/member` 首页空态一致；
  * 需要有效成员档案的子页继续各自调用 `requireActiveMemberPage()`。

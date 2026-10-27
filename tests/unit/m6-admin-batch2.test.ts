@@ -132,7 +132,7 @@ test("报名导出的列顺序与 JoinApplicationExportRow 的键逐一对应", 
   // 报名的 QQ 与手机号必须是独立列：招募要按联系方式联系人。
   assert.ok(keys.includes("qq"));
   assert.ok(keys.includes("phone"));
-  // 学号 / 班级（issue #147）：插在「姓名」之后。
+  // 学号 / 班级：插在「姓名」之后。
   assert.deepEqual(keys.slice(0, 5), ["ticketNo", "recruitmentCycle", "realName", "studentId", "className"]);
 });
 
@@ -141,9 +141,9 @@ test("维修导出列保持批次 1 的顺序（不得被批次 2 改动）", ()
   assert.deepEqual(keys, [
     "repairDate",
     "memberName",
-    // 参与成员（issue #114）：插在「维修成员」之后，「机主姓名 / 电话」之前。
+    // 参与成员：插在「维修成员」之后，「机主姓名 / 电话」之前。
     "participantNames",
-    // 机主姓名 / 电话（issue #79 第 6 项）：插在「维修成员」之后。
+    // 机主姓名 / 电话：插在「维修成员」之后。
     "ownerName",
     "ownerPhone",
     "categoryName",
@@ -255,7 +255,7 @@ test("排序方向只允许两种取值", () => {
   assert.deepEqual([...ReorderDirection], ["UP", "DOWN"]);
 });
 
-/* ------------------------------------------------- 标识生成与排序（第三轮反馈） */
+/* ------------------------------------------------- 标识生成与排序 */
 
 test("stableCodeFromName：纯 ASCII 折叠成大写标识，含非 ASCII 时改用名称哈希", () => {
   assert.equal(stableCodeFromName("Windows Driver", "SK"), "WINDOWS_DRIVER");

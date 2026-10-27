@@ -91,7 +91,7 @@ async function loadRows(
       ownerName: true,
       ownerPhone: true,
       memberProfile: { select: { realName: true, nickname: true } },
-      // 参与成员（issue #114）：与列表同源，导出「谁做过这条」的完整名单。
+      // 参与成员：与列表同源，导出「谁做过这条」的完整名单。
       participants: {
         select: { memberProfile: { select: { realName: true, nickname: true } } },
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],

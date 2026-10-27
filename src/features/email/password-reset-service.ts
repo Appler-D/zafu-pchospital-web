@@ -25,7 +25,7 @@ import type {
 } from "@/types/contracts";
 
 /**
- * 密码重置授权服务（issue #146 §4.2）。
+ * 密码重置授权服务。
  *
  * 本阶段只实现服务级链路：`PASSWORD_RESET` 挑战验证 → **原子**消费挑战并签发
  * 一次性重置授权；以及给后续阶段用的事务内条件消费原语。
@@ -115,14 +115,14 @@ export class PasswordResetService implements PasswordResetServiceContract {
         throw invalidChallenge();
       }
 
-      // 凭据代次复核：管理员重置（issue #113）推进代次后，旧验证码不得兑换新代次授权。
+      // 凭据代次复核：管理员重置推进代次后，旧验证码不得兑换新代次授权。
       const credential = await tx.passwordCredential.findUnique({
         where: { userId: consumed.userId },
       });
       const currentVersion = credential?.credentialVersion ?? null;
       if (currentVersion !== challenge.credentialVersion) throw invalidChallenge();
 
-      // 资格读取全部完成后取时（issue #146 返修 F3）：锁等待 / 可串行化重试之后，
+      // 资格读取全部完成后取时：锁等待 / 可串行化重试之后，
       // 签发期限基于实际写入时刻，不沿用消费挑战前的快照。
       const txNow = this.now();
       // 新授权使同一账号此前未消费的授权失效（一次性语义：同一时刻至多一个有效授权）。
@@ -228,7 +228,7 @@ export async function consumePasswordResetAuthorization(
     throw invalidAuthorization();
   }
 
-  // 条件消费前用**当前**服务端时间复核期限（issue #146 返修 F3）：资格读取期间
+  // 条件消费前用**当前**服务端时间复核期限：资格读取期间
   // 可能已跨过到期时刻，锁前读到的行快照不能当放行依据。
   const consumeNow = input.now?.() ?? new Date();
   if (row.expiresAt.getTime() <= consumeNow.getTime()) {

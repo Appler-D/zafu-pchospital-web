@@ -178,7 +178,6 @@ export function RepairAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-repairs-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 
@@ -235,8 +234,6 @@ export function RepairAdminPanel() {
 
       {state === "ready" ? (
         <div className="admin-list">
-          {/* 顶栏常驻（邮箱式）：与成员管理共用 `AdminBatchTools`，结构完全一致。
-              批量退回要填原因，原因输入框在弹层里（不塞进顶栏，顶栏就不会被撑高）。 */}
           <AdminListToolbar
             count={(list.refreshing
               ? tableCopy.updating

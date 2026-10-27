@@ -16,7 +16,7 @@ export const routeErrorPage = {
   code: "500",
   labelEn: "Error",
   title: "这个页面没能打开",
-  lead: "页面在加载时遇到了意外错误，代码或数据的一处问题把它打断了。可以重试一次；如果反复出现，请在 QQ 群里把页面地址告诉我们。",
+  lead: "请重试；若仍无法打开，请在 QQ 群内反馈页面地址",
   retryAction: "重试",
   homeAction: "回到首页",
 } as const;
@@ -31,7 +31,7 @@ export const globalErrorPage = {
   code: "500",
   labelEn: "Fatal Error",
   title: "站点暂时无法显示",
-  lead: "站点在渲染时遇到了严重错误，整页都没能生成。请稍后重试；如果一直这样，请在 QQ 群里告诉我们。",
+  lead: "请稍后重试；若仍无法打开，请在 QQ 群内反馈",
   retryAction: "重试",
   homeAction: "回到首页",
 } as const;

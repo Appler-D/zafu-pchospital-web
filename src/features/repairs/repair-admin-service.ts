@@ -23,11 +23,7 @@ import {
   type RepairBatchReviewResult,
 } from "@/types/contracts";
 
-/**
- * 批次幂等键的上限。单条审核的键上限是 128（`repair-review-service`），而这里按
- * `${key}:${recordId}` 给每条记录派生一个键，`recordId` 是 `Char(36)`，
- * 所以批次键本身最长 `128 − 1 − 36`。原先写死 96，派生值可达 133，会被单条那一关拒绝。
- */
+/** 批次键须为派生的记录 ID 与分隔符预留长度。 */
 const BATCH_KEY_MAX_LENGTH = 128 - 1 - 36;
 
 /**
@@ -97,7 +93,7 @@ export const repairAdminService: RepairAdminServiceContract = {
         if (!category.isActive) throw new AppError("REPAIR_CATEGORY_INACTIVE", "所选分类已停用");
       }
     }
-    // 参与人员（issue #114）：管理员同样可整体替换；创建人（记录归属）恒保留在首位。
+    // 参与人员：管理员同样可整体替换；创建人（记录归属）恒保留在首位。
     const desiredParticipants =
       fields.participantIds === undefined
         ? null

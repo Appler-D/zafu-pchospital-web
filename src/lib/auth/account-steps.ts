@@ -1,7 +1,7 @@
 import type { AccountAccessView } from "@/types/contracts";
 
 /**
- * 门禁的两个解决步骤页（issue #146 任务 6）。
+ * 门禁的两个解决步骤页。
  *
  * 单独成模块：常量与「当前页是不是这一步」的对应关系要被**服务端守卫**与
  * 客户端 `SessionMonitor` 共用，而判定模块 `account-access.ts` 连着数据库客户端，
@@ -19,7 +19,7 @@ export const EMAIL_STEP_PATH = "/account/email";
  *   停在邮箱页也不解决问题。
  * - `EMAIL_VERIFICATION_REQUIRED`：邮箱页**和改密页**。任务书要求「仅邮箱受限」的账号
  *   仍能用改密页与改密接口，因此这类账号站在 `/account/change-password` 上是合法的，
- *   不该被踢回邮箱步骤（任务 6 返修 F4）。
+ *   不该被踢回邮箱步骤。
  */
 export function isAccountStepPage(
   state: AccountAccessView["state"],

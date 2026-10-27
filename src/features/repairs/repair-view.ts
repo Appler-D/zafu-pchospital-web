@@ -1,10 +1,11 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { repairDetailInclude } from "@/features/repairs/repair-repository";
+import { repairDetailInclude, repairListInclude } from "@/features/repairs/repair-repository";
 import { uploadLimits } from "@/features/repairs/repair-photo-storage";
 import { canAttachRepairPhotos } from "@/features/repairs/repair-policy";
 import type { AuthorizedActor, RepairDetailView, RepairView } from "@/types/contracts";
 
-type RecordRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
+type RepairListRow = Prisma.RepairRecordGetPayload<{ include: typeof repairListInclude }>;
+type RepairDetailRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
 
 /** 展示名回退链：昵称 → 真实姓名 → 账号显示名 → 「成员」。 */
 function memberDisplayName(member: {
@@ -21,11 +22,11 @@ function memberDisplayName(member: {
  * `ownerName` 在成员区内全站可见，不参与收口。
  */
 export function toRepairView(
-  record: RecordRow,
+  record: RepairListRow,
   options: { canViewOwnerPhone?: boolean } = {},
 ): RepairView {
   const name = memberDisplayName(record.memberProfile);
-  // 参与维修人员（issue #114）：`sort_order` 已保证创建人第一，这里再兜一层防御性重排，
+  // 参与维修人员：`sort_order` 已保证创建人第一，这里再兜一层防御性重排，
   // 防止历史数据将来被人工修出「创建人不在首位」的显示异常。
   const participants = record.participants.map((row) => ({
     id: row.memberProfileId,
@@ -78,7 +79,7 @@ export function toRepairView(
 }
 
 export function toRepairDetail(
-  record: RecordRow,
+  record: RepairDetailRow,
   actor: AuthorizedActor,
   options: { isFavorited?: boolean } = {},
 ): RepairDetailView {
@@ -88,7 +89,7 @@ export function toRepairDetail(
       canViewOwnerPhone: owner || actor.permissions.includes("repair:review"),
     }),
     canEdit: owner && (record.status === "DRAFT" || record.status === "REJECTED"),
-    /** 审核前补附件（issue #226）：DRAFT / REJECTED 或本人未审核的 PENDING。 */
+    /** 审核前补附件：DRAFT / REJECTED 或本人未审核的 PENDING。 */
     canAttachPhotos: canAttachRepairPhotos(actor, record),
     canReview: actor.permissions.includes("repair:review") && record.status === "PENDING",
     canFlag: actor.permissions.includes("repair:flag"),

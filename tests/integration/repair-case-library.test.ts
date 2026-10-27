@@ -9,7 +9,7 @@ import type { AuthorizedActor } from "../../src/types/contracts";
 import { integrationTestsEnabled } from "./db-guard";
 
 /**
- * 案例库准入的集成测试（issue #134，真实 GreatSQL）。
+ * 案例库准入的集成测试（真实 GreatSQL）。
  *
  * 钉三件事：
  * 1. `flagged=ANY` 返回「典型案例 ∪ 疑难案例」并集：单标、双标都命中，无标不命中；
@@ -81,7 +81,7 @@ async function createApprovedRecord(
       createdAt: now,
     },
   });
-  // 创建人恒有参与行（issue #114 不变量），避免留下半截数据。
+  // 创建人恒有参与行（不变量），避免留下半截数据。
   await db.repairRecordParticipant.create({
     data: { id: randomUUID(), repairRecordId: id, memberProfileId: profileId, createdAt: now },
   });

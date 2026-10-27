@@ -56,7 +56,7 @@ export function RepairAdminActions({
   const [photos, setPhotos] = useState<RepairPhotoView[] | null>(null);
   /** 已经确定读不出字节的照片 id（文件被清理、存储路径变更等）。 */
   const [brokenPhotos, setBrokenPhotos] = useState<string[]>([]);
-  /** 参与维修人员（issue #114）的候选名单：取不到时只少一个「添加」入口，不影响其余动作。 */
+  /** 参与维修人员的候选名单：取不到时只少一个「添加」入口，不影响其余动作。 */
   const [memberOptions, setMemberOptions] = useState<RepairMemberOption[]>([]);
   /** 编辑字段与版本绑定同一快照；标记、审核或列表刷新不能替旧表单抬高版本。 */
   const [editRecord, setEditRecord] = useState(record);
@@ -168,7 +168,7 @@ export function RepairAdminActions({
           content: data.content || null,
           result: data.result || null,
           remark: data.remark || null,
-          // 参与者（issue #114）：不含创建人本人，服务端整体替换并保证创建人在首位。
+          // 参与者：不含创建人本人，服务端整体替换并保证创建人在首位。
           participantIds: extras.map((item) => item.id),
           version: editRecord.version,
           reason: data.reason ?? "",

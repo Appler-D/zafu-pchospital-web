@@ -10,11 +10,11 @@ const REQUIRED_SERVER_ENV = [
 
 export type ServerEnv = Record<(typeof REQUIRED_SERVER_ENV)[number], string> & {
   APP_BASE_URL: string;
-  /** 邮件功能总开关（issue #146），默认 false：未启用不影响应用启动。 */
+  /** 邮件功能总开关，默认 false：未启用不影响应用启动。 */
   MAIL_ENABLED: boolean;
   /**
    * 以下 SMTP_* / MAIL_FROM / EMAIL_CODE_PEPPER / EMAIL_DAILY_BUDGET 保留原始值：
-   * 只在邮件启用并实际需要发信时解析 / 校验（issue #146 返修 F4）—— 关闭邮件时
+   * 只在邮件启用并实际需要发信时解析 / 校验—— 关闭邮件时
    * 非法取值不得影响全站配置读取（本函数同时服务于 DB / 认证等公共路径）。
    */
   EMAIL_DAILY_BUDGET: string;
@@ -25,7 +25,7 @@ export type ServerEnv = Record<(typeof REQUIRED_SERVER_ENV)[number], string> & {
   MAIL_FROM: string;
   EMAIL_CODE_PEPPER: string;
   /**
-   * 邮箱门禁分阶段模式（issue #146 任务 6），缺省 `off`。
+   * 邮箱门禁分阶段模式，缺省 `off`。
    *
    * 与 SMTP_* 不同，它决定**认证后的账号资格**，因此在这里解析并校验：
    * 非法取值必须受控报错，不能静默按 `off` 运行（那等于把「已开启门禁」的部署
@@ -40,7 +40,7 @@ export type EmailGateMode = "off" | "admin" | "all";
 const EMAIL_GATE_MODES: readonly EmailGateMode[] = ["off", "admin", "all"];
 
 /**
- * 邮件传输配置（issue #146 §5.1）。
+ * 邮件传输配置。
  *
  * `enabled: false` 时其余字段一概不要求 —— 构建 / 本地开发 / 未启用邮件的环境
  * 不需要任何真实 SMTP 凭据，应用照常启动；邮件操作在服务层被明确拒绝
@@ -128,7 +128,7 @@ export function isMailEnabled(): boolean {
 /**
  * 组装邮件传输配置。启用时校验必需项齐全（缺一个就拒绝，不做半配置运行），
  * 端口不在 1–65535 直接失败；**关闭时直接返回 `{ enabled: false }`，不解析
- * 邮件专用取值**（issue #146 返修 F4）。校验在**首次需要发信时**发生，
+ * 邮件专用取值**。校验在**首次需要发信时**发生，
  * 不影响其它功能启动。
  */
 export function getMailConfig(): MailConfig {

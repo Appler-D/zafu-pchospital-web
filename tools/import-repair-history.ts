@@ -20,7 +20,7 @@ import {
 } from "../src/features/repairs/repair-history-import-service";
 
 /**
- * 历史修机数据导入（issue #72）。
+ * 历史修机数据导入。
  *
  * 用法：
  *   corepack pnpm import:repair-history <文件.csv|.xlsx> [--actor=<userId>] [--apply]
@@ -31,7 +31,7 @@ import {
  *   日期/时长/正文可解析性并汇总去重的维修人员姓名，不做成员与分类匹配；
  * - 确认报告没问题后加 `--apply` 真正导入；`--actor` 必须是拥有 `repair:review`
  *   权限的管理员用户 ID（写审计用）；
- * - `--fallback-category`：收集表没有故障分类列（issue #72 实况）时，所有行统一挂
+ * - `--fallback-category`：收集表没有故障分类列（实况）时，所有行统一挂
  *   该 code 的分类；库里不存在时 `--apply` 会以「历史导入」为名自动创建（dry-run 只提示）；
  * - `--default-duration`：整列缺失或单行为空时按该分钟数补录并在备注留痕（社团口径：
  *   电脑医院收集表无时长列，按 30 分钟补）；

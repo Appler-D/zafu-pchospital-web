@@ -14,7 +14,7 @@ import type { PublicHomeAnalytics } from "../../src/types/contracts";
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
-/** 固定时钟：学年 / DATE 边界与「服务端算出的学年」用同一个 now（issue #183）。 */
+/** 固定时钟：学年 / DATE 边界与「服务端算出的学年」用同一个 now。 */
 const CONTROLLED_NOW = new Date("2020-10-15T12:00:00.000Z");
 
 /** 只替换数据库边界；测试执行真正的策略、聚合查询构造与公开 DTO 投影，不连接任何库。 */

@@ -135,7 +135,7 @@ export type DeriveStatusInput = {
  * 派生状态（不落库）。优先级从上到下：
  * ENDED → CLOSED → FULL → OPEN → UPCOMING
  *
- * ENDED 判定（issue #79）：活动**当天结束之后**（次日 00:00 上海起）才算已结束，
+ * ENDED 判定：活动**当天结束之后**（次日 00:00 上海起）才算已结束，
  * 即 `now >= activityEndExclusive(activityAt)`；活动当天仍按报名窗口判定（通常为 CLOSED）。
  */
 export function deriveRepairActivityStatus(input: DeriveStatusInput): RepairActivityStatus {
@@ -214,7 +214,7 @@ export function assertValidRegistrantName(name: string): string {
   return trimmed;
 }
 
-/** 机型上限（issue #68）：与列宽一致（`VarChar(60)`），前端 HTML `maxLength` 也用它。 */
+/** 机型上限：与列宽一致（`VarChar(60)`），前端 HTML `maxLength` 也用它。 */
 export const REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH = 60;
 
 /** 机型选填：缺省、空串都算「没填」，落库统一为 null。 */
@@ -310,7 +310,7 @@ const SHANGHAI_OFFSET_MS = CHINA_UTC_OFFSET_HOURS * 60 * 60 * 1000;
 
 /**
  * 「已结束」的排他上界：活动当天（Asia/Shanghai 自然日）结束后的次日 00:00（上海），
- * 返回对应的 UTC 时刻。ENDED 判定即 `now >= activityEndExclusive(activityAt)`（issue #79）。
+ * 返回对应的 UTC 时刻。ENDED 判定即 `now >= activityEndExclusive(activityAt)`。
  */
 export function activityEndExclusive(activityAt: Date): Date {
   const [year, month, day] = shanghaiCalendarDay(activityAt).split("-").map(Number);

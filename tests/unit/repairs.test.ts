@@ -6,7 +6,11 @@ import {
   createRepairPhotoService,
   detectImageType,
 } from "../../src/features/repairs/repair-photo-service";
-import { repairRepository } from "../../src/features/repairs/repair-repository";
+import {
+  repairDetailInclude,
+  repairListInclude,
+  repairRepository,
+} from "../../src/features/repairs/repair-repository";
 import { uploadLimits } from "../../src/features/repairs/repair-photo-storage";
 import { isRepairTransitionAllowed } from "../../src/features/repairs/repair-state";
 import {
@@ -30,8 +34,9 @@ import {
 } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
+import { normalizePhotoViewOrder } from "../../src/components/repairs/photo-order";
 
-/** 管理端维修列表的筛选：日期走 DATE 列边界，结束日必须含全天（与 issue #75 同源）。 */
+/** 管理端维修列表的筛选：日期走 DATE 列边界，结束日必须含全天（与  同源）。 */
 test("维修列表日期筛选：DATE 列边界 + 结束日含全天", () => {
   const actor = { userId: "u1", permissions: ["repair:review"] as const };
   const where = listWhere(
@@ -155,7 +160,7 @@ test("维修状态机只接受任务书规定流转", () => {
   assert.equal(isRepairTransitionAllowed("REJECTED", "PENDING"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "APPROVED"), true);
   assert.equal(isRepairTransitionAllowed("PENDING", "REJECTED"), true);
-  // 撤回审核已下线（issue #222）：待审核不能回到草稿。
+  // 撤回审核已下线：待审核不能回到草稿。
   assert.equal(isRepairTransitionAllowed("PENDING", "DRAFT"), false);
   assert.equal(isRepairTransitionAllowed("APPROVED", "DRAFT"), false);
   assert.equal(isRepairTransitionAllowed("DRAFT", "APPROVED"), false);
@@ -172,7 +177,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
     content: null,
     result: "COMPLETED",
   };
-  // 无正文、无照片即可通过（issue #79 第 6 项：正文与照片退出提交门槛）。
+  // 无正文、无照片即可通过（正文与照片退出提交门槛）。
   validateSubmission(complete);
 
   assert.throws(
@@ -189,11 +194,11 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
       }),
     (e) => e instanceof AppError && e.code === "REPAIR_SUBMISSION_INCOMPLETE",
   );
-  // 机主姓名 / 电话必填（issue #79 第 6 项）：缺哪项报哪项的 fieldErrors。
+  // 机主姓名 / 电话必填：缺哪项报哪项的 fieldErrors。
   for (const [field, patch] of [
     ["ownerName", { ownerName: null }],
     ["ownerPhone", { ownerPhone: null }],
-    // 机型提交必填（issue #218）：历史记录不回填，只在提交这一刻要求。
+    // 机型提交必填：历史记录不回填，只在提交这一刻要求。
     ["deviceModel", { deviceModel: null }],
   ] as const) {
     assert.throws(
@@ -213,7 +218,7 @@ test("提交完整性：日期、时长、分类、机主姓名与电话必填�
       e.code === "REPAIR_SUBMISSION_INCOMPLETE" &&
       e.fieldErrors?.ownerPhone !== undefined,
   );
-  // 维修时长提交必填（issue #72）：其余项齐了但缺时长要拦下。
+  // 维修时长提交必填：其余项齐了但缺时长要拦下。
   assert.throws(
     () => validateSubmission({ ...complete, durationMinutes: null }),
     (e) =>
@@ -270,7 +275,7 @@ test("草稿校验：机主字段可空，填了则受上限与格式约束；�
   assert.equal(normalizeDraftFields({ ownerPhone: "138-0013-8000" }).ownerPhone, "13800138000");
   assert.equal(normalizeDraftFields({ ownerPhone: "" }).ownerPhone, null);
   assert.equal(normalizeDraftFields({}).ownerName, undefined, "未提交的字段保持 undefined（不动）");
-  // 机型（issue #218）：草稿可空、填了 trim、超长在草稿阶段就拦。
+  // 机型：草稿可空、填了 trim、超长在草稿阶段就拦。
   assert.equal(normalizeDraftFields({ deviceModel: " 联想 小新 " }).deviceModel, "联想 小新");
   assert.equal(normalizeDraftFields({ deviceModel: "   " }).deviceModel, null);
   assert.equal(normalizeDraftFields({}).deviceModel, undefined, "未提交的机型保持不动");
@@ -411,6 +416,26 @@ test("图片魔数拒绝伪造 MIME 并识别 JPEG PNG WebP", () => {
   assert.equal(detectImageType(Uint8Array.from(Buffer.from("not-an-image"))), null);
 });
 
+test("照片本地顺序：写操作后按展示顺序收敛为 0..n-1（issue #235）", () => {
+  const photo = (id: string, sortOrder: number) => ({
+    id,
+    contentUrl: `/api/v1/repair-photos/${id}/content`,
+    originalName: null,
+    mimeType: "image/png",
+    sizeBytes: 1,
+    sortOrder,
+    createdAt: "2026-10-01T00:00:00.000Z",
+  });
+  const input = [photo("a", 0), photo("b", 2), photo("c", 2)];
+  const output = normalizePhotoViewOrder(input);
+  assert.deepEqual(
+    output.map((item) => item.sortOrder),
+    [0, 1, 2],
+  );
+  assert.equal(output[0], input[0], "序号已正确的项保持原对象");
+  assert.notEqual(output[1], input[1], "序号需要修正的项返回新对象");
+});
+
 test("已有照片加本次上传超限时，在读取文件和调用存储前拒绝", async (t) => {
   const { maxFiles } = uploadLimits();
   t.mock.method(repairRepository, "getById", async () =>
@@ -441,6 +466,17 @@ test("已有照片加本次上传超限时，在读取文件和调用存储前�
   assert.equal(storage.delete.mock.callCount(), 0);
 });
 
+test("维修列表查询只读取列表 DTO 需要的关联（issue #235）", () => {
+  assert.equal("reviews" in repairListInclude, false, "列表不返回审核记录，不应读取");
+  assert.equal("timeline" in repairListInclude, false, "列表不返回时间线，不应读取");
+  for (const key of ["memberProfile", "category", "photos", "participants"]) {
+    assert.ok(key in repairListInclude, `列表 DTO 需要的 ${key} 必须保留`);
+    assert.ok(key in repairDetailInclude, `详情应包含列表关联 ${key}`);
+  }
+  assert.ok("reviews" in repairDetailInclude);
+  assert.ok("timeline" in repairDetailInclude);
+});
+
 test("维修列表 status 查询白名单：合法预选，非法忽略", () => {
   assert.equal(parseRepairListStatus("REJECTED"), "REJECTED");
   assert.equal(parseRepairListStatus("DRAFT"), "DRAFT");
@@ -464,7 +500,7 @@ function recordRow(overrides: Record<string, unknown> = {}) {
       userId: "u1",
       user: { displayName: null },
     },
-    // 参与者（issue #114）：默认只有创建人本人（迁移回填后的常态形状）。
+    // 参与者：默认只有创建人本人（迁移回填后的常态形状）。
     participants: [
       {
         memberProfileId: "m1",

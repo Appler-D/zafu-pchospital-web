@@ -120,7 +120,6 @@ export function MemberProfileView({ initialDisplayName }: MemberProfileViewProps
               <span>{copy.title}</span>
               {roleLabels(profile.roles) ? <span>· {roleLabels(profile.roles)}</span> : null}
             </p>
-            <p className="member-hero__lead">{copy.lead}</p>
           </div>
         </div>
         <div className="member-hero__actions">

@@ -1,7 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 
 /**
- * 邮箱门禁所需的状态读取（issue #146 任务 6）。
+ * 邮箱门禁所需的状态读取。
  *
  * 单独成模块的原因：认证守卫（`src/lib/auth/*`）必须在**不引入发信、SMTP 配置与
  * 认证服务**的前提下得到同一个「已验证邮箱 / 有效豁免」结论，否则会形成
@@ -68,7 +68,7 @@ export type EmailAccessState = {
 /**
  * 一次读取邮箱状态：身份 + 豁免。
  *
- * 时间基准取**读取完成之后**（issue #146 返修 F3 同一口径）：豁免 `now >= expiresAt`
+ * 时间基准取**读取完成之后**（同一口径）：豁免 `now >= expiresAt`
  * 即失效，撤销 / 到期在下一次请求自然生效，不靠进程缓存或登录时快照。
  */
 export async function readEmailAccessState(

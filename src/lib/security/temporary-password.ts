@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 
 /**
- * 管理员手动重置签发的临时密码（issue #113）。
+ * 管理员手动重置签发的临时密码。
  *
  * 与「QQ 后六位初始密码」（`initialPasswordFromQq`）是两套规则，刻意不复用：
  * 初始密码公开可推导，靠首次登录强制改密兜底；临时密码是**安全随机数字**，

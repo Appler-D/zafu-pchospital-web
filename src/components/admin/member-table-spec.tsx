@@ -8,30 +8,7 @@ import { memberDepartmentLabels, memberDepartmentOptions } from "@/config/member
 import { MemberStatus, type MemberListEntry } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 成员表的视图定义（后台表格内核的第一个落地页）。
- *
- * 之前这张表的列被写了**三遍**：`COLUMNS`（列宽 + 标签）、表头那一排 `<th>`、
- * 以及 `tbody` 里逐列的 `<td>`。三者各自漂移就会出现「拖列宽拖错列」「表头与内容对不上」。
- * 现在只有这一份：宽度、标签、单元格内容、可排序性都在同一个字段定义里。
- *
- * 三条不影响现有外观的约束（迁移时逐字照抄的结果，别顺手「优化」）：
- *
- * 1. **列 id 保持原样**（`member` / `skills` / `studentId` …）：列宽偏好是按列 id 存进
- *    `localStorage` 的（`useColumnResize` 的 `storageKey`），改 id 等于把使用者拖过的
- *    列宽全部作废；
- * 2. **显式 `numeric: false`**：「加入时间」「维修记录」这两列当前**没有**右对齐
- *    （内核默认会给 `date` / `number` 加 `admin-table__num`）。是否改成右对齐是产品决定，
- *    不在「抽出内核」这件事里顺手做；
- * 3. **`sortable: false` 的三列**：`repairs` 是跨表聚合、`contacts` 是脱敏拼接值、
- *    `skills` / `roles` 是关联列 —— 白名单与后端 `MEMBER_SORTABLE` 完全一致，
- *    界面不会给出一个必然 400 的入口。
- *
- * 列级筛选（`filter`）同理：声明了的列必须与后端 `MEMBER_FILTERABLE` 逐项一致
- * （`tests/unit/admin-filter.test.ts` 会拦下不一致）。**关联列筛不了** ——
- * 「角色」一个成员可以有多个，不是一列值，它留在快捷筛选条里；`contacts` 是脱敏后的
- * 拼接展示值，`repairs` 是跨表聚合，后端都没有对应字段，因此也筛不了。
- */
+/** 成员表列定义。列 ID 用于持久化列宽；排序与筛选能力须与服务端白名单一致。 */
 
 /** 就地编辑能改的字段。与 `PATCH /api/v1/admin/members/:id` 接受的字段一致。 */
 export type MemberEditableFields = { studentId?: string; className?: string };
@@ -40,12 +17,7 @@ export type MemberEditableFields = { studentId?: string; className?: string };
 export type MemberTableContext = {
   /** 行首复选框与范围选择（`useRowSelect` 的返回值原样传入）。 */
   rows: ReturnType<typeof useRowSelect>;
-  /**
-   * 拖动排序（`useRowDragSort` 的返回值原样传入）。
-   *
-   * 手柄与复选框是**两件事**（第九轮验收把它们拆开了）：手柄拖动 = 调整这一行的位置，
-   * 复选框 = 勾选。所以内核的 context 里要同时带上两个控制器，缺一个就有一半交互失效。
-   */
+  /** 拖动排序控制器，独立于行勾选。 */
   sort: ReturnType<typeof useRowDragSort>;
   /** 行号从 1 开始：无限下翻时接着往下编，不是「第几页的第几行」。 */
   firstRowNumber: number;
@@ -87,7 +59,7 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
       cellClassName: "admin-table__member",
       render: (member, index, { rows, sort, firstRowNumber, onView, sortingActive }) => (
         // 首列 = 行首控件 + 姓名 + 昵称 + 「查看」，全都在这一个单元格里。
-        // 行首不单独占一列（第九轮验收）：复选框右边缘到姓名之间只剩一个固定间距。
+        // 行首不单独占一列：复选框右边缘到姓名之间只剩一个固定间距。
         <span className="admin-membercell">
           <span className="admin-rowhead">
             {sortingActive ? (
@@ -118,8 +90,6 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
               />
             </span>
           </span>
-          {/* 昵称跟在姓名后面**同一行**：单元格里出现第二行会让行高不一致，
-              整张表看起来参差不齐，也让「每个单元格就是一个字段值」这件事失真（第八轮验收）。 */}
           <span className="admin-cell__main" title={member.realName}>
             {member.realName}
           </span>
@@ -150,7 +120,7 @@ export const memberTableSpec: TableViewSpec<MemberListEntry, MemberTableContext>
       kind: "select",
       width: 84,
       sortable: true,
-      // 部门列级筛选（issue #210）：枚举 eq/neq，选项与详情/新建表单同一份。
+      // 部门列级筛选：枚举 eq/neq，选项与详情/新建表单同一份。
       filter: {
         ops: ["eq", "neq"],
         input: { kind: "enum", options: memberDepartmentOptions },

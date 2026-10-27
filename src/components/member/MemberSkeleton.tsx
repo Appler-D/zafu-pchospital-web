@@ -1,7 +1,7 @@
 import { memberCopy } from "@/config/member";
 
 /**
- * MemberSkeleton —— 工作台加载骨架（T-P2-5）
+ * MemberSkeleton —— 工作台加载骨架
  *
  * 结构与 ready 态一致：`member-workspace__content` → `__main`（队列 + 最近）
  * + `__aside`（指标 / 技能 / 排行 / Upcoming），使 ≥1100px 时

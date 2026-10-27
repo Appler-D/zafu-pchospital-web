@@ -121,7 +121,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
   }
 
   /**
-   * 更正报名通知邮箱（issue #161）。
+   * 更正报名通知邮箱。
    *
    * 报名邮箱只作通知用（账号邮箱仍由登录后验证绑定），但填错会让面试 / 账号通知
    * 发错地址。按通知任务状态分级：
@@ -289,7 +289,7 @@ export class JoinApplicationService implements JoinApplicationServiceContract {
       if (application.status === "INTERVIEW_PASSED" && input.result === "PASSED") {
         // 重复提交「通过」不再走状态流转（否则状态回退、重复建发放任务），但**备注不能丢**：
         // 带备注时按「补记一条面试记录」落库；不带备注才是真正的重复提交，幂等返回。
-        // （issue #97：此前一律直接返回，界面上表现为「填了备注、提示成功、备注却不在」。）
+        // （此前一律直接返回，界面上表现为「填了备注、提示成功、备注却不在」。）
         const note = cleanOptional(input.internalNote);
         if (!note) return { application, provision: null };
         await tx.joinApplicationReview.create({
@@ -499,11 +499,11 @@ function validateSubmission(input: SubmitJoinApplicationInput): {
   if (!input.recruitmentCycle.trim() || input.recruitmentCycle.length > 32) {
     fieldErrors.recruitmentCycle = ["招募批次无效"];
   }
-  // 姓名（issue #147 返修）：与邀请码注册同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
+  // 姓名：与邀请码注册同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
   // 保留内部字符与空格。
   const realName = trimPersonName(input.realName);
   if (realName === null) fieldErrors.realName = [PERSON_NAME_LENGTH_MESSAGE];
-  // 学号 / 班级必填（issue #147）：与邀请码注册同一份约束；不把结果强转成字符串。
+  // 学号 / 班级必填：与邀请码注册同一份约束；不把结果强转成字符串。
   const studentId = trimRequiredTextField(input.studentId, STUDENT_ID_MAX_LENGTH);
   if (studentId === null) fieldErrors.studentId = [STUDENT_ID_LENGTH_MESSAGE];
   const className = trimRequiredTextField(input.className, CLASS_NAME_MAX_LENGTH);

@@ -45,12 +45,18 @@ export type RepairActivityPublicView = {
   remaining: number;
 };
 
+/** 公开排队汇总；null 表示签到尚未开放，不代表查询失败或无人等候。 */
+export type RepairActivityQueueView = {
+  waitingCount: number | null;
+  observedAt: string;
+};
+
 export type RepairActivityAdminView = RepairActivityPublicView & {
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
   /**
-   * 本场已出勤成员数（issue #107）：成员签到即计入，系统无签退，
+   * 本场已出勤成员数：成员签到即计入，系统无签退，
    * 历史场次为累计值；只回计数，不下发出勤成员明细。
    */
   attendedCount: number;
@@ -78,7 +84,7 @@ export type RegistrationPublicView = {
   name: string;
   phoneMasked: string;
   issueType: RepairActivityIssueType;
-  /** 机型，选填（issue #68）。 */
+  /** 机型，选填。 */
   deviceModel: string | null;
   status: string;
   createdAt: string;
@@ -95,7 +101,7 @@ export type RegistrationAdminView = {
   name: string;
   phone: string;
   issueType: RepairActivityIssueType;
-  /** 机型，选填（issue #68）。 */
+  /** 机型，选填。 */
   deviceModel: string | null;
   status: string;
   createdAt: string;
@@ -208,7 +214,7 @@ async function loadCounts(ids: string[]): Promise<Map<string, number>> {
 }
 
 /**
- * 各场已出勤成员数（issue #107）。与 `loadCounts` 同一模式：一次 groupBy 批量聚合、
+ * 各场已出勤成员数。与 `loadCounts` 同一模式：一次 groupBy 批量聚合、
  * 缺省 0。出勤表没有软删列，成员签到即计入、系统无签退，历史场次为累计值。
  */
 async function loadAttendanceCounts(ids: string[]): Promise<Map<string, number>> {
@@ -299,7 +305,7 @@ export async function updateRepairActivityInTransaction(
       `人数上限不能低于当前有效报名数（${effectiveCount}）`,
     );
   }
-  // 出勤人数（issue #107）：编辑响应要带回真实计数，不能沿用旧值。
+  // 出勤人数：编辑响应要带回真实计数，不能沿用旧值。
   const attendedCount = await tx.repairActivityAttendance.count({
     where: { activityId },
   });
@@ -554,6 +560,30 @@ export const repairActivityService = {
     return view;
   },
 
+  async getPublicQueue(activityId: string): Promise<RepairActivityQueueView> {
+    const row = await getDb().repairActivity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: { activityAt: true, signupClosesAt: true },
+    });
+    if (!row) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+    const end = activityEndExclusive(row.activityAt).getTime();
+    const assertNotEnded = (now: Date) => {
+      if (now.getTime() >= end) throw new AppError("ACTIVITY_ENDED", "活动已结束");
+    };
+    let now = new Date();
+    assertNotEnded(now);
+    if (now < row.signupClosesAt) {
+      return { waitingCount: null, observedAt: now.toISOString() };
+    }
+    // 只做聚合，不读取报名人员资料；与接待台的 CHECKED_IN 队列口径相同。
+    const waitingCount = await getDb().repairActivityRegistration.count({
+      where: { activityId, deletedAt: null, status: "CHECKED_IN" },
+    });
+    now = new Date();
+    assertNotEnded(now);
+    return { waitingCount, observedAt: now.toISOString() };
+  },
+
   async register(
     activityId: string,
     input: {
@@ -569,7 +599,7 @@ export const repairActivityService = {
     const phone = normalizePhone(input.phone);
     const issueType = assertValidIssueType(input.issueType);
     const deviceModel = assertValidDeviceModel(input.deviceModel);
-    // 免责声明必须由报名者本人点过（issue #62 前端3）。
+    // 免责声明必须由报名者本人点过。
     // 前端弹层只是「把这件事问清楚」，真正拦住绕过弹层直接打接口的是这一句 ——
     // 报名接口是公开的，只在界面上拦等于没拦。
     // 顺序：先报字段问题、再报缺同意，否则一个手机号填错的人会先看到「请先同意免责声明」。

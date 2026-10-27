@@ -80,7 +80,7 @@ export function JoinApplicationAdminPanel() {
   const sortRules = query.value.sort;
   const setSortRules = query.setSort;
   const [detailId, setDetailId] = useState<string | null>(null);
-  /** 行内「通过」待确认的报名（issue #95）：非空即弹二次确认。 */
+  /** 行内「通过」待确认的报名：非空即弹二次确认。 */
   const [approving, setApproving] = useState<JoinApplicationSummary | null>(null);
   const [admittedDepartment, setAdmittedDepartment] = useState<MemberDepartment>("REPAIR");
   const [approveProblem, setApproveProblem] = useState("");
@@ -146,7 +146,6 @@ export function JoinApplicationAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-recruitment-title" tabIndex={-1}>
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
           {/* 导出的风险说明留在页头：导出按钮已移到列表工具栏，这条说明不跟着按钮走。 */}
           <p className="admin-note">{copy.export.note}</p>
         </div>
@@ -206,7 +205,6 @@ export function JoinApplicationAdminPanel() {
 
       {state === "ready" ? (
         <div className="admin-list">
-          {/* 顶栏常驻（邮箱式）：左侧是导出动作，右侧是总数。 */}
           <AdminListToolbar
             count={(list.refreshing
               ? tableCopy.updating
@@ -223,8 +221,7 @@ export function JoinApplicationAdminPanel() {
               onDone={(text) => setToast({ text, tone: "success" })}
             />
           </AdminListToolbar>
-          {/* 表格本体由内核渲染（`AdminTable`）：列宽、表头、单元格内容全部来自
-              `joinApplicationTableSpec` 这一份定义。 */}
+          {/* 列定义由 spec 提供，跨列编辑行由 renderRow 接管。 */}
           <AdminTable
             spec={joinApplicationTableSpec}
             sort={sortRules}
@@ -334,7 +331,7 @@ function ApplicationDetailPanel({
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteProblem, setDeleteProblem] = useState("");
-  /** 更正通知邮箱（issue #161）：与详情同一窗口，切换内容而不是叠第二层弹层。 */
+  /** 更正通知邮箱：与详情同一窗口，切换内容而不是叠第二层弹层。 */
   const [correcting, setCorrecting] = useState(false);
   /** 更正表单保存中：阻止关闭整个窗口，避免请求完成后结果落到已卸载的界面。 */
   const [correctingBusy, setCorrectingBusy] = useState(false);
@@ -399,8 +396,7 @@ function ApplicationDetailPanel({
     // 幂等键用掉一次就换新的：否则「先登记通过、再补一条记录」会被判成同一次提交。
     idempotencyKey.current = crypto.randomUUID();
     setSecret(result.data.initializationSecret ?? "");
-    // 已通过的报名再次提交「通过」时服务端不重复发放：带备注只是补记一条面试记录（issue
-    // #97），不带备注是空操作 —— 两种都不能再提示「账号发放任务已创建」。
+    // 重复通过不再次发放账号；带备注时仅补记面试记录。
     let toastText: string = copy.review.saved;
     if (data.result === "PASSED" && detail?.status !== "INTERVIEW_PASSED") {
       toastText = copy.review.passedSaved;
@@ -595,7 +591,6 @@ function ApplicationDetailPanel({
                 </>
               )}
             </div>
-            <p className="admin-note">{copy.detail.contactsNote}</p>
           </div>
 
           <AccountNotificationStatusPanel
@@ -611,7 +606,7 @@ function ApplicationDetailPanel({
             onScheduled={() => setToast({ text: notificationCopy.scheduled, tone: "success" })}
           />
 
-          {/* 学号与班级（issue #147）：历史报名未填写，逐项显示 `—`，不隐藏整段。 */}
+          {/* 学号与班级：历史报名未填写，逐项显示 `—`，不隐藏整段。 */}
           <div className="admin-section">
             <h3 className="admin-panel__title">{copy.detail.student}</h3>
             <p className="admin-status">
@@ -784,7 +779,7 @@ function provisionHint(status: ProvisionStatus | string): string {
 }
 
 /**
- * 更正通知邮箱（issue #161）。
+ * 更正通知邮箱。
  *
  * 与详情共用同一个 `AdminModal`（切换内容，不叠第二层）—— 和成员详情
  * 「详情 → 重置弹层 → 返回」的处理一致。保存后由父组件把新邮箱与任务状态写回详情，
@@ -869,7 +864,6 @@ function EmailCorrectionForm({
       >
         {hint}
       </p>
-      <p className="admin-note">{copy.auditNote}</p>
       {problem ? (
         <p className="admin-status admin-status--error" role="alert">
           {problem}
@@ -887,13 +881,6 @@ function EmailCorrectionForm({
   );
 }
 
-/**
- * 列表与导出**共用**的固定筛选参数。
- *
- * 导出的查询串必须与列表逐字一致（否则「导出的是另一批数据」），因此这两个入口共用
- * 这一个函数。拼装本身交给内核的 `listQueryParams`：空值不写、关键字去空白，
- * 参数顺序与迁移前一致。
- */
 /** 列表里的时间：`Asia/Shanghai` 的 `YYYY-MM-DD HH:mm`。报名资料需要完整日期。 */
 function toLocalInput(iso: string): string {
   const date = new Date(iso);

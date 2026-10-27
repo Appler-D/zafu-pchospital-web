@@ -6,7 +6,7 @@ import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
 
 export const runtime = "nodejs";
 
-/** M6 第五轮：把故障分类拖到指定位置。与技能标签同一实现（`{beforeId}`，`null` = 末尾）。 */
+/** 把故障分类拖到指定位置。与技能标签同一实现（`{beforeId}`，`null` = 末尾）。 */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = getRequestId(request.headers);
   try {

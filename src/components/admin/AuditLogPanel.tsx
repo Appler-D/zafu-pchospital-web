@@ -88,7 +88,6 @@ export function AuditLogPanel() {
           <h1 className="admin-workspace__title" id="admin-audit-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 
@@ -136,7 +135,6 @@ export function AuditLogPanel() {
 
       {state === "ready" ? (
         <div className="admin-list">
-          {/* 只读列表没有批量动作，顶栏只放一句状态说明与总数。 */}
           <AdminListToolbar
             count={(list.refreshing
               ? tableCopy.updating
@@ -144,13 +142,8 @@ export function AuditLogPanel() {
                 ? tableCopy.previousCount
                 : tableCopy.count
             ).replace("{count}", String(pagination?.total ?? items.length))}
-          >
-            <span className="admin-status">{copy.readonlyNote}</span>
-          </AdminListToolbar>
-          {/* 表格本体由内核渲染（`AdminTable`）：表头与单元格内容都来自 `auditTableSpec`。
-              审计表**不声明列宽**，因此内核不会输出 `<colgroup>`，列宽仍由浏览器按内容分配
-              —— 与迁移前一致。面板不传 `onSortChange`：后端还没有 `sort` 参数，
-              内核在不传时不渲染任何排序控件。 */}
+          />
+          {/* 列定义由 spec 提供，跨列编辑行由 renderRow 接管。 */}
           <AdminTable
             spec={auditTableSpec}
             sort={sortRules}
@@ -175,7 +168,6 @@ export function AuditLogPanel() {
           subtitle={`${detail.action} · ${formatAuditDateTime(detail.createdAt)}`}
           onClose={() => setDetail(null)}
         >
-          <p className="admin-note">{copy.detail.redactedNote}</p>
           {detail.beforeSummary === null && detail.afterSummary === null ? (
             <p className="admin-note">{copy.detail.empty}</p>
           ) : (

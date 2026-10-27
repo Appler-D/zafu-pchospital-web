@@ -12,7 +12,7 @@ export default async function NewRepairPage({
 }) {
   await requireActiveMemberPage();
   const params = await searchParams;
-  // 活动接待「继续填写」（issue #221）：两个参数成对出现才进入补单模式。
+  // 活动接待「继续填写」：两个参数成对出现才进入补单模式。
   const serveContext =
     params.activityId && params.registrationId
       ? { activityId: params.activityId, registrationId: params.registrationId }
@@ -24,7 +24,6 @@ export default async function NewRepairPage({
         index="08"
         label={repairCopy.create.label}
         title={serveContext ? repairCopy.create.serveTitle : repairCopy.create.title}
-        lead={serveContext ? repairCopy.create.serveLead : repairCopy.create.lead}
       />
       <Section labelledBy="new-repair-panel">
         <h2 className="sr-only" id="new-repair-panel">

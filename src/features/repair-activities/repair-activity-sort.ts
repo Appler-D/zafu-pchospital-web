@@ -19,11 +19,7 @@ function tieBreak(a: PublicListSortable, b: PublicListSortable): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/**
- * 方案 B（验收写死）：
- * 1) 非 ENDED：activityAt 升序，次键稳定（createdAt asc → id）
- * 2) ENDED 整段在后：activityAt 降序，次键稳定
- */
+/** 公开活动按状态优先级与时间排序。 */
 export function sortRepairActivitiesForPublicList<T extends PublicListSortable>(
   items: readonly T[],
 ): T[] {
@@ -57,16 +53,7 @@ const HOME_PREVIEW_STATUS_PRIORITY: Record<RepairActivityStatus, number> = {
   ENDED: 4,
 };
 
-/**
- * 首页近场活动（UX R3 / R7）：按「报名开放中优先」取前 `limit` 条未结束活动。
- *
- * 优先级：OPEN → UPCOMING → 其余未结束状态（FULL / CLOSED），
- * 同一档内按 activityAt 升序（次键与公开列表一致）；ENDED 一律不进预览。
- *
- * 与公开列表的「方案 B」是两个口径：公开列表必须整体按 activityAt 排序
- * （验收写死），首页预览只关心「先给还报得上名的」。调用方可先拿 listPublic
- * 结果再喂入本函数（这里会重新分档，不会改动入参）。
- */
+/** 首页活动预览只选仍可报名的活动。 */
 export function pickNonEndedRepairActivitiesForHomePreview<T extends PublicListSortable>(
   items: readonly T[],
   limit = 3,

@@ -20,13 +20,13 @@ import {
 } from "../../src/lib/security/normalization";
 
 /**
- * 学号 / 班级约束（issue #147）的单元级钉子。
+ * 学号 / 班级约束的单元级钉子。
  *
  * 这里钉住四件事，都是「两处入口共用同一约束来源」的具体含义：
  * 1. 服务端规范化函数：trim、保留前导零、不强制转换非字符串、边界长度；
  * 2. `/join` 表单字段定义直接取自同一组常量（不是各写一份数字）；
  * 3. 客户端 `normalizeMemberSignup` 对学号只 trim，不剔字符、不转数字；
- * 4. 两个表单的姓名原生约束一致（文件末的 DOM 断言，issue #147 返修）。
+ * 4. 两个表单的姓名原生约束一致（文件末的 DOM 断言，）。
  *
  * 组件渲染需要全局 `React`（tsconfig 的 jsx 是 `preserve`，tsx 跑测试走经典运行时，
  * 组件源码里没有 `import React`）；模式与 `tests/unit/admin-table-render.test.ts` 相同。
@@ -116,7 +116,7 @@ test("normalizeMemberSignup：学号只 trim 保留前导零，姓名 / 班级�
   assert.equal(result.className, "计算机 233");
   assert.equal(result.qq, "8001470001");
   assert.equal(result.phone, "13901470001");
-  // 返修：姓名只去首尾空白，不再删掉内部空白（此前是 `replace(/\s+/g, "")`）。
+  // 姓名只去首尾空白，不再删掉内部空白（此前是 `replace(/\s+/g, "")`）。
   assert.equal(result.realName, "张 三");
 });
 

@@ -4,23 +4,7 @@ import { auditTargetLabel, formatAuditDateTime, shortAuditId } from "@/config/au
 import type { AuditLogEntry } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 审计记录表的视图定义（后台表格内核的第二个落地页）。
- *
- * 迁移只做一件事：把「表头 7 个 `<th>` + 7 个 `<td>`」这两份平行定义收进一份 spec。
- * **渲染逐字照抄**，三处刻意保持原样、不要顺手「优化」：
- *
- * 1. **不声明列宽**：审计表从来没接过 `useColumnResize`，列宽由浏览器按内容分配。
- *    内核因此在没有列宽时不输出 `<colgroup>` —— 迁移不该顺带改掉它的布局；
- * 2. **「时间」列不开右对齐**：与成员表的「加入时间」同一判断，是否右对齐是产品决定，
- *    不在这件事里顺手做（内核按 `datetime` 类型默认会给 `admin-table__num`）；
- * 3. **动作列是内容列**（`admin-table__grow`）：表头与单元格都要带这个类，
- *    它让这一列吸收剩余宽度、并允许换行。
- *
- * 排序说明：审计列表服务端固定按 `created_at` 倒序，`audit-log-service` 还没有 `sort`
- * 参数，所以面板**不传 `onSortChange`**（内核在不传时不渲染任何排序控件）。
- * 要开排序得先按 `docs/admin-table-kernel.md` §6 的形状贯通后端与白名单。
- */
+/** 审计记录表列定义。 */
 
 /** 页面上会被 `render` 用到的运行时值（`<AdminTable renderContext>` 传入）。 */
 export type AuditTableContext = {
@@ -39,7 +23,7 @@ export const auditTableSpec: TableViewSpec<AuditLogEntry, AuditTableContext> = {
       key: "createdAt",
       label: copy.table.createdAt,
       kind: "datetime",
-      // 与迁移前一致：这一列没有 `admin-table__num`（不右对齐）。
+
       numeric: false,
       render: (entry) => formatAuditDateTime(entry.createdAt),
     },

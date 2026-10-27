@@ -13,7 +13,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 存量草稿盘点与处置（issue #223，真实 GreatSQL）。
+ * 存量草稿盘点与处置（真实 GreatSQL）。
  *
  * 覆盖：dry-run 不写库、活动草稿回填补提、分类重映射、作废软删除并清空接待关联、
  * 系统时间线 / 审计、撤回草稿两种策略、备份前置、历史悬挂口径、并发改关联回滚、

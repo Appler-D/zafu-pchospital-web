@@ -16,17 +16,7 @@ import { memberCopy, formatShanghaiDate } from "@/config/member";
 import { roleLabels } from "@/components/member/MemberIdentityFields";
 import type { MemberDashboard as MemberDashboardData } from "@/types/contracts";
 
-/**
- * MemberDashboard —— 成员工作台主视图（重构版）
- *
- * 信息层次自上而下：问候与主行动 → 待办数字带（可点）→ 快捷入口 →
- * 双列（维修概览 + 最近已通过 ｜ 排行 / 技能 / 通知收藏）。窄屏单列，
- * 待办与快捷入口靠前 —— 手机上打开工作台首先回答「有没有要我处理的事」。
- *
- * 数据来自 `GET /api/v1/member/dashboard`（单一聚合请求）；欢迎区始终渲染，
- * 加载 / 失败只影响下方数据区。问候语与日期在挂载后按本地时区计算，
- * 服务端不渲染（避免时区不一致导致 hydration 分叉）。
- */
+/** 欢迎区保持显示；数据区独立处理加载与失败，问候和日期在挂载后计算。 */
 
 export type MemberDashboardProps = {
   /** 服务端已认证的展示名，用于首屏立即渲染欢迎区（避免首屏空壳） */

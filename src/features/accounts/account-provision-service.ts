@@ -124,7 +124,7 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
     const memberProfileId = await ensureMemberProfile(tx, {
       userId,
       realName: application.realName,
-      // 学号 / 班级（issue #147）：有效新值沿既有发放更新语义写入档案；
+      // 学号 / 班级：有效新值沿既有发放更新语义写入档案；
       // 历史报名的 NULL / 空白转为 `undefined`（不更新该字段），不能清空档案里已有的有效值。
       studentId: blankToUndefined(application.studentId),
       className: blankToUndefined(application.className),
@@ -195,7 +195,7 @@ export class AccountProvisionService implements AccountProvisionServiceContract 
     result: Awaited<ReturnType<AccountProvisionService["provisionInTransaction"]>>,
   ) {
     if (result.replayed) return toResult(result.completed);
-    // 建档后按姓名补录历史暂存行（issue #72 评审 1）。独立事务且内部吞异常：
+    // 建档后按姓名补录历史暂存行。独立事务且内部吞异常：
     // 历史数据的问题不能让发放失败，失败的暂存行保留、重跑导入也能补。
     await claimHistoryForNewMember({
       memberProfileId: result.memberProfileId,
@@ -242,7 +242,7 @@ function toResult(provision: {
 }
 
 /**
- * 历史报名上的学号 / 班级是 `NULL`（迁移前没有这两列）：转为 `undefined` 让
+ * 历史报名上的学号 / 班级是 `NULL`（未填写）：转为 `undefined` 让
  * `ensureMemberProfile` 跳过该字段，而不是写入 `null` 把档案里的有效值抹掉。
  */
 function blankToUndefined(value: string | null): string | undefined {

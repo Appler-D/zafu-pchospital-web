@@ -107,7 +107,7 @@ async function prepareFixtures(): Promise<void> {
   await db.repairTimelineEvent.deleteMany({ where: { record: records } });
   await db.repairReview.deleteMany({ where: { record: records } });
   await db.repairPhoto.deleteMany({ where: { record: records } });
-  // 参与行（issue #114）先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
+  // 参与行先于记录删除：本文件的记录走 `repairService` 创建，带参与行。
   await db.repairRecordParticipant.deleteMany({ where: { record: records } });
   await db.repairRecord.deleteMany({ where: records });
   await db.userSkill.deleteMany({ where: { memberProfileId: { in: profileIds } } });
@@ -455,7 +455,7 @@ dbTest("成员列表：拖动排序写库、序号稠密、落点没变则幂等
     "从末尾往回拖也要精确落在落点成员之前",
   );
 
-  // 5b) 勾选多行后一起拖：整块移动，块内先后不变（第九轮）
+  // 5b) 勾选多行后一起拖：整块移动，块内先后不变
   const before = await order();
   const blockIds = before.slice(2, 5); // 取连续三行当选中集合
   const anchorId = before[7];
@@ -493,8 +493,7 @@ dbTest("成员列表：拖动排序写库、序号稠密、落点没变则幂等
 });
 
 dbTest("密码长度边界：6 位可以通过，5 位被拒（策略前后端同一份）", async () => {
-  /* 第十一轮：策略数字从 12 位下调到 6 位，且收敛到 `lib/security/password-policy.ts`。
-     这里验证**服务端**那一侧真的跟着变了 —— 只改前端会出现「表单放行、后端报错」。 */
+  /* 密码长度与统一策略保持一致。 */
   const code = await inviteCodeService.create({ maxUses: 1, boundQq: "812345699" }, ADMIN_ACTOR);
 
   await assert.rejects(

@@ -10,21 +10,7 @@ import { ShellTabBar, type ShellTab } from "@/components/layout/ShellTabBar";
 import { Icon } from "@/components/ui/Icon";
 import { MEMBER_NOTIFICATIONS_CHANGED_EVENT, memberCopy, memberNav } from "@/config/member";
 
-/**
- * 成员端导航（工作台重构版）
- *
- * 桌面（≥1100px）：左侧栏，9 个入口按「概览 / 维修 / 互动 / 账户」平铺，
- * 足部保留返回官网与账号菜单。窄屏：侧栏收成顶部一条（品牌 + 返回官网 + 账号），
- * 导航交给底部固定的标签栏（工作台 / 维修 / 新增 / 消息 / 我的），
- * 活动 / 案例库 / 收藏 / 排行从工作台首页的快捷入口进。
- *
- * 「消息通知」的未读数同时显示在侧栏条目与底部「消息」标签上：
- * 挂载时取一次，收到 `MEMBER_NOTIFICATIONS_CHANGED_EVENT`（列表页标记已读 / 删除后
- * 派发）时刷新。角标是增强信息，请求失败就静默不显示。
- *
- * 渲染在 `src/app/member/layout.tsx`：客户端切页侧栏不重建、角标不丢。
- * prefetch 按意图触发（hover / focus / touchstart），挂载不全量预取。
- */
+/** 成员持久导航；通知事件触发未读数刷新，导航按意图预取。 */
 
 export type MemberNavProps = {
   /** 服务端已认证的展示名，交给账号菜单做首屏乐观渲染 */

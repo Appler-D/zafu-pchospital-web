@@ -38,7 +38,7 @@ const adminProfileSelect = {
   version: true,
   joinedAt: true,
   createdAt: true,
-  /* 技能标签随列表一起取（第六轮验收）：成员表要直接显示「这个人会什么」，
+  /* 技能标签随列表一起取：成员表要直接显示「这个人会什么」，
      不必为此点开详情。用一次带 `in` 的关联查询取整页，不是逐行查询。
      顺序跟成员端一致（标签库的 sortOrder），空标签的成员是空数组。 */
   userSkills: {
@@ -145,7 +145,7 @@ export const memberRepository = {
   },
 
   /**
-   * 按当前显示顺序取出全部成员档案 id（拖动排序用，第九轮验收）。
+   * 按当前显示顺序取出全部成员档案 id（拖动排序用）。
    *
    * 排序规则必须与 `list` **逐字一致**：拖动算的是「整份顺序」，落点前后关系一旦与
    * 列表不一致，就会出现「拖到 A 前面，刷新后 A 还在我后面」。
@@ -222,7 +222,7 @@ export const memberRepository = {
 type RepairStats = { count: number; minutes: number };
 
 /**
- * 按**参与关系**统计（issue #114）：与排行榜 / 个人摘要同一口径 ——
+ * 按**参与关系**统计：与排行榜 / 个人摘要同一口径 ——
  * 一条记录对每名参与者各计一次，时长不分人、取记录上的同一值；
  * 「有效记录」谓词复用 `approvedRepairSql`，不在这里重写第二份。
  */

@@ -79,10 +79,7 @@ export function LoginForm({ returnTo }: { returnTo?: string | null }) {
         placeholder={loginCopy.passwordPlaceholder}
         type="password"
         autoComplete="current-password"
-        // **不设 `minLength`**：登录是校验密码，不是设置密码。写死下限的后果是
-        // 「用短口令的账号在前端就被拦住、连提交都提交不了」（第十一轮实测踩到：
-        // 验收账号密码 123456，登录表单上写着 minLength={12}）。长度规则只在
-        // 设置 / 修改密码处生效，登录交给服务端判定。
+        // 登录不设密码长度下限，以兼容已有密码。
         maxLength={128}
       />
       <div className="admin-checkrow">

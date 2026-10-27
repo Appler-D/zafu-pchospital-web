@@ -3,22 +3,7 @@ import { adminCopy, adminShared, inviteCodeStatusLabels } from "@/config/admin";
 import type { InviteCodeAdminView } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 邀请码表的视图定义（后台表格内核的第四个落地页）。
- *
- * 迁移只做一件事：把「表头 7 个 `<th>` + 7 个 `<td>`」收进一份 spec，**渲染逐字照抄**。
- * 三处刻意保持原样：
- *
- * 1. **不声明列宽**：这张表从来没接过 `useColumnResize`，列宽由浏览器按内容分配
- *    （内核在没有列宽时不输出 `<colgroup>`）；
- * 2. **「生效区间」是内容列**（`admin-table__grow`）：表头与单元格都要带这个类；
- * 3. **「创建时间」不右对齐**：与成员表「加入时间」、审计表「时间」同一判断 ——
- *    是否右对齐是产品决定，不在这件事里顺手做（内核按 `datetime` 默认会给
- *    `admin-table__num`，因此这里显式 `numeric: false`）。
- *
- * 「调整策略」那一行不在这里：它把中间四列合成一个表单（`colSpan`），由面板通过
- * `<AdminTable renderRow>` 整行接管 —— spec 描述的是**常规行**长什么样。
- */
+/** 邀请码表列定义；跨列策略编辑由面板接管。 */
 
 /** 页面上会被 `render` 用到的运行时值（`<AdminTable renderContext>` 传入）。 */
 export type InviteCodeTableContext = {

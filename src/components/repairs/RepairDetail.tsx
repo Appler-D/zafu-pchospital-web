@@ -101,7 +101,7 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
             <dt className="text-ink-3 text-sm">故障分类</dt>
             <dd>{record.category?.name ?? "待补充"}</dd>
           </div>
-          {/* 机型来自活动报名的选填字段（issue #68）：没有就不占一行。 */}
+          {/* 机型来自活动报名的选填字段：没有就不占一行。 */}
           {record.deviceModel ? (
             <div>
               <dt className="text-ink-3 text-sm">机型</dt>
@@ -136,7 +136,7 @@ export function RepairDetail({ recordId, statusLabels, resultLabels, timelineLab
           />
         ) : null}
       </Card>
-      {/* 「维修内容」已从表单退场（issue #79 第 6 项）：老记录有值才渲染，新记录不再出现该块。 */}
+      {/* 「维修内容」已从表单退场：老记录有值才渲染，新记录不再出现该块。 */}
       {record.content ? (
         <Card className="repair-panel">
           <h2 className="text-display-3 font-bold">维修内容</h2>

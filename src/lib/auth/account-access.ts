@@ -6,7 +6,7 @@ import { readEmailAccessState } from "@/features/email/email-access-state";
 import type { AccountAccessView, RoleCode, SessionPrincipal } from "@/types/contracts";
 
 /**
- * 统一账号门禁（issue #146 任务 6）。
+ * 统一账号门禁。
  *
  * 页面守卫与业务 API 共用这里的同一份判定，不在每个消费者各写一套：
  * 有效 Session / 账号资格（由调用方完成）→ 必须改密 → 当前模式需要邮箱且无有效豁免

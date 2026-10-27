@@ -7,28 +7,7 @@ import { ariaSortOf, cycleSortRule } from "@/lib/api/list-query";
 import { defaultNumeric, isFieldSortable, sortKeyOf } from "@/lib/table/field-spec";
 import type { CellEdit, FieldSpec, SortRule, TableViewSpec } from "@/types/table";
 
-/**
- * 后台表格内核的渲染层（P0）。
- *
- * 它只做一件事：**把一份 {@link TableViewSpec} 渲染成现在这套 `.admin-table` 标记**。
- * 表头、`<colgroup>`、`data-label`、空值行、右对齐全部由 spec 推导，
- * 因此六个后台列表不再各自维护「列宽数组 / `<th>` 列表 / 单元格 JSX」三份平行定义。
- *
- * 三条边界（都是刻意的）：
- *
- * 1. **不取数**。列表数据由页面用 `useAdminList` 取回后传进来 —— `AGENTS.md` §2 要求
- *    「取数与自动加载下一页统一用 useAdminList + AdminListEnd，不要再写第二份分页逻辑」，
- *    内核再包一层取数就成了第三份。
- * 2. **不持有排序状态**。排序会改变服务端返回的行集合，因此它必须和 `fetchPage` 待在
- *    同一个作用域（页面）里；内核只负责把点击翻译成新规则（`cycleSortRule`）并回调。
- * 3. **不猜类名**。`headClassName` / `cellClassName` 由 spec 逐列给出，迁移时照抄现状，
- *    从而保证「迁移前后 DOM 一致」——这是像素级不回归的前提。
- *
- * 排序控件是**可选**的：只有传了 `onSortChange` 才渲染按钮，且按钮用 `p-0 text-left`
- * 抵消浏览器默认内边距 —— 未接入的表与今天完全一致（零位移），接入时再逐个开关。
- * 视觉指示（表头右侧的小箭头）连同冻结列、吸顶表头一起放在 P2，届时才需要动
- * `globals.css`；P0 先用 `aria-sort` 把状态暴露给读屏。
- */
+/** 根据 TableViewSpec 渲染表格；数据与排序状态由调用方管理。 */
 
 /** 行属性：`data-row-id` 显式列出 —— 六个列表都用它做「写操作后按 id 重新定位」。 */
 type AdminRowProps = ComponentPropsWithoutRef<"tr"> & { "data-row-id"?: string };
@@ -156,7 +135,7 @@ export function AdminTable<T, C = unknown>({
   }
 
   // 只有「声明了列宽」或「调用方给了 widths」时才输出 `<colgroup>`：
-  // 其余情况保持浏览器自动分配列宽（与迁移前一致，不改布局）。
+  // 其余情况保持浏览器自动分配列宽（按内容分配）。
   const hasColumnWidths = widths !== undefined || fields.some((field) => field.width !== undefined);
 
   const visibleColumns = table.getVisibleLeafColumns();
@@ -245,10 +224,7 @@ export function AdminTable<T, C = unknown>({
                       return (
                         <td
                           key={cell.id}
-                          // ≤1100px 卡片式降级时，每个值前面显示的字段名就是它。
-                          // 没有字段名的列（行首的手柄列、选择列）**不写这个属性**：
-                          // 卡片模式里 `attr(data-label)` 取不到属性与取到空串渲染完全相同，
-                          // 而少一个空属性才是迁移前那两张表本来的写法。
+
                           data-label={field.label || undefined}
                           className={cellClassName(field)}
                           title={field.title?.(item)}

@@ -58,18 +58,7 @@ export function getInviteCodeEffectiveStatus(
 }
 
 export class InviteCodeService implements InviteCodeServiceContract {
-  /**
-   * 管理端列表（M6 批次 2）。
-   *
-   * 原实现是硬编码 `take: 100` 的裸数组：没有任何分页元数据，第 101 条之后直接消失，
-   * 界面上看不出「还有更多」。现在改为标准分页 + 筛选。
-   *
-   * `status` 过滤的是**生效状态**（`getInviteCodeEffectiveStatus` 的派生结果），
-   * 不是存储状态：`EXPIRED` / `EXHAUSTED` / `NOT_STARTED` 在库里都是 `status = 'ACTIVE'`
-   * 加时间或计数条件推出来的。因此这里必须把同一套判定**下推到 SQL**，
-   * 否则「筛选已失效」会拿到空结果（行都在，只是被内存过滤前的分页切掉了）。
-   * `EXPIRED` / `EXHAUSTED` / `ACTIVE` 三者的分支顺序与纯函数逐条对应。
-   */
+  /** 邀请码列表支持分页与筛选。 */
   async list(input: InviteCodeListInput, actor: AuthorizedActor): Promise<InviteCodeListResult> {
     requirePermission(actor, "invite:read");
     const now = new Date();
@@ -253,7 +242,7 @@ export class InviteCodeService implements InviteCodeServiceContract {
     if (!isPasswordLengthValid(input.password)) {
       throw new AppError("VALIDATION_FAILED", passwordLengthMessage());
     }
-    // 姓名（issue #147 返修）：与公开招募同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
+    // 姓名：与公开招募同一份约束 —— 只去首尾空白，trim 后 2–64 字符，
     // 保留内部字符与空格；字段错误沿用统一信封（与学号 / 班级同款）。
     const realName = trimPersonName(input.realName);
     if (realName === null) {
@@ -263,7 +252,7 @@ export class InviteCodeService implements InviteCodeServiceContract {
     }
     const qq = normalizeQq(input.qq);
     const phone = normalizePhone(input.phone);
-    // 学号 / 班级必填（issue #147）：服务端独立校验（路由已把非字符串拒掉，这里保住
+    // 学号 / 班级必填：服务端独立校验（路由已把非字符串拒掉，这里保住
     // 直接调用 Service 的入口），规范化结果（trim、保留前导零）用于建档。
     const studentId = normalizeStudentId(input.studentId);
     const className = normalizeClassName(input.className);
@@ -369,7 +358,7 @@ export class InviteCodeService implements InviteCodeServiceContract {
       });
       return { userId, memberProfileId, redemptionId, provisionId: provision.id };
     });
-    // 注册成功后按姓名补录历史暂存行（issue #72 评审 1）：本人可能「先修过机、后注册」。
+    // 注册成功后按姓名补录历史暂存行：本人可能「先修过机、后注册」。
     // 独立事务且内部吞异常 —— 历史数据的问题不能让注册失败；重复请求触发的重放
     // 也会走到这里，但暂存行已认领过，第二次是空操作。
     await claimHistoryForNewMember({

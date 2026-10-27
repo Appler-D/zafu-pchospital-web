@@ -11,7 +11,7 @@ import { formatRepairParticipants, repairCopy, repairResultLabels } from "@/conf
 import type { PaginationMeta, RepairCategoryView, RepairView } from "@/types/contracts";
 
 /**
- * 成员案例库（`/member/cases`，issue #68）
+ * 成员案例库（`/member/cases`）
  *
  * 与 `/member/repairs` 的分工：那边是**可操作的记录表**（含自己的草稿 / 待审核 /
  * 已退回，能筛选状态、点进编辑），这边只读**已通过**的记录并把它们当案例翻阅 ——
@@ -20,7 +20,7 @@ import type { PaginationMeta, RepairCategoryView, RepairView } from "@/types/con
  * 取数复用 `GET /api/v1/repairs?status=APPROVED`（含 `isTypical` / `isDifficult` /
  * `flagged` / `categoryId` / `query` 与分页），不为它单开接口。
  *
- * 准入规则（issue #134）：案例库只收录**被标记**的已通过记录 ——「全部」档传
+ * 准入规则：案例库只收录**被标记**的已通过记录 ——「全部」档传
  * `flagged=any`（典型案例 ∪ 疑难案例，服务端并集），两个单标记档仍走既有的
  * `isTypical` / `isDifficult` 参数，路径与语义不变。
  */
@@ -57,7 +57,7 @@ export function CaseLibrary() {
         // 案例 = 已通过的维修记录；草稿 / 待审核 / 已退回不属于案例库。
         status: "APPROVED",
       });
-      // 「全部」档 = 被标记记录的并集（issue #134）；单标记档参数不变。
+      // 「全部」档 = 被标记记录的并集；单标记档参数不变。
       if (scope === "ALL") params.set("flagged", "any");
       if (scope === "TYPICAL") params.set("isTypical", "true");
       if (scope === "DIFFICULT") params.set("isDifficult", "true");
@@ -119,7 +119,7 @@ export function CaseLibrary() {
 
   return (
     <div className="community-page">
-      {/* 紧凑页头（issue #134）：替代官网式 PageHead —— 那套在成员壳里因
+      {/* 紧凑页头：替代官网式 PageHead —— 那套在成员壳里因
           `.reveal` 特异性问题整块不可见，只剩留白。结构与 /member/rankings 一致，
           h1 的 id 由页面 section 的 aria-labelledby 引用。 */}
       <header className="cases-page__head">
@@ -245,7 +245,7 @@ export function CaseLibrary() {
 function CaseCard({ item }: { item: RepairView }) {
   const copy = casesCopy;
   const href = `/member/repairs/${item.id}`;
-  // 摘要取值链（issue #79 第 6 项）：备注优先，老记录的维修内容回退。
+  // 摘要取值链：备注优先，老记录的维修内容回退。
   const summary = summarize(item.remark?.trim() || item.content);
   return (
     <li className="community-list__item">

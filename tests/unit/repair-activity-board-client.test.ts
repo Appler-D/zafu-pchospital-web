@@ -302,6 +302,12 @@ test("结束的看板保留历史、出勤状态和纠错，三项控件禁用�
   assert.deepEqual(ui.posts, []);
 });
 
+test("报名截止但活动未结束时，工作台状态显示「可出勤」而不是「报名截止」（issue #239）", async (t) => {
+  const ui = await mount(t, board(), new Date(end.getTime() - 60_000));
+  assert.ok(text(ui.view()).includes("可出勤"));
+  assert.equal(text(ui.view()).includes("报名截止"), false);
+});
+
 test("旧签到确认窗跨过结束上限不能提交，取消仍可用，既有看板不卸载", async (t) => {
   const ui = await mount(t, board(), new Date(end.getTime() - 1_000));
   ui.elements().find((element) => element.props.type === "checkbox")!.props.onChange!();

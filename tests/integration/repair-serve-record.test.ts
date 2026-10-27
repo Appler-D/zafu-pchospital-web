@@ -16,7 +16,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 活动接待「不落草稿、提交即建单」的集成测试（issue #221，真实 GreatSQL）。
+ * 活动接待「不落草稿、提交即建单」的集成测试（真实 GreatSQL）。
  *
  * 覆盖：serve 只占登记行（不建维修单）→ 看板「待补建」/ 全局拦截 →
  * 预填（仅接待者本人、完整电话 + 分类映射 + 审计）→ 提交即建单（校验 / 关联 /

@@ -27,7 +27,7 @@ import {
  * **报名开放中（OPEN）优先**，其次 UPCOMING，再其次 FULL / CLOSED，同档内 activityAt 升序
  * （`pickNonEndedRepairActivitiesForHomePreview`）。公开列表页自己的「方案 B」排序不受影响。
  * 无未结束活动或数据不可用时整块不渲染（口径 C5）。
- * 不改动公开列表页 RepairActivityList（#59）。
+ * 不改动公开列表页 RepairActivityList。
  */
 export async function HomeActivityPreview() {
   noStore();

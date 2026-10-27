@@ -136,7 +136,7 @@ export class PasswordRecoveryService implements PasswordRecoveryServiceContract 
     const passwordHash = await hashPassword(input.newPassword);
     await inSerializableTransaction(async (tx) => {
       // 目标从授权摘要解析；凭据锁 -> 授权锁 -> 资格 / 身份读取 -> 条件更新 -> Session。
-      // 与 #113 / 邮箱切换交叉时依赖既有 Serializable 有界重试，重试重新读取和取时。
+      // 与临时密码恢复 / 邮箱切换交叉时依赖既有 Serializable 有界重试，重试重新读取和取时。
       await tx.$queryRaw`SELECT user_id FROM password_credentials WHERE user_id = ${preview.userId} FOR UPDATE`;
       const proof = await consumePasswordResetAuthorization(tx, { token, context, now: this.now });
       const at = this.now();

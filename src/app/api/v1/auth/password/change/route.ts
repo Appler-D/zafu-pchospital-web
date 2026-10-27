@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       },
       requestContext(request, requestId),
     );
-    // 改密后的下一步与登录 / 邮箱确认同一编排（issue #113 返修 + 任务 6）：
+    // 改密后的下一步与登录 / 邮箱确认同一编排：
     // 「只当管理员、没有成员档案」的账号回 /admin；开启门禁且尚未验证邮箱的账号
     // 回邮箱步骤，`returnTo` 沿链条继续传递并由服务端按当前角色复查。
     const accountAccess = await resolveAccountAccess({

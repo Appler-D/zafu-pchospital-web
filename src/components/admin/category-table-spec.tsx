@@ -5,42 +5,7 @@ import { adminCopy, adminShared } from "@/config/admin";
 import type { RepairCategoryAdminView } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 故障分类表的视图定义（后台表格内核的第四个落地页）。
- *
- * 迁移只做一件事：把面板里「表头 6 个 `<th>` + `tbody` 里 6 个 `<td>`」这两份平行定义
- * 收进一份 spec，**渲染逐字照抄**。四处刻意保持原样、不要顺手「优化」：
- *
- * 1. **不声明列宽**：这张表从来没接过 `useColumnResize`，列宽由浏览器按内容分配
- *    （内核在没有列宽时不输出 `<colgroup>`，不改布局）；
- * 2. **「名称」列是内容列**（`admin-table__grow`）：表头与单元格都要带这个类，
- *    它让这一列吸收剩余宽度并允许换行；
- * 3. **「引用记录」不右对齐**：迁移前这一格就是普通左对齐（内核按 `number` 类型默认会给
- *    `admin-table__num`），因此显式 `numeric: false`。是否改成右对齐是产品决定，
- *    不在这次迁移里顺手做；
- * 4. **计数为 0 时显示 `0`，不是空值占位**：这个数字是「有没有被维修记录用过」的唯一依据，
- *    写成 `—` 就分不清「没人用过」与「统计不到」了；
- * 5. **手柄列没有可见字段名**：表头为空、单元格不写 `data-label`，但有一句只给读屏的列名
- *    走 `headLabel`（见下）。
- *
- * 「编辑」那一行不在这里：它在**行内**把说明与引用记录两列合成一个表单（`colSpan={2}`），
- * 逐列渲染表达不了，因此由面板通过 `<AdminTable renderRow>` **整行接管**（与技能标签表、
- * 邀请码表的「调整策略」同一处理，见 `docs/admin-table-kernel.md` §5 的「逃生口」）——
- * spec 描述的是**常规行**长什么样。
- *
- * 排序：分类列表接口没有 `sort` 参数（服务端固定按 `[sortOrder asc, code asc]` 返回，
- * 这个顺序就是维修表单里分类下拉的顺序，也是拖动排序维护的那一份），所以面板**不传
- * `onSortChange`** —— 内核在不传时不渲染任何排序控件，DOM 与迁移前完全一致。要开排序得
- * 先按 `docs/admin-table-kernel.md` §6 的形状贯通后端白名单，并注意它与「拖动排序」是
- * 两套顺序（§5.1）：排序说了算时行序由服务端排出来，手柄必须同时收起。
- *
- * **与迁移前零差异**。手柄列是唯一需要解释的一列，它在原标记里是
- * `<th class="admin-table__grip"><span class="sr-only">拖动调整顺序</span></th>`：
- * 可见表头是空的（`label: ""`，写了字会把这一列撑宽、像素就动了），而读屏需要这句列名 ——
- * 由 `FieldSpec.headLabel` 表达（内核渲染成同样的 `sr-only` 节点，绝对定位 + 裁剪，
- * 不参与布局，因此像素不动）；它的单元格没有字段名，因此**不写** `data-label`
- * （内核只在 `label` 非空时才写这个属性），与迁移前那一格逐字一致。
- */
+/** 故障分类表列定义；跨列编辑由面板的 renderRow 接管。 */
 
 /** 页面上会被 `render` 用到的运行时值（`<AdminTable renderContext>` 传入）。 */
 export type CategoryTableContext = {
@@ -118,7 +83,7 @@ export const categoryTableSpec: TableViewSpec<RepairCategoryAdminView, CategoryT
       key: "usage",
       label: copy.table.usage,
       kind: "number",
-      // 与迁移前一致：这一列没有 `admin-table__num`（不右对齐）。
+
       numeric: false,
       render: (category) => category.usedByRepairCount,
     },

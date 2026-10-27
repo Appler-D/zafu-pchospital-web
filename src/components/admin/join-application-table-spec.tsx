@@ -9,27 +9,13 @@ import {
 import type { JoinApplicationSummary } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 招募报名表的视图定义（后台表格内核的第五个落地页）。
- *
- * 迁移只做一件事：把「表头 8 个 `<th>` + 8 个 `<td>`」收进一份 spec，**渲染逐字照抄**。
- * 三处刻意保持原样：
- *
- * 1. **不声明列宽**：这张表从来没接过 `useColumnResize`，列宽由浏览器按内容分配
- *    （内核在没有列宽时不输出 `<colgroup>`）；
- * 2. **「报名编号」是内容列**（`admin-table__grow`）：表头与单元格都要带这个类；
- * 3. **「提交时间」不右对齐**：与成员表「加入时间」、审计表「时间」同一判断 ——
- *    内核按 `datetime` 默认会给 `admin-table__num`，因此这里显式 `numeric: false`。
- *
- * `statusClass` 与 `formatDateTime` 从面板搬到这里：前者只有这一列用，后者面板里
- * 还有两处用（详情窗口），因此由面板反过来 import 这一份 —— 抄第二份迟早会漂。
- */
+/** 招募报名表列定义。 */
 
 /** 页面上会被 `render` 用到的运行时值（`<AdminTable renderContext>` 传入）。 */
 export type JoinApplicationTableContext = {
   /** 打开报名详情窗口。 */
   onDetail: (id: string) => void;
-  /** 行内「通过」（issue #95）：面板弹二次确认，确认后才提交。 */
+  /** 行内「通过」：面板弹二次确认，确认后才提交。 */
   onApprove: (item: JoinApplicationSummary) => void;
   /** 有请求在途：行内按钮一并置灰，防连点。 */
   busy: boolean;

@@ -21,7 +21,7 @@ function isValidationFailure(error: unknown): boolean {
 }
 
 test("没有排序参数时沿用服务端默认顺序（拖动顺序优先），且返回的是副本", () => {
-  // 默认顺序 = 管理员拖出来的 `sortOrder`（第九轮验收），再按创建时间与 id 兜底。
+  // 默认顺序 = 管理员拖出来的 `sortOrder`，再按创建时间与 id 兜底。
   const expected = [{ sortOrder: "asc" }, { createdAt: "desc" }, { id: "desc" }];
   const orderBy = memberOrderBy(undefined);
   assert.deepEqual(orderBy, expected);

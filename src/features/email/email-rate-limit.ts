@@ -21,7 +21,7 @@ import {
 import { digestEmailBucketKey } from "@/lib/security/email-security";
 
 /**
- * 邮箱专用安全计数（issue #146 §6）：全部持久化在 GreatSQL，跨进程 / 重启生效。
+ * 邮箱专用安全计数：全部持久化在 GreatSQL，跨进程 / 重启生效。
  * 一个进程内存 Map 挡不住多实例，也不该成为「接近预算就放行」的退路 ——
  * 这里没有内存回退，超限只有受控错误一种结果。
  *
@@ -59,7 +59,7 @@ function shanghaiDayWindow(now: Date): CounterWindow {
 
 export type EmailCounterSpec = {
   key: string;
-  /** 窗口构造器：以**等锁后的本次实际决策时刻**构造（issue #146 返修 F3 补充）。 */
+  /** 窗口构造器：以**等锁后的本次实际决策时刻**构造（补充）。 */
   window: (now: Date) => CounterWindow;
   max: number;
   errorCode: ApiErrorCode;
@@ -117,7 +117,7 @@ async function applyEmailCounter(
 
 /**
  * 原子计数一次并检查上限（在调用方事务内执行）。先 `FOR UPDATE` 锁桶行，
- * **等锁完成之后**才取当前服务端时间（issue #146 返修 F3 补充）：锁等待期间跨过
+ * **等锁完成之后**才取当前服务端时间（补充）：锁等待期间跨过
  * 窗口 / 冷却截止时刻时，按解除等待后的时刻判定过期并重建窗口，不沿用等锁前快照。
  *
  * 并发正确性：serializable 事务里先锁再读改写；两笔请求同时首次建桶时，
@@ -139,7 +139,7 @@ export async function consumeEmailCounter(
  * 顺序进入就不会环等），等锁全部结束后再取一次当前服务端时间并完成判定 ——
  * 任一桶超限抛错即整体回滚，不消耗任何额度。
  *
- * 返回**本次实际预占时刻**（锁后取时，issue #146 返修 F3 补充）：调用方的
+ * 返回**本次实际预占时刻**（锁后取时， 补充）：调用方的
  * 挑战 `createdAt` / `expiresAt` 等应以此为准，不再复用预占前的旧快照；窗口与
  * 冷却也全部由该时刻构造，等待期间跨过截止时刻按锁后时间判定。
  */
@@ -253,7 +253,7 @@ export async function recordEmailVerificationFailure(
 }
 
 /**
- * 锁定（账号, 用途）失败桶行：验码决策的事务串行化点（issue #146 返修 F1）。
+ * 锁定（账号, 用途）失败桶行：验码决策的事务串行化点。
  *
  * 同一账号的并发验码在这里排成先后，「检查阻断 → 判定验证码 / 状态 → 记失败」
  * 作为一个整体串行执行 —— 5 次失败上限不会被并发穿透。桶不存在时同样先取

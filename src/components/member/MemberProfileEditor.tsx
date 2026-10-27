@@ -51,7 +51,7 @@ export function MemberProfileEditor({
   );
   const [skillVersion, setSkillVersion] = useState(profile.version);
   /**
-   * 成员本轮新建的标签（issue #68）。它们已经是库里的真实行，只是父级传入的
+   * 成员本轮新建的标签。它们已经是库里的真实行，只是父级传入的
    * `availableSkills` 是服务端渲染时的那一份、不会自己变，所以本地补进来。
    */
   const [createdSkills, setCreatedSkills] = useState<SkillView[]>([]);
@@ -170,7 +170,7 @@ export function MemberProfileEditor({
   ]);
 
   /**
-   * 新建一个标签库里没有的标签，并顺手选中它（issue #68：成员自建，无需审核）。
+   * 新建一个标签库里没有的标签，并顺手选中它（成员自建，无需审核）。
    *
    * 同名标签由服务端复用（返回已有行），因此这里不需要「这个名字是不是已经有了」的预检；
    * 新建只写标签库，**不**自动保存关联 —— 关联仍然由「保存」按钮走带乐观锁的 PUT，
@@ -300,7 +300,7 @@ export function MemberProfileEditor({
           }}
         />
 
-        {/* 标签库没有的名称可以自己新建（issue #68，无需审核）：输入行常驻，
+        {/* 标签库没有的名称可以自己新建（无需审核）：输入行常驻，
             不存在「点一下多出一行」的位移。 */}
         <form
           className="member-form"

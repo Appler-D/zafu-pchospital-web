@@ -1,5 +1,5 @@
 /**
- * 新建维修的本地暂存（issue #162）。
+ * 新建维修的本地暂存。
  *
  * 只放**非图片**表单字段，存 `sessionStorage`：不随请求发送、不进 nginx / 代理日志，
  * 随标签页关闭清除。刷新、站内跳走都还能恢复；12 小时内的暂存才认，避免隔天填一半的
@@ -11,7 +11,7 @@ export type CreateDraftSnapshot = {
   categoryId: string | null;
   ownerName: string | null;
   ownerPhone: string | null;
-  /** 机型（issue #218）：新建页未建档时的本地暂存也要带上，否则刷新会丢。 */
+  /** 机型：新建页未建档时的本地暂存也要带上，否则刷新会丢。 */
   deviceModel: string | null;
   remark: string | null;
   participantIds: string[];
@@ -20,7 +20,7 @@ export type CreateDraftSnapshot = {
 const STORAGE_KEY = "pc:repair-create-draft:v1";
 const TTL_MS = 12 * 60 * 60 * 1000;
 
-/** issue #221：接待补单按报名 id 分桶暂存，不会和普通新建流程互相覆盖。 */
+/** 接待补单按报名 id 分桶暂存，不会和普通新建流程互相覆盖。 */
 function storageKey(scope?: string): string {
   return scope ? `${STORAGE_KEY}:${scope}` : STORAGE_KEY;
 }
@@ -79,7 +79,7 @@ export function clearCreateDraft(scope?: string): void {
 }
 
 /**
- * 活动接待补单的初始快照（issue #221，审查修正）：只要存在本机暂存就**整体采用**——
+ * 活动接待补单的初始快照：只要存在本机暂存就**整体采用**——
  * 暂存是完整表单快照，包含用户显式清空的 null；不能再用 `stored.x ?? prefill.x`，
  * 否则清空分类等字段后，暂存返回再进入会被预填重新填上。
  */

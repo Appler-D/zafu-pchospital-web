@@ -19,7 +19,7 @@ export type JoinItem = { title: string; description: string };
 
 export const joinPage = {
   title: "加入我们",
-  lead: "电脑医院长期面向全校招收新成员。不要求你一开始就会修电脑，但要求你愿意把它学会，并且愿意对别人的设备负责。确认这一点之后，填好下面的登记信息即可加入招新群。",
+  lead: "电脑医院长期面向全校招收新成员。不要求你一开始就会修电脑，但要求你愿意把它学会，并且愿意对别人的设备负责。确认这一点之后，填好下面的登记信息即可加入招新群",
 } as const;
 
 /**
@@ -70,7 +70,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "qq",
     label: "QQ 号",
     placeholder: "例如 532502904",
-    hint: "5–11 位数字。QQ 号是后续成员资格匹配与账号登录的凭据。",
+    hint: "5–11 位数字，用于账号登录",
     pattern: "\\d{5,11}",
     maxLength: 11,
     type: "text",
@@ -81,9 +81,9 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "realName",
     label: "姓名",
     placeholder: "请填写真实姓名",
-    // 姓名（issue #147 返修）：只去首尾空白，trim 后 2–64 字符，内部字符与空格保留；
+    // 姓名：只去首尾空白，trim 后 2–64 字符，内部字符与空格保留；
     // 不设整串 pattern（此前是 \S{2,20}，会连内部空格一起拒掉、且卡在 20 字符）。
-    hint: `请填写真实姓名（${PERSON_NAME_MIN_LENGTH}–${PERSON_NAME_MAX_LENGTH} 个字符），用于成员建档。`,
+    hint: `真实姓名，${PERSON_NAME_MIN_LENGTH}–${PERSON_NAME_MAX_LENGTH} 个字符`,
     minLength: PERSON_NAME_MIN_LENGTH,
     maxLength: PERSON_NAME_MAX_LENGTH,
     type: "text",
@@ -94,7 +94,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "phone",
     label: "联系电话",
     placeholder: "例如 13800000000",
-    hint: "11 位手机号，仅用于招新期间的联系。",
+    hint: "11 位手机号，仅用于招新期间的联系",
     pattern: "1[3-9]\\d{9}",
     maxLength: 11,
     type: "tel",
@@ -105,7 +105,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "email",
     label: "邮箱",
     placeholder: "例如 name@example.com",
-    hint: "邮箱仅用于面试结果等消息提醒，请正确填写，避免无法收到通知。",
+    hint: "用于接收面试结果与账号通知",
     maxLength: EMAIL_MAX_LENGTH,
     type: "email",
     inputMode: "email",
@@ -115,7 +115,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "studentId",
     label: "学号",
     placeholder: "例如 202310120101",
-    hint: `用于成员建档；请照学籍上的学号填写（保留前导零），最多 ${STUDENT_ID_MAX_LENGTH} 个字符。`,
+    hint: `与学籍一致，保留前导零，最多 ${STUDENT_ID_MAX_LENGTH} 个字符`,
     maxLength: STUDENT_ID_MAX_LENGTH,
     type: "text",
     inputMode: "text",
@@ -125,7 +125,7 @@ export const joinSignupFields: readonly JoinSignupField[] = [
     name: "className",
     label: "班级",
     placeholder: "例如 计算机 233",
-    hint: `用于成员建档；请填写所在班级名称，最多 ${CLASS_NAME_MAX_LENGTH} 个字符。`,
+    hint: `最多 ${CLASS_NAME_MAX_LENGTH} 个字符`,
     maxLength: CLASS_NAME_MAX_LENGTH,
     type: "text",
     inputMode: "text",
@@ -135,33 +135,33 @@ export const joinSignupFields: readonly JoinSignupField[] = [
 
 export const joinSignup = {
   /** 区块说明，放在标题旁 */
-  note: "六项均为必填。登记信息用于招新联系与成员建档；填好提交，即可扫码加入招新群。",
+  note: "提交后扫码加入招新群",
   submitLabel: "提交登记",
   /** 与 submitLabel 同为 4 字，避免提交瞬间按钮变窄把旁边的说明顶动 */
   submittingLabel: "提交中…",
   requiredMark: "必填",
   /** 提交按钮旁的说明（常驻一行，下面两句都在这一行里原地替换） */
-  privacy: "提交即同意社团使用登记信息进行招新联系与成员建档，邮箱用于报名与账号通知。",
+  privacy: "提交即同意社团使用登记信息进行招新联系与成员建档，邮箱用于报名与账号通知",
   /** 按钮还没就绪（脚本未接上）时的说明，只在等得久时出现 */
-  loadingNote: "正在加载表单，稍候即可提交。",
+  loadingNote: "正在加载表单，稍候即可提交",
   /** 提交期间的说明：与 privacy 长度相当，换文案不会让页面长高 */
-  submittingNote: "正在提交，请不要关闭或刷新页面。",
+  submittingNote: "正在提交，请不要关闭或刷新页面",
 
   /** 提交前，右侧说明栏 */
   asideTitle: "登记说明",
   asideRows: [
-    { key: "用途", value: "用于招新联系与成员建档；邮箱用于报名与账号通知，不对外公开。" },
-    { key: "提交之后", value: "扫码加入招新群。招新通知与面试安排都在群内发布。" },
-    { key: "数据去向", value: "登记信息会写入招募系统，并仅向获授权的管理员开放。" },
+    { key: "用途", value: "用于招新联系与成员建档；邮箱用于报名与账号通知，不对外公开" },
+    { key: "提交之后", value: "扫码加入招新群。招新通知与面试安排都在群内发布" },
+    { key: "数据去向", value: "登记信息会写入招募系统，并仅向获授权的管理员开放" },
   ],
 
   /** 提交完成后 */
   done: {
     mark: "提交完成",
     title: "最后一步：扫码加入招新群",
-    note: "招新通知与面试安排都在招新群内发布。加群后请留意群公告。",
+    note: "招新通知与面试安排都在招新群内发布。加群后请留意群公告",
     ticketLabel: "报名回执",
-    duplicate: "系统已识别为重复登记，并返回原报名回执，无需再次提交。",
+    duplicate: "你已登记，无需重复提交",
     reset: "重新填写",
   },
 } as const;
@@ -192,40 +192,40 @@ export const joinExpectations: readonly JoinItem[] = [
   {
     title: "技术基础",
     description:
-      "我们会优先录取对维修电脑有经验者，但也同样欢迎对学习电脑维修知识有兴趣的小白。无需担心存在技术壁垒，资深成员会从基本操作开始带你进行手把手实操，以实践锻炼手法，积累经验。",
+      "我们会优先录取对维修电脑有经验者，但也同样欢迎对学习电脑维修知识有兴趣的小白。无需担心存在技术壁垒，资深成员会从基本操作开始带你进行手把手实操，以实践锻炼手法，积累经验",
   },
   {
     title: "保持热情",
     description:
-      "对学习新知识保持热情——这是我们对新人唯一的要求。不懂的问题先想到自学，无法解决的再寻求帮助，永远怀有探索精神，这也同时是电脑医院的立社之本。",
+      "对学习新知识保持热情——这是我们对新人唯一的要求。不懂的问题先想到自学，无法解决的再寻求帮助，永远怀有探索精神，这也同时是电脑医院的立社之本",
   },
   {
     title: "对用户负责",
     description:
-      "电脑维修碰到疑难杂症是家常便饭，但这不应该成为电脑医院成员中途退缩的理由。当你决定接下一位客户的委托，无论免费与否，对于你来说都是一份理应坚持到底的责任。",
+      "电脑维修碰到疑难杂症是家常便饭，但这不应该成为电脑医院成员中途退缩的理由。当你决定接下一位客户的委托，无论免费与否，对于你来说都是一份理应坚持到底的责任",
   },
 ];
 
 export const joinFlow: readonly JoinItem[] = [
   {
     title: "填写登记信息",
-    description: "在页面顶部的登记表填写 QQ 号、姓名、联系电话、邮箱、学号与班级，六项均为必填。",
+    description: "在页面顶部的登记表填写 QQ 号、姓名、联系电话、邮箱、学号与班级，六项均为必填",
   },
   {
     title: "扫码加入招新群",
-    description: "提交后显示招新群二维码。招新通知、面试与跟岗安排都在群内发布。",
+    description: "提交后显示招新群二维码。招新通知、面试与跟岗安排都在群内发布",
   },
   {
     title: "面试与了解",
-    description: "简单聊一聊你的兴趣方向与时间安排，也让你了解社团实际在做什么。",
+    description: "简单聊一聊你的兴趣方向与时间安排，也让你了解社团实际在做什么",
   },
   {
     title: "跟岗与培训",
-    description: "跟着老成员看几次实际操作，熟悉流程与守则，再决定是否继续。",
+    description: "跟着老成员看几次实际操作，熟悉流程与守则，再决定是否继续",
   },
   {
     title: "成为正式成员",
-    description: "通过后由管理员把 QQ 录入成员名单，完成绑定即可参与值班与活动。",
+    description: "通过后由管理员把 QQ 录入成员名单，完成绑定即可参与值班与活动",
   },
 ];
 
@@ -233,8 +233,8 @@ export const joinNotice = {
   badge: "加入须知",
   title: "提交前请确认联系方式准确",
   paragraphs: [
-    "登记信息提交后会进入招募系统；相同招募批次内重复使用 QQ 或手机号，会返回已有报名回执。",
-    "招新时间、报名截止、面谈与跟岗的具体安排，一律以招新群内发布的通知为准，请不要以本页内容作为最终依据。",
+    "登记信息提交后会进入招募系统；相同招募批次内重复使用 QQ 或手机号，会返回已有报名回执",
+    "招新时间、报名截止、面谈与跟岗的具体安排，一律以招新群内发布的通知为准，请不要以本页内容作为最终依据",
   ],
 } as const;
 

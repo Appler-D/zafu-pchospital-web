@@ -8,7 +8,7 @@ import { assertSameOrigin, authenticateRequest } from "@/lib/auth/request";
 export const runtime = "nodejs";
 
 /**
- * M6 第九轮：拖动排序落点（`{memberIds: string[], beforeId: string | null}`）。
+ * 拖动排序落点（`{memberIds: string[], beforeId: string | null}`）。
  *
  * 一个入口同时覆盖「拖一行」与「勾选多行后一起拖」：多行时保持它们之间的原有先后，
  * 整体插到 `beforeId` 之前（`null` = 末尾）。**一次拖动只写一次库、一条审计**

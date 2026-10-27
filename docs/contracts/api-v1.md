@@ -483,6 +483,17 @@ DELETE     /api/v1/admin/comments/:id
   原先的 `lte: new Date("2026-09-22")` 会把当天 08:00 之后的报名全部排除，
   界面上表现为「筛同一天得到 0 条」。
 
+## 公开活动排队汇总（issue #244）
+
+`GET /api/v1/repair-activities/:id/queue` 为匿名可读接口；沿用统一信封与 requestId，成功与失败响应均为 `Cache-Control: private, no-store`，不受登录邮箱门禁影响。
+
+成功 `data` 仅包含 `{ waitingCount: number | null, observedAt: string }`。`observedAt` 为服务端查询时间（UTC ISO 字符串），不是最后一次排队变化时间。`waitingCount` 只计本活动 `deletedAt IS NULL AND status = CHECKED_IN` 的报名；未到场、已接待、软删及其他活动不计入。不返回客户/成员明细、个人队号、维修进度或预计等待时间，也不修改容量、签到或接待规则。
+
+- 报名截止前（既有现场操作窗口尚未开放），`waitingCount=null`，页面显示“签到尚未开放”；真实查询成功且无待接待报名才返回 `0`。
+- 活动软删/不存在返回既有 404 `ACTIVITY_NOT_FOUND`；上海活动日次日零点起返回 404 `ACTIVITY_ENDED`。没有新增服务截止字段或“停止接待”控制，0 人不代表仍可接待或无需等待。
+- 公开活动详情独立刷新该汇总，约每 30 秒一次、聚焦/重新可见及手动刷新时重取，隐藏/卸载时取消；不重置报名和查询表单。请求失败不伪装为 0：首次显示暂不可用，后续保留上次成功值/时间并标明更新失败；明确结束/不存在后隐藏旧值并停止轮询。
+- 活动列表不增加排队数字；小鲸鱼可以链接活动详情，不需要管理凭据或客户资料。客服配置交接见 [交接说明](../customer-whale-queue-handoff.md)。
+
 ## 活动报名免责声明（issue #62）
 
 - `POST /api/v1/repair-activities/[id]/registrations` 的 body 增加 `consentAccepted`：
@@ -551,6 +562,19 @@ DELETE     /api/v1/admin/comments/:id
 - 写接口在事务内 `SELECT ... FOR UPDATE` 锁定记录并复核状态与照片数；审核先完成时补传失败，
   不会出现「已审核通过但照片后到」。照片上限仍按 `photoLimits`。
 - `RepairDetailView` 增加 `canAttachPhotos: boolean`，只控制详情页入口，服务端仍独立复核。
+
+### 照片顺序与维修列表读取（issue #235）
+
+- 有效照片的 `sortOrder` 始终为连续的 `0..n-1`：新上传接在末尾；删除后压缩剩余照片；
+  换序按目标位置移动后整体重排。三者都在既有记录行锁事务内完成，历史数据里的空洞 /
+  重复序号会在下一次写操作后收敛。
+- `PATCH /api/v1/repairs/:id/photos/:photoId` 请求体的 `sortOrder` 仍是**目标位置**
+  （`0..n-1` 的数组下标），不是直接写入的存储序号；权限、审核窗口、数量 / 体积限制与
+  现有文件均不变。详情附件组件在写操作成功后按展示顺序收敛本地序号；编辑页仍以服务端刷新为准。
+- 维修列表改用只包含 `memberProfile` / `category` / `photos` / `participants` 的
+  `repairListInclude`，不再读取列表 DTO 不返回的审核记录与时间线及其关联用户；
+  详情继续使用 `repairDetailInclude`。列表 DTO、照片元数据、参与人、排序筛选、机主电话
+  权限与导出均不变；无 Schema / Migration / 索引变更。
 
 ### 成员案例库准入规则（issue #134，前端页面，无新接口）
 

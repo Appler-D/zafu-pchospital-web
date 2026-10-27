@@ -25,6 +25,7 @@
 | 表格查询与导出规则                   | [查询规则](table-query-plan.md) · [能力清单](table-capabilities.md)                                            |
 | 维修草稿退役与定时清理               | [草稿处理](repair-draft-retirement.md)                                                                         |
 | 管理小鲸鱼接口与权限边界             | [管理接口契约](contracts/management-bot.md)                                                                    |
+| 客服小鲸鱼活动排队引导               | [Web 能力与 bot 配置交接](customer-whale-queue-handoff.md)                                                     |
 | 发布、恢复与结果通知                 | [部署 Skill](../.agents/skills/zafu-pchospital-deploy/SKILL.md) · [通知配置](../tools/deploy/NOTIFICATIONS.md) |
 | 独立文档站同步                       | [docs-sync](../tools/docs-sync/README.md)                                                                      |
 

@@ -79,7 +79,7 @@ export const ApiErrorCode = [
   "ACTIVITY_SERVE_PENDING",
   "ACTIVITY_CATEGORY_MISSING",
   "ACTIVITY_CONSENT_REQUIRED",
-  // 邮箱验证与重置授权（issue #146）：未启用、验证码、占用、发信结果与限流 / 预算。
+  // 邮箱验证与重置授权：未启用、验证码、占用、发信结果与限流 / 预算。
   "EMAIL_NOT_ENABLED",
   "EMAIL_CHALLENGE_INVALID",
   "EMAIL_ALREADY_BOUND",
@@ -89,7 +89,7 @@ export const ApiErrorCode = [
   "EMAIL_RATE_LIMITED",
   "EMAIL_BUDGET_EXHAUSTED",
   "EMAIL_RESET_AUTHORIZATION_INVALID",
-  // 统一账号门禁（issue #146）：当前模式下需要已验证邮箱或有效豁免。
+  // 统一账号门禁：当前模式下需要已验证邮箱或有效豁免。
   "EMAIL_VERIFICATION_REQUIRED",
   "EMAIL_GATE_MODE_INVALID",
   "INTERNAL_ERROR",

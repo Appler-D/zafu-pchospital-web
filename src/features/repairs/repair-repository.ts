@@ -2,14 +2,28 @@ import { getDb } from "@/lib/db/client";
 import { AppError } from "@/lib/api/errors";
 import { Prisma } from "@/generated/prisma/client";
 
-export const repairDetailInclude = {
-  memberProfile: { include: { user: true } },
+/**
+ * 列表与详情共用的 Record 关联。
+ *
+ * 只包含 `toRepairView()` 真正读取的关系；审核记录与时间线仅在详情追加，
+ * 避免列表为不返回的字段付出多表 join 与关联用户读取成本。
+ */
+const repairRecordBaseInclude = {
+  memberProfile: {
+    select: {
+      id: true,
+      userId: true,
+      nickname: true,
+      realName: true,
+      user: { select: { displayName: true } },
+    },
+  },
   category: true,
   photos: {
     where: { deletedAt: null },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   },
-  /** 参与维修人员（issue #114）：创建人恒排第一；只取展示名所需的最小字段。 */
+  /** 参与维修人员：创建人恒排第一；只取展示名所需的最小字段。 */
   participants: {
     include: {
       memberProfile: {
@@ -23,6 +37,14 @@ export const repairDetailInclude = {
     },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   },
+} satisfies Prisma.RepairRecordInclude;
+
+/** 维修列表：只读取列表 DTO 需要的关联。 */
+export const repairListInclude = repairRecordBaseInclude;
+
+/** 维修详情：在列表关联之外，再读取审核记录与时间线。 */
+export const repairDetailInclude = {
+  ...repairRecordBaseInclude,
   reviews: { include: { reviewer: true }, orderBy: { createdAt: "asc" } },
   timeline: { include: { actor: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.RepairRecordInclude;
@@ -60,8 +82,8 @@ export const repairRepository = {
   },
   /**
    * 本人最近一条「空白草稿」：所有业务字段为空、无有效照片、仍是 DRAFT。
-   * 新建页进页面即建档（issue #72），复用空白草稿避免成员反复进出攒下一堆空记录
-   * （PR #73 评审 3）。`result` 建档即写默认值，不作为「空白」判据。
+   * 新建页进页面即建档，复用空白草稿避免成员反复进出攒下一堆空记录
+   * 。`result` 建档即写默认值，不作为「空白」判据。
    */
   async latestEmptyDraft(memberProfileId: string) {
     return getDb().repairRecord.findFirst({
@@ -69,7 +91,7 @@ export const repairRepository = {
         memberProfileId,
         status: "DRAFT",
         deletedAt: null,
-        // 已撤回的草稿不算空白草稿：它带着提交痕迹（issue #165），不能被新建流程复用。
+        // 已撤回的草稿不算空白草稿：它带着提交痕迹，不能被新建流程复用。
         submittedAt: null,
         repairDate: null,
         durationMinutes: null,

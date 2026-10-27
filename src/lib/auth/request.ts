@@ -13,7 +13,7 @@ import type {
 export const SESSION_COOKIE_NAME = "pc_hospital_session";
 
 /**
- * 服务端固定的访问用途（issue #146 任务 6）。
+ * 服务端固定的访问用途。
  *
  * 业务 API **缺省**就是 `business`：先改密、再邮箱，两道都拦。安全用途必须由
  * Route 在服务端写死，**不能**由请求里的任何 allow 标志跳过检查 —— 旧的布尔

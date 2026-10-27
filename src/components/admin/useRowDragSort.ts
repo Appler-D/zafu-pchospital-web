@@ -4,27 +4,7 @@ import { useCallback, useRef, useState, type DragEvent, type KeyboardEvent } fro
 
 import { movingRowIds } from "@/lib/list-order";
 
-/**
- * 表格行的拖动排序（M6 第五轮验收）。
- *
- * 用原生 HTML5 拖放，不引第三方库（`AGENTS.md` 禁止新依赖）。
- *
- * 三条设计决定：
- * 1. **只有手柄可拖**，整行不可拖：整行 `draggable` 会让「选中一行文字」变成拖行，
- *    而表格里的文字正是要能选中的（复制学号、复制备注）。
- * 2. **拖动图示用整行**（`setDragImage(row)`）：手柄只有一个点图，拖起来看不出在拖哪一行。
- * 3. **落点在行的上半 / 下半**：上半插到这一行之前，下半插到这一行之后。
- *    只判断「悬停在哪一行」的话，永远没法把一行放到列表最后。
- *
- * 键盘与触屏仍用「上移 / 下移」按钮：HTML5 拖放在触屏上不触发，只留拖动等于
- * 把这两种用户关在门外。
- *
- * 第九轮补两条（用户反馈「多个选中后无法一起拖动」）：
- * 4. **勾选多行后拖其中任意一行 = 整块一起移动**（`selection` 传进来，规则见
- *    `lib/list-order.ts` 的 `movingRowIds`）。
- * 5. **算落点时要跳过被移动的那几行**：否则「插到自己前面」这种落点会让整块原地打转，
- *    表现就是「拖了没反应」。落点永远解析成**块外**的参照行（或 `null` = 末尾）。
- */
+/** 仅手柄触发拖动，落点按行的上半 / 下半判断；多选行整块移动，落点跳过被移动行。键盘与触屏保留上移 / 下移入口。 */
 export type DropTarget = { id: string; after: boolean };
 
 export function useRowDragSort(

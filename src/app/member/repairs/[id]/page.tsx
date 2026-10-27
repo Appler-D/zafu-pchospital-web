@@ -20,7 +20,6 @@ export default async function RepairDetailPage({ params }: { params: Promise<{ i
         index="08"
         label={repairCopy.detail.label}
         title={repairCopy.detail.title}
-        lead={repairCopy.detail.lead}
       />
       <Section labelledBy="repair-detail-content">
         <h2 className="sr-only" id="repair-detail-content">

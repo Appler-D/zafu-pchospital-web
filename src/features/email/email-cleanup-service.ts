@@ -2,7 +2,7 @@ import { getDb } from "@/lib/db/client";
 import { EMAIL_SECURITY_RETENTION_MS } from "@/lib/security/email-policy";
 
 /**
- * 过期邮箱安全数据的有界清理（issue #146 §6）。
+ * 过期邮箱安全数据的有界清理。
  *
  * - **有界**：每张表单次最多删 `batchSize` 行（先按到期索引选主键再按主键删，
  *   不让一次 DELETE 扫全表）；返回 `hasMore` 供调用方决定是否继续；
@@ -94,7 +94,7 @@ export async function purgeExpiredEmailSecurityRecords(
   if (staleCounters.length > 0) {
     await input.beforeCounterDelete?.();
     // 候选选出后桶可能被续用（窗口顺延 / 新阻断），删除条件必须复检同一有效性
-    // （issue #146 返修 F2）：续用过的桶留在原地，不做仅按主键的删除。
+    // 续用过的桶留在原地，不做仅按主键的删除。
     const result = await db.emailSecurityCounter.deleteMany({
       where: {
         bucketKeyDigest: { in: staleCounters.map((row) => row.bucketKeyDigest) },

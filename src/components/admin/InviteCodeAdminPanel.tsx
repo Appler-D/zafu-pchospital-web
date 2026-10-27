@@ -161,7 +161,6 @@ export function InviteCodeAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-invite-codes-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 
@@ -272,7 +271,6 @@ export function InviteCodeAdminPanel() {
 
       {state === "ready" ? (
         <div className="admin-list">
-          {/* 顶栏常驻（邮箱式）：左侧说明列表里只有前缀，右侧是总数。 */}
           <AdminListToolbar
             count={(list.refreshing
               ? tableCopy.updating
@@ -280,15 +278,8 @@ export function InviteCodeAdminPanel() {
                 ? tableCopy.previousCount
                 : tableCopy.count
             ).replace("{count}", String(pagination?.total ?? items.length))}
-          >
-            <span className="admin-status">{copy.toolbar.status}</span>
-          </AdminListToolbar>
-          {/* 表格本体由内核渲染（`AdminTable`）：列宽、表头、单元格内容全部来自
-              `inviteCodeTableSpec` 这一份定义。
-
-              「调整策略」那一行把中间四列合成一个表单（`colSpan`），逐列渲染表达不了，
-              因此走 `renderRow` **整行接管** —— `<tr>` 与列宽仍由内核负责，
-              接管的只是「这一行里有哪些格子」。 */}
+          />
+          {/* 列定义由 spec 提供，跨列编辑行由 renderRow 接管。 */}
           <AdminTable
             spec={inviteCodeTableSpec}
             sort={sortRules}

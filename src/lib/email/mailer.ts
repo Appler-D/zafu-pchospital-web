@@ -3,7 +3,7 @@ import nodemailer from "nodemailer";
 import { getMailConfig, type MailConfig } from "@/lib/env";
 
 /**
- * SMTP 发信适配（issue #146 §5.1）。复用成熟实现（nodemailer），不手写协议；
+ * SMTP 发信适配。复用成熟实现（nodemailer），不手写协议；
  * 单次直发即可：不启连接池、不自动重试、不挂队列 —— 发送顺序与结果记录由
  * 服务层按「先预占额度 → 事务外发送 → 短事务记录结果」编排。
  *

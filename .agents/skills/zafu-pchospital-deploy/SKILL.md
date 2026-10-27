@@ -12,12 +12,14 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 
 1. 人在终端运行：`bash tools/deploy/deploy-prod.sh`（先 `export DEPLOY_HOST=<user@host>`，或每条命令带
    `--host`；脚本自己 `git fetch`；缺省部署 `upstream/main`，也可 `--sha <提交>`）。
-   脚本在「开始部署（P2）」与「即将停机（P7）」两处要人工确认 —— **人盯的就是这两个点**。
+   脚本在「开始部署（P2）」与「真正停机前（P7 数据库阶段 / P8 纯代码切换）」两处要人工确认 ——
+   **人盯的就是这两个点**。
 2. AI 助手在非交互环境运行：必须加 `--yes`（人工确认点自动放行并留痕）——**先取得用户同意**。
    盯脚本输出；失败时按脚本打印的「恢复指引」处理（下面各节就是兜底知识，重跑脚本天然幂等）；
    成功后按第 7 节补做本次改动的针对性验证，并认下结尾的 `DEPLOY RESULT: SUCCESS sha=… build_id=…` 行才算成功。
 3. **服务器原地构建已弃用**：生产机只有 1613MB 内存，原地构建曾多次把整机压死（换页占满 2G swap、
-   SSH 失联），所以一律「本地构建 + 上传产物」；停机窗口只有「停服务 → 换目录 → 起服务」的秒级。
+   SSH 失联），所以一律「本地构建 + 上传产物」。纯代码发布的停机窗口只有「停服务 → 换目录 → 起服务」
+   的秒级；有数据库变更时才在 P7 额外占用迁移/seed/行数核对的时间。
 4. 脚本失败不是终点：它按中断阶段打印具体恢复动作（停机前失败时线上照常；停机后可用
    `--rollback` 秒级回退产物），修好重跑即可继续。
 
@@ -66,9 +68,19 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
    再以 `--allow-risky-migration` 放行。项目规矩：修复必须新增前向 Migration。
 3. **环境变量闸门**：`.env.example` 变量行有增减时脚本会停 —— 先把新变量写进服务器
    `/opt/zafu-pchospital-web/.env`，再以 `--allow-env-change` 放行。
-4. **停机窗口**：本路线全程停机≈秒级（发生在 P7→P8），但仍要事先和用户约好时间；
+4. **数据库变更计划（P2 停机前只读核对）**：脚本读取 `_prisma_migrations`，与目标提交的
+   迁移目录、`prisma/schema.prisma`、`prisma/seed.ts`、`prisma.config.ts` 比对，不再用
+   「没有新增迁移文件」推断「不需要数据库操作」。
+   - 有待应用迁移 / schema 实质变化且目标提交新增了迁移 / seed 变化 / `prisma.config.ts` 变化 → 进入 P7 数据库阶段；若新增迁移已应用，则可按纯代码发布跳过 P7。
+   - schema 有实质变化但目标提交**没有新增迁移** → **停机前中止**（即使数据库还有历史 pending 迁移），先补迁移；只有已人工确认 schema 与数据库一致（或变化不涉及数据库）时，才用 `--allow-schema-without-migration` 显式放行。
+   - 只跑 `prisma format` 造成的缩进/对齐/换行变化不算实质变化。
+   - 数据库无法读取（表不存在、权限、连接失败）→ 保守按「需要数据库阶段」处理。
+   - 以上都没有 → 纯代码发布：P7 跳过 migrate/seed/全表行数核对，服务保持运行到 P8 切换；
+     **P4 全量备份仍保留，不因纯代码发布省略**。
+5. **停机窗口**：纯代码发布只有 P8 的「停服务 → 换目录 → 起服务」秒级；有数据库变更时
+   P7 的迁移/seed/行数核对也处于停机窗口。无论哪种都要事先和用户约好时间；
    非交互 `--yes` 等于自动确认这两个人工点，**必须用户先同意**。
-5. 目标缺省 `upstream/main`；指定提交用 `--sha <sha>`。完整参数见 `bash tools/deploy/deploy-prod.sh --help`。
+6. 目标缺省 `upstream/main`；指定提交用 `--sha <sha>`。完整参数见 `bash tools/deploy/deploy-prod.sh --help`。
 
 ## 2. 脚本会做什么（P0–P10）
 
@@ -76,15 +88,15 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 | --- | --- | --- |
 | P0 | 参数与本地环境预检（pnpm / mdbook / node / ssh / 目标提交已合并） | 正常 |
 | P1 | 服务器侦察（只读：HEAD、工作区、服务、内存、磁盘） | 正常 |
-| P2 | 变更评估（提交列表 / 迁移风险扫描 / .env.example 变化）+ **人工确认①** | 正常 |
+| P2 | 变更评估（提交列表 / 迁移风险扫描 / **数据库变更计划 + 已应用版本核对** / .env.example 变化）+ **人工确认①** | 正常 |
 | P3 | 本地构建与打包（独立 worktree，仓库同级的 `.zafu-deploy-build/`，不碰当前工作区；同提交产物复用） | 正常 |
-| P4 | 数据库备份 + 闸门（表数 ≥ 27、有 INSERT、gzip 完整） | 正常 |
+| P4 | 数据库备份 + 闸门（表数 ≥ 27、有 INSERT、gzip 完整；纯代码发布也保留） | 正常 |
 | P5 | 上传产物并暂存校验（双端 sha256 + 服务器端解包断言） | 正常 |
-| P6 | 更新服务器代码（ff-only）与 `.docs-source`、依赖、`pnpm db:generate` | 正常 |
-| P7 | **【停机】人工确认②** → 迁移 + seed + 迁移前后全表行数 diff 核对 | **停机** |
-| P8 | 原子切换产物（`.next` / `public/handbook`，旧版留 `.next.old`）并启动服务 | 停机→起 |
+| P6 | 更新服务器代码（ff-only）与 `.docs-source`、依赖、`pnpm db:generate`；服务器 fetch 缺省只等 30 秒，失败立即走本地 bundle | 正常 |
+| P7 | **【需要时停机】人工确认② → 迁移 + seed + 迁移前后全表行数 diff 核对**；纯代码发布跳过本阶段 | 纯代码：正常；DB：**停机** |
+| P8 | **纯代码发布的停机点**：确认后停服务、原子切换产物（`.next` / `public/handbook`，旧版留 `.next.old`）并启动服务 | 停机→起 |
 | P9 | 冒烟验证（见第 7 节）+「新构建 chunk 已生效」校验 | 正常 |
-| P10 | 总结与回滚指引；成功输出 `DEPLOY RESULT: SUCCESS sha=… build_id=…` | 正常 |
+| P10 | 总结与回滚指引，并按阶段打印耗时与停机窗口；成功输出 `DEPLOY RESULT: SUCCESS sha=… build_id=…` | 正常 |
 
 常用参数：
 
@@ -98,6 +110,19 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 --redeploy        允许对服务器当前已部署的同一提交重复部署
 --allow-risky-migration  已人工读过含 DROP/MODIFY/UPDATE 的迁移 SQL 后放行
 --allow-env-change       已确认服务器 .env 随 .env.example 更新后放行
+--allow-schema-without-migration  已人工确认 schema 变化与数据库一致（或不涉及数据库）时放行
+```
+
+脚本退出时会打印各阶段耗时、服务器 fetch 等待与停机窗口，便于比较「等待」和「停机」；
+纯代码发布不应出现 P7 的迁移输出。
+
+服务器网络等待可用环境变量调整（缺省值已经是「短等待 + 立即 bundle」）：
+
+```text
+DEPLOY_FETCH_TIMEOUT=30        # 服务器主仓库单次 fetch 超时（秒）
+DEPLOY_FETCH_ATTEMPTS=1        # 服务器主仓库 fetch 次数；失败后改用本地 bundle
+DEPLOY_DOCS_FETCH_TIMEOUT=20   # .docs-source 单次 fetch 超时（秒）
+DEPLOY_DOCS_FETCH_ATTEMPTS=1   # .docs-source fetch 次数；失败只告警
 ```
 
 ## 3. 侦察判据（人工排查时）
@@ -128,23 +153,25 @@ ssh -i "$KEY" "$DEPLOY_HOST" '
   PROCESS 权限），不影响数据，别被带偏。
 - 备份落 `/opt/zafu-pchospital-backups/zafu_pchospital-<时间戳>-<短sha>.sql.gz`，并写 `LAST_PRE_<短sha>.txt`；
   迁移后脚本会用「迁移前后全表行数 diff」逐项核对。
+- **纯代码发布也做 P4 备份**：跳过的是 P7 的 migrate / seed / 行数核对，不是备份本身。
 
 ## 5. 常见中断与恢复
 
 | 中断阶段 | 现象 | 处理 |
 | --- | --- | --- |
-| P0–P2 | 本地工具缺失 / 目标未合并 / 迁移或 env 闸门 | 修对应问题重跑；**服务器未做任何变更** |
+| P0–P2 | 本地工具缺失 / 目标未合并 / 迁移或 env 闸门 / schema 无迁移中止 | 修对应问题重跑；**服务器未做任何变更** |
 | P3 | 本地构建失败（缺 mdbook / `.docs-source` 太旧 / 日志报错） | 看 `build-<sha>.log` 修好重跑；服务器未动 |
 | P4 | 备份闸门未过 | 查 `/opt/zafu-pchospital-backups` 里的 dump 与报错；修好重跑（不动线上数据） |
 | P5 | 上传 / 解包校验失败 | 查网络与 `/tmp` 空间；重跑会重传 |
 | P6 | 服务器代码 / 依赖更新失败 | 线上仍跑着旧产物；ssh 看 git / pnpm 输出，修好重跑 |
-| P7 | 停机后迁移失败 | 服务已停、迁移可能未完成；可先 `systemctl start zafu-pchospital-web` 拉回旧版再排查库 |
-| P8 | 切换未完成 / 站点没起来 | `bash tools/deploy/deploy-prod.sh --rollback`；或 ssh 手动换回 |
+| P7 | 数据库阶段迁移失败（仅需要 DB 变更时进入） | 服务已停、迁移可能未完成；可先 `systemctl start zafu-pchospital-web` 拉回旧版再排查库 |
+| P8 | 纯代码发布停机切换；或切换未完成 / 站点没起来 | `bash tools/deploy/deploy-prod.sh --rollback`；或 ssh 手动换回 |
 | P9 | 冒烟失败 | 新版已上线但有问题 → `--rollback`，排查后重来 |
 | P10 | 收尾失败 | 不影响站点；重跑或手动清理 |
 
 - 重跑天然幂等；`--rebuild` 强制重建、`--redeploy` 允许重复部署同一提交。
-- **服务器连 GitHub 时通时断（GFW）**：脚本 4 次重试失败会**自动改用本地 bundle 传提交**。
+- **服务器连 GitHub 时通时断（GFW）**：缺省单次 fetch 只等 30 秒、1 次失败就**自动改用本地 bundle 传提交**；
+  可用 `DEPLOY_FETCH_TIMEOUT` / `DEPLOY_FETCH_ATTEMPTS` 临时加长等待。
   手工兜底：本地 `git branch -f tmp <新sha> && git bundle create pc.bundle tmp --not <旧sha>` →
   scp 上传到服务器 `/tmp` → `git bundle verify` → `git fetch /tmp/pc.bundle refs/heads/tmp` →
   `git merge --ff-only FETCH_HEAD` → `git update-ref refs/remotes/origin/main <新sha>` →
@@ -196,6 +223,9 @@ ssh -i "$KEY" "$DEPLOY_HOST" '
 5. **文档站资源名带哈希**（`searchindex-<hash>.js`、`pc-hospital-<hash>.css`）：不要按固定文件名 404 判断文档坏了。
 6. **不要在生产造测试数据**：想验证写路径就在本地库做；生产的读写路径用 200 / 空数组 + 表结构核对证明。
 7. **迁移一定先读 SQL**：允许的「纯增量」= CREATE / 加索引 / 幂等 INSERT；遇到 DROP / 改列先问。
+   `prisma/schema.prisma` 有实质变化但目标提交没有新增迁移时，脚本会在 P2 直接中止 ——
+   这是发布配置错误，不要用「纯代码发布」绕过；只改格式（缩进/对齐/换行）不会触发。
+   确实已确认 schema 与数据库一致、或变化不涉及数据库时，才用 `--allow-schema-without-migration` 放行。
 8. **内存**：生产机 1613MB + 2G swap —— **绝不要在服务器上构建**（旧路线曾四次压死机器）。
 9. **`next start` 对静态资源逐请求读盘**：换产物必须「先停服务 → 换目录 → 再起服务」，
    不停服务换目录会出现「内存里旧路由、盘上新文件」的不一致。

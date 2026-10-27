@@ -2,9 +2,9 @@
   <a href="https://pczafu.cn/"><img src="public/icon.png" width="88" height="88" alt="ZAFU PC Hospital logo" /></a>
 </p>
 
-<h1 align="center">ZAFU PC Hospital</h1>
+<h1 align="center">ZAFU PC Hospital · Official Website &amp; Club Platform</h1>
 
-<p align="center">Official website and club service platform · Supporting volunteer repairs, events, and club collaboration</p>
+<p align="center">Supporting volunteer repairs, events, and club collaboration</p>
 
 <p align="center"><a href="README.md">简体中文</a> · <strong>English</strong></p>
 
@@ -29,13 +29,13 @@
 
 ## What the platform offers
 
-PC Hospital provides volunteer computer support to students and staff at Zhejiang A&F University. This project brings the public website, event registration, and internal club workflows together, with desktop, mobile, light, and dark layouts.
+PC Hospital provides volunteer computer support to students and staff at Zhejiang A&F University. This project brings the public website, event registration, and internal club workflows into one platform, and works on desktop and mobile in light and dark modes.
 
-| Audience       | Features                                                                                                                                                                                                                  |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Visitors       | Club information, membership applications, repair event browsing and registration, and a technical handbook                                                                                                               |
-| Members        | QQ account login, invitation-based registration, email management and password recovery; repair records and photos, event attendance and reception, cases and favorites, notifications, personal statistics, and rankings |
-| Administrators | Members and roles, application / repair reviews, events and customer check-in, categories and skills, invitations, list filtering and sorting, exports, audit logs, and public display settings                           |
+| Audience       | Features                                                                                                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Visitors       | Club information, membership applications, repair event browsing and registration, and the technical handbook for students and staff                                                                                                 |
+| Members        | QQ account login, invitation-based registration, email management and password recovery; repair records and photos, event attendance and reception, the case library and favorites, notifications, personal statistics, and rankings |
+| Administrators | Members and roles, application / repair reviews, events and attendance check-in, categories and skills, invitations, list filtering and sorting, exports, audit logs, and public display settings                                    |
 
 ## Preview
 
@@ -47,7 +47,7 @@ PC Hospital provides volunteer computer support to students and staff at Zhejian
   </picture>
 </a>
 
-These retained homepage images illustrate the site; the live interface may have changed. Select the image to visit the website.
+These archived homepage screenshots illustrate the site; the live interface may have changed. Select an image to visit the website.
 
 ## Quick start
 
@@ -108,7 +108,7 @@ The [contribution guide](CONTRIBUTING.en.md) covers the workflow, directory layo
 
 ## Documentation
 
-See the [maintenance document index](docs/README.md) for all guides and instructions for finding historical records.
+See the [maintenance document index](docs/README.md) for the full list of guides and how to find historical records.
 
 The engineering documents below are currently in Chinese; the English contribution guide explains the main entry points.
 
@@ -124,9 +124,9 @@ The engineering documents below are currently in Chinese; the English contributi
 
 ## Deployment and maintenance
 
-Authorized maintainers use the [deploy skill](.agents/skills/zafu-pchospital-deploy/SKILL.md) and the single entry point, [`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh): build locally, back up, upload, switch artifacts atomically, and run smoke checks. Production requires a Node.js server, GreatSQL, and persistent photo storage.
+Only authorized maintainers deploy: the [deploy skill](.agents/skills/zafu-pchospital-deploy/SKILL.md) is the operating handbook and [`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh) is the single entry point, covering local build, backup, upload, atomic artifact switch, and smoke checks. Production requires a Node.js server, GreatSQL, and persistent photo storage.
 
-See the deployment handbook for options and recovery, and [deployment notifications](tools/deploy/NOTIFICATIONS.md) for notification configuration.
+See the deployment handbook for options, gates, and recovery; see [deployment notifications](tools/deploy/NOTIFICATIONS.md) for notification configuration.
 
 ## Questions and suggestions
 

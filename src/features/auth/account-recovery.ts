@@ -1,7 +1,7 @@
 import type { AdminAccountLookupResult } from "@/types/contracts";
 
 /**
- * 账号恢复资格判定（issue #113 抽出的公共口径，issue #146 邮箱找回复用）：
+ * 账号恢复资格判定（抽出的公共口径， 邮箱找回复用）：
  * 与登录的 `readPrincipal` 守卫同义 ——「恢复出来能登进来」才允许恢复。
  *
  * - `SELF`：管理员不能给自己签临时密码（自助恢复例外）。为 `null` / `undefined`

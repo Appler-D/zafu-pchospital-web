@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     // 恢复工具入口之一：只豁免邮箱门禁（任务 6 §6），权限与 SELF 仍由 Service 二次校验。
     const { actor } = await authenticateRequest(request, requestId, "account-recovery");
-    // QQ 只走请求体（issue #113 核定）：不进 URL / 日志 / 代理访问记录。
+    // QQ 只走请求体（核定）：不进 URL / 日志 / 代理访问记录。
     const body = (await request.json()) as Record<string, unknown>;
     return apiSuccess(
       await memberService.lookupAccount({ qq: String(body.qq ?? "") }, actor),

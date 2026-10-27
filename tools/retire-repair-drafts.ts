@@ -14,7 +14,7 @@ import {
 import { disconnectDb } from "../src/lib/db/client";
 
 /**
- * 维修草稿下线：生产存量 DRAFT 盘点与处置（issue #223）。
+ * 维修草稿下线：生产存量 DRAFT 盘点与处置。
  *
  * 用法：
  *   corepack pnpm retire:repair-drafts

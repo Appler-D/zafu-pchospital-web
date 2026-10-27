@@ -191,7 +191,6 @@ export function CategoryAdminPanel() {
           <h1 className="admin-workspace__title" id="admin-categories-title">
             {copy.title}
           </h1>
-          <p className="admin-workspace__lead">{copy.lead}</p>
         </div>
       </div>
 
@@ -244,23 +243,8 @@ export function CategoryAdminPanel() {
           <p className="admin-note">
             {copy.usageNote} {copy.orderNote}
           </p>
-          {/* 表格本体由内核渲染（`AdminTable`）：表头、`data-label`、空态、单元格内容
-              全部来自 `categoryTableSpec` 这一份定义（迁移前这三份是分开写的）。
-
-              「编辑」那一行在**行内**把说明与引用记录两列合成一个表单（`colSpan={2}`），
-              逐列渲染表达不了，因此走 `renderRow` **整行接管**（与技能标签表、邀请码表的
-              「调整策略」同一处理）—— `<tr>`、列宽与 `data-label` 规则仍由内核负责，
-              接管的只是「这一行里有哪些格子」。
-
-              也不传 `onSortChange`：列表顺序就是拖动排序维护的那一份，后端没有 `sort`
-              参数；开了表头排序就会出现「拖了但顺序不变」的假入口
-              （`docs/admin-table-kernel.md` §5.1）。 */}
-          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))}>
-            <Button variant="ghost" disabled>
-              {tableCopy.clear}
-            </Button>
-            <span className="admin-note">{tableCopy.dragOnly}</span>
-          </AdminListToolbar>
+          {/* 列定义由 spec 提供，跨列编辑行由 renderRow 接管。 */}
+          <AdminListToolbar count={tableCopy.count.replace("{count}", String(items.length))} />
           <AdminTable
             spec={categoryTableSpec}
             items={items}
@@ -276,8 +260,6 @@ export function CategoryAdminPanel() {
             renderRow={(category) =>
               editingId === category.id ? (
                 <>
-                  {/* 这一段是迁移前那一行的标记，逐字搬过来：跨列的表单表达不了，
-                      所以整行由面板渲染，而不是在 spec 里塞一堆条件分支。 */}
                   <td className="admin-table__grip">{adminShared.none}</td>
                   <td className="admin-table__grow" data-label={copy.table.name}>
                     {category.name}

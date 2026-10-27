@@ -175,7 +175,6 @@ export function RepairList({ statusLabels, resultLabels }: Props) {
               {copy.total} {pagination?.total ?? "—"} 条
             </span>
           </div>
-          <p className="repair-workspace__lead">{copy.lead}</p>
         </div>
         <Button href="/member/repairs/new" variant="solid">
           {copy.newAction}
@@ -444,7 +443,7 @@ function RepairRow({
         {item.deviceModel || copy.missingDeviceModel}
       </td>
       <td data-label={copy.columns.content} className="repair-table__content">
-        {/* 摘要取值链（issue #79 第 6 项）：备注优先，老记录的维修内容回退。 */}
+        {/* 摘要取值链：备注优先，老记录的维修内容回退。 */}
         <Link href={`/member/repairs/${item.id}`}>
           {item.remark?.trim() || item.content || copy.missingContent}
         </Link>

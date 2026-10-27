@@ -20,7 +20,7 @@ import { integrationTestsEnabled } from "./db-guard";
 import { callRoute, sameOriginHeaders } from "./http-harness";
 
 /**
- * 统一账号门禁与分阶段启用（issue #146 任务 6）。
+ * 统一账号门禁与分阶段启用。
  *
  * 打的是**贯通**而不是纯函数复述：夹具建真实用户 / 角色 / 身份 / 豁免 / 会话，再经由
  * 真实路由处理函数（业务 API `GET /api/v1/skills`、`GET /api/v1/admin/members`、
@@ -61,7 +61,7 @@ const LOGIN_PASSWORD = "I146-Gate-Password-1";
 const CHAINED_PASSWORD = "I146-Chain-Password-2";
 const ADMIN_QQ = "991460001";
 const MEMBER_QQ = "991460002";
-/** 链条用例（返修 F4）要**真的登录**那个「首次必须改密」的账号，所以给它一个 QQ 身份。 */
+/** 链条用例要**真的登录**那个「首次必须改密」的账号，所以给它一个 QQ 身份。 */
 const FORCED_QQ = "991460003";
 
 async function createUser(id: string, name: string) {
@@ -241,7 +241,7 @@ async function prepareFixtures(): Promise<void> {
   await attachProfile(PROFILE("a8"), FORCED_ID, "I146 待改密");
   await attachRole(FORCED_ID, "MEMBER");
   await attachCredential(FORCED_ID, true);
-  // 链条用例（返修 F4）从**真实登录**起步，所以这个「首次必须改密」账号也要有 QQ 身份。
+  // 链条用例从**真实登录**起步，所以这个「首次必须改密」账号也要有 QQ 身份。
   await attachIdentity(ROW("q8"), FORCED_ID, "QQ", FORCED_QQ);
 
   const now = new Date();

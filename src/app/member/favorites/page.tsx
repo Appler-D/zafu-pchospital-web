@@ -13,7 +13,7 @@ export default async function MemberFavoritesPage() {
   const copy = communityCopy.favorites;
   return (
     <>
-      <PageHead id="member-favorites-title" index="12" label={copy.label} title={copy.title} lead={copy.lead} />
+      <PageHead id="member-favorites-title" index="12" label={copy.label} title={copy.title} />
       <Section labelledBy="member-favorites-content">
         <h2 className="sr-only" id="member-favorites-content">
           {copy.title}

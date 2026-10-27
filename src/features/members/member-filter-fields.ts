@@ -18,7 +18,7 @@ import type { FilterableFields } from "@/lib/api/list-filter";
  */
 export const MEMBER_FILTERABLE: FilterableFields = {
   status: ["eq", "neq"],
-  // 部门（issue #210）：列级筛选，和状态一样是离散枚举。
+  // 部门：列级筛选，和状态一样是离散枚举。
   department: ["eq", "neq"],
   realName: ["contains"],
   nickname: ["contains"],

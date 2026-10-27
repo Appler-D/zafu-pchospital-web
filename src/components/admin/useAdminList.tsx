@@ -7,19 +7,7 @@ import { applyOrder, movedManyIds } from "@/lib/list-order";
 import type { PaginationMeta } from "@/types/contracts";
 import type { TableGroupSummary } from "@/types/table";
 
-/**
- * 后台列表的取数状态（M6 第四轮验收：把「上一页 / 下一页」换成邮箱式的连续下翻）。
- *
- * 原先每个列表都自己维护 `page` + `load(filters, page)`，翻页是一次「替换整页数据」；
- * 参考邮箱客户端后改成**追加式**：往下滚动时把下一页接在后面，列表整体是一条连续的流。
- * 六个列表的这套状态完全一致，因此收在一个 hook 里，避免六份实现各自漂移。
- *
- * 三条约定：
- * 1. **首次加载才进 `loading`**：重载（写操作之后、筛选之后）保持已渲染内容，
- *    否则表格会被卸载、页面高度塌陷、浏览器把滚动位置夹回顶部（这条踩过）。
- * 2. **追加时不清空**：`append` 为真时接在已有数据后面，并且不重置滚动位置。
- * 3. **筛选变化由调用方重置**：调用方在筛选变化时调 `reload()`，这里不猜。
- */
+/** 后台列表追加分页数据；刷新时保留已加载内容与选择。 */
 export type AdminListController<T> = {
   items: T[];
   pagination: PaginationMeta | null;

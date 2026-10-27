@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
+import { memberRepairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
 import {
   formatShanghaiDateTime,
   formatShanghaiTime,
@@ -26,12 +27,17 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { repairStatusLabels } from "@/config/repairs";
-import { memberRepairActivitiesCopy, repairActivitiesPage } from "@/config/repair-activities";
+import {
+  memberRepairActivitiesCopy,
+  memberRepairActivityStatusLabels,
+  repairActivitiesPage,
+} from "@/config/repair-activities";
 import {
   activityEndExclusive,
   canOperateActivityStaff,
   sortQueueByCheckedInAt,
   type RepairActivityIssueType,
+  type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
 import type {
   StaffLiveBoardView,
@@ -49,14 +55,7 @@ type Props = { activityId: string };
 /** 手机端一次只展示一个分区（<1100px；宽屏由 CSS 显示全部并排栏）。 */
 type MobilePane = "eligible" | "queue" | "served";
 
-/**
- * 页面级错误提示（改版第二轮·方案 A，用户看过低保真预览后选定）：
- * 固定视口顶部的浮条（Portal 到 body，与成功提示同款外观与位置；z-index 高于移动端顶栏与
- * 详情窗口）。不自动消失，被下一次操作清掉 / 覆盖 —— 与原先内联错误带的持久性一致。
- * 关键差异：不参与布局。原来工具行与卡片之间需要一条常驻预留带（3lh→2lh 后仍有 45.5px
- * 空白，用户反馈「还是过大」），浮条让那段间距只剩网格间距，卡片真正紧贴。
- * 管理员与成员共用本组件，两个视角一起生效。
- */
+/** 页面级错误使用浮动提示，避免挤动工作台。 */
 function BoardAlert({ message }: { message: string }) {
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -88,7 +87,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<StaffRegistrationView | null>(null);
-  /** 撤销接待（issue #166）：确认弹层目标与在途标记。 */
+  /** 撤销接待：确认弹层目标与在途标记。 */
   const [revertTarget, setRevertTarget] = useState<StaffServedRow | null>(null);
   const [revertBusy, setRevertBusy] = useState(false);
   const [checkInConfirmOpen, setCheckInConfirmOpen] = useState(false);
@@ -100,12 +99,12 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   const checkInPending = useRef(false);
   const boardElement = useRef<HTMLDivElement>(null);
   const scrollPosition = useRef<{ x: number; y: number } | null>(null);
-  /** 全局接单拦截弹层（issue #79 第 6 项）：点击「接待」命中未完成草稿时出现，不发请求。 */
+  /** 全局接单拦截弹层：点击「接待」命中未完成草稿时出现，不发请求。 */
   const [pendingNotice, setPendingNotice] = useState<StaffPendingServe | null>(null);
-  /** 出勤成员弹层（issue #107）：仅活动管理员，只读名单。 */
+  /** 出勤成员弹层：仅活动管理员，只读名单。 */
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   /**
-   * 手机端分区切换（issue #108 审查稿）：<1100px 一次只展示一个分区。
+   * 手机端分区切换：<1100px 一次只展示一个分区。
    * 首次加载后落定默认分区（管理员优先「待签到」，成员固定「排队中」），
    * 之后保留用户点选，不因 5 秒刷新里数据变化自动跳转。
    */
@@ -434,7 +433,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     await refreshAfterWrite();
   }
 
-  /** 撤销接待（issue #166）：仅接待者本人 / 活动管理员可见按钮，服务端再校一遍。 */
+  /** 撤销接待：仅接待者本人 / 活动管理员可见按钮，服务端再校一遍。 */
   async function confirmRevertServe() {
     if (!revertTarget || revertBusy) return;
     setRevertBusy(true);
@@ -454,7 +453,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     await refreshAfterWrite();
   }
 
-  /** 点击「接待」：先看客户端已加载的待补建接待，非空则弹层且**不发请求**（issue #221）。 */
+  /** 点击「接待」：先看客户端已加载的待补建接待，非空则弹层且**不发请求**。 */
   function requestServe(registrationId: string) {
     if (!allowStaffAction()) return;
     if (board?.pendingServeRegistration) {
@@ -474,16 +473,24 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   }
 
   /**
-   * 页头（issue #107 后续改版）：小标签 + 活动名主标题 + 日期行。
+   * 页头：小标签 + 活动名主标题 + 日期行。
    * 活动名来自看板数据，加载中就绪前先用「活动工作台」占位。
+   * 状态徽章仅在已加载看板后出现（issue #239），与成员活动列表使用同一套文案。
    */
-  function renderHead(title: string, meta?: string) {
+  function renderHead(title: string, meta?: string, status?: RepairActivityStatus) {
     return (
       <header className="member-page-head activity-board__head">
         <p className="member-section__tag">{copy.label}</p>
-        <h1 className="sec-title" id="member-activity-board-title">
-          {title}
-        </h1>
+        <div className="activity-card__head activity-board__title-row">
+          <h1 className="sec-title" id="member-activity-board-title">
+            {title}
+          </h1>
+          {status ? (
+            <span className={memberRepairActivityStatusBadgeClass(status)}>
+              {memberRepairActivityStatusLabels[status]}
+            </span>
+          ) : null}
+        </div>
         {meta ? <p className="activity-board__meta">{meta}</p> : null}
       </header>
     );
@@ -547,7 +554,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
 
   return (
     <div ref={boardElement} className="activity-board content-start">
-      {renderHead(board.activity.title, formatShanghaiDateTime(board.activity.activityAt))}
+      {renderHead(
+        board.activity.title,
+        formatShanghaiDateTime(board.activity.activityAt),
+        ended ? "ENDED" : board.activity.status,
+      )}
       <div className="activity-board__toolbar">
         <Button href="/member/repair-activities" variant="ghost">
           {copy.back}
@@ -564,7 +575,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             {busy === "attend" ? copy.attending : copy.attendCta}
           </Button>
         )}
-        {/* 出勤成员入口（issue #107）：仅活动管理员可见，人数实时取自看板数据。
+        {/* 出勤成员入口：仅活动管理员可见，人数实时取自看板数据。
             放在工具栏尾部靠右（CSS 的 auto 外边距），不与返回 / 出勤按钮抢行。 */}
         {board.canAdmin ? (
           <Button
@@ -606,7 +617,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       {/* 页面级错误 = 浮动提示（方案 A）：不占布局，工具行与卡片之间只剩网格间距。 */}
       {floatingMessage ? <BoardAlert message={floatingMessage} /> : null}
 
-      {/* 手机端分区切换（issue #108 审查稿·分段滑块）：窄屏一次只显示一个分区、切换行吸顶；
+      {/* 手机端分区切换（·分段滑块）：窄屏一次只显示一个分区、切换行吸顶；
           宽屏由 CSS 隐藏，恢复并排栏。计数实时来自看板数据、放在段内（等宽段不因数字变化位移）。 */}
       <div className="activity-board__switcher" role="group" aria-label={copy.paneSwitcherLabel}>
         <div
@@ -632,7 +643,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       <div
         className={`activity-board__panes ${board.canAdmin ? "activity-board__panes--admin" : ""}`}
       >
-        {/* 待签到（issue #108）：仅活动管理员可见；成员的看板在服务端就不下发这批数据。 */}
+        {/* 待签到：仅活动管理员可见；成员的看板在服务端就不下发这批数据。 */}
         {board.canAdmin ? (
           <Card
             className={`activity-board__pane repair-panel ${
@@ -676,7 +687,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                             onError={setMessage}
                           />{" "}
                           · {row.issueTypeLabel}
-                          {/* 机型选填：没填就不占位（issue #68）。 */}
+                          {/* 机型选填：没填就不占位。 */}
                           {row.deviceModel ? ` · ${copy.deviceModel} ${row.deviceModel}` : null}
                         </span>
                       </span>
@@ -720,8 +731,6 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <ul className="activity-board__list">
               {board.queue.map((row, index) => (
                 <li key={row.id} className="activity-board__row activity-board__row--queue">
-                  {/* 三区（改版）：姓名信息区（位次 + 姓名 + 联系方式）→ 故障详情区
-                      （故障类型 / 入队时间 / 机型 分行）→ 操作区沉底（不再与正文抢宽）。 */}
                   <div className="activity-board__queue-main">
                     {/* 队列位次：按当前渲染顺序从 1 开始（服务端已按签到时间升序）。 */}
                     <span className="activity-board__queue-rank">
@@ -754,8 +763,6 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     </div>
                   </div>
                   <div className="activity-board__row-actions activity-board__row-actions--foot">
-                    {/* 接待=描边主行动（issue #108 审查稿，改版后保留）：细蓝描边 + 右向箭头，
-                        悬停填充实心；比原实心大块轻，队列一屏多行不吵。 */}
                     <Button
                       className="activity-board__serve-btn"
                       trailingIcon="arrowRight"
@@ -764,9 +771,9 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
                     >
                       {busy === `serve:${row.id}` ? copy.serving : copy.serve}
                     </Button>
-                    {/* 「撤回」仅活动管理员（issue #108 评论 3）：成员视角不出现；
+                    {/* 「撤回」仅活动管理员：成员视角不出现；
                         服务端 withdraw 同样要求 activity:admin 兜底。
-                        幽灵 + Undo 图标，悬停转危险色（issue #108 审查稿）。 */}
+                        幽灵 + Undo 图标，悬停转危险色。 */}
                     {board.canAdmin ? (
                       <Button
                         variant="ghost"
@@ -785,7 +792,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           )}
         </Card>
 
-        {/* 「已接待」= 常驻区块（issue #79 第 6 项；issue #108 起作为成员两栏 / 管理员三栏的
+        {/* 「已接待」= 常驻区块（作为成员两栏 / 管理员三栏的
             最后一栏，按 servedAt 降序）：数据为空只换内容，区块本身不出现 / 消失。 */}
         <Card
           className={`activity-board__pane repair-panel ${
@@ -821,7 +828,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             <ul className="activity-board__list">
               {board.served.map((row) => {
                 const recordId = row.repairRecordId;
-                // 待补建（issue #221）：接待已占位、维修单还没创建。
+                // 待补建：接待已占位、维修单还没创建。
                 const pendingRecord = recordId === null;
                 return (
                   <li key={row.id} className="activity-board__row">
@@ -1009,7 +1016,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         </ConfirmDialog>
       ) : null}
 
-      {/* 出勤成员名单（issue #107）：只读弹层，沿用后台详情窗口；桌面两列、
+      {/* 出勤成员名单：只读弹层，沿用后台详情窗口；桌面两列、
           人多时由弹窗正文内部滚动，页面高度不随之变化。 */}
       {attendanceOpen ? (
         <AdminModal

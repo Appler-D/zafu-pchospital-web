@@ -16,7 +16,7 @@ const enabled = integrationTestsEnabled();
 const dbTest = enabled ? test : test.skip;
 
 /**
- * 活动管理页「出勤」列的真实库验证（issue #107）。
+ * 活动管理页「出勤」列的真实库验证。
  *
  * 单测（`tests/unit/repair-activity-attendance-count.test.ts`）钉住源码接线；
  * 这里验证**行为**：出勤人数是不是真的随 `markAttendance` 变化、是否按活动隔离、

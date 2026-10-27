@@ -5,35 +5,7 @@ import { adminCopy, adminShared } from "@/config/admin";
 import type { SkillAdminView } from "@/types/contracts";
 import type { TableViewSpec } from "@/types/table";
 
-/**
- * 技能标签表的视图定义（后台表格内核的第六个落地页）。
- *
- * 迁移只做一件事：把面板里「表头 6 个 `<th>` + `tbody` 里 6 个 `<td>`」这两份平行定义
- * 收进一份 spec，**渲染逐字照抄**。四处刻意保持原样、不要顺手「优化」：
- *
- * 1. **不声明列宽**：这张表从来没接过 `useColumnResize`，列宽由浏览器按内容分配
- *    （内核在没有列宽时不输出 `<colgroup>`，不改布局）；
- * 2. **「名称」列是内容列**（`admin-table__grow`）：表头与单元格都要带这个类，
- *    它让这一列吸收剩余宽度并允许换行；
- * 3. **「选用成员」不右对齐**：迁移前这一格就是普通左对齐（内核按 `number` 类型默认会给
- *    `admin-table__num`），因此显式 `numeric: false`。是否改成右对齐是产品决定；
- * 4. **手柄列没有字段名**：表头为空、`data-label` 也不写（内核在没有字段名时不输出这个
- *    空属性）。这一列**有**一个只给读屏的列名，走 `headLabel`（见下）。
- *
- * 「编辑」那一行不在这里：它在**行内**把说明与选用成员两列合成一个表单（`colSpan={2}`），
- * 逐列渲染表达不了，因此由面板通过 `<AdminTable renderRow>` **整行接管**（与邀请码表的
- * 「调整策略」同一处理）—— spec 描述的是**常规行**长什么样。
- *
- * 排序：技能列表接口没有 `sort` 参数（服务端固定 `orderBy: [sortOrder asc, code asc]`，
- * 这个顺序就是成员端标签的展示顺序），所以面板**不传 `onSortChange`** —— 内核在不传时
- * 不渲染任何排序控件，DOM 与迁移前完全一致。要开排序得先按 `docs/admin-table-kernel.md`
- * §6 的形状贯通后端白名单，并且注意它与「拖动排序」是两套顺序（§5.1）。
- *
- * **与迁移前零差异**。手柄列表头在原标记里是
- * `<th class="admin-table__grip"><span class="sr-only">拖动调整顺序</span></th>`：
- * 可见文案为空，读屏列名走 `FieldSpec.headLabel`（渲染成同样的 `sr-only` 节点，
- * 不参与布局，因此像素不动）。迁移时它一度只能丢掉这句列名，`headLabel` 就是为它加的。
- */
+/** 技能标签表列定义；跨列编辑由面板的 renderRow 接管。 */
 
 /** 页面上会被 `render` 用到的运行时值（`<AdminTable renderContext>` 传入）。 */
 export type SkillTableContext = {
@@ -111,7 +83,7 @@ export const skillTableSpec: TableViewSpec<SkillAdminView, SkillTableContext> = 
       key: "usage",
       label: copy.table.usage,
       kind: "number",
-      // 与迁移前一致：这一列没有 `admin-table__num`（不右对齐）。
+
       numeric: false,
       render: (skill) => skill.usedByMemberCount,
     },

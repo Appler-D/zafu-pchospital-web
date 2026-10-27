@@ -4,7 +4,7 @@ import { getServerEnv } from "@/lib/env";
 import { EMAIL_CODE_LENGTH } from "@/lib/security/email-policy";
 
 /**
- * 邮箱验证码与重置授权的密码学原语（issue #146）。
+ * 邮箱验证码与重置授权的密码学原语。
  * 集中参数（有效期 / 限流窗口 / 预算）在 `email-policy.ts`；本文件只放生成与摘要。
  */
 

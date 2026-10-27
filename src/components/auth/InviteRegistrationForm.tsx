@@ -52,7 +52,7 @@ const identityFields: readonly FieldSpec[] = [
     type: "text",
     autoComplete: "name",
     required: true,
-    // 姓名（issue #147 返修）：只去首尾空白，trim 后 2–64 字符；此前落到默认 80 上限。
+    // 姓名：只去首尾空白，trim 后 2–64 字符；此前落到默认 80 上限。
     minLength: PERSON_NAME_MIN_LENGTH,
     maxLength: PERSON_NAME_MAX_LENGTH,
   },
@@ -118,7 +118,7 @@ const groups = [
 ] as const;
 
 /**
- * 邀请码注册表单。`returnTo` 是从 `/login` 带过来的**候选**原目标（任务 6 返修 F4）：
+ * 邀请码注册表单。`returnTo` 是从 `/login` 带过来的**候选**原目标：
  * 注册成功后服务端仍按白名单与当次角色重判落点，前端不自行跳转。
  */
 export function InviteRegistrationForm({ returnTo }: { returnTo?: string | null }) {

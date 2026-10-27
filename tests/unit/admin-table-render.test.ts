@@ -7,21 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { MemberTableContext } from "../../src/components/admin/member-table-spec";
 import type { AuditLogEntry, MemberListEntry, RepairView } from "../../src/types/contracts";
 
-/**
- * 成员表迁移到内核后的 **DOM 契约测试**。
- *
- * 「迁移前后 DOM 等价」是这次改造唯一不能妥协的约束（`AGENTS.md`：操作前后除明确要改的
- * 那一处，其它像素不该移动）。因此这里不测「组件能不能跑」，而是把迁移前那张表的标记
- * 逐项固定下来：列的顺序与宽度、表头文案、每个单元格的 `data-label`、类名、空值行、
- * `title`、以及**不该出现的 `admin-table__num`**。
- *
- * 用 `react-dom/server` 渲染，不需要 jsdom，也不需要浏览器 —— 断言优先于截图（§8.1）。
- *
- * 为什么要挂一个全局 `React`：`tsconfig` 的 `jsx` 是 `preserve`（Next 自己用自动运行时
- * 编译），而 `tsx` 跑测试时走的是**经典**运行时，组件源码里因此没有 `import React`。
- * 这里先把它挂到全局，再**动态**加载组件 —— 静态 import 会在赋值之前执行，来不及。
- * 好处是不必为了测试去改 `tsconfig`、`package.json`，或往公共组件里塞一个用不到的 import。
- */
+/** 验证表格的列顺序、单元格内容与可访问性标记。 */
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type AdminConfig = typeof import("../../src/config/admin");
@@ -58,7 +44,7 @@ async function load(): Promise<Modules> {
   return cached;
 }
 
-/** 迁移前的列宽（第九轮验收后的值），迁移后必须逐列一致。 */
+/** 迁移前的列宽，迁移后必须逐列一致。 */
 const LEGACY_WIDTHS = [221, 84, 124, 92, 96, 96, 72, 96, 132, 150];
 
 function legacyLabels(modules: Modules): string[] {
@@ -520,7 +506,7 @@ function repair(overrides: Partial<RepairView> = {}): RepairView {
   return {
     id: "r-1",
     member: { id: "m-1", name: "张三" },
-    // 参与者（issue #114）：默认只有创建人本人，与 `member` 保持一致。
+    // 参与者：默认只有创建人本人，与 `member` 保持一致。
     participants: [{ id: "m-1", name: "张三" }],
     repairDate: "2026-09-01",
     durationMinutes: 99,

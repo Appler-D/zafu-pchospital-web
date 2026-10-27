@@ -58,7 +58,7 @@ export function MemberDetailPanel({
   /** 一次性成功反馈：走顶部浮层（层级高于本窗口），不把窗口内容顶下去。 */
   const [toast, setToast] = useState<AdminToastMessage | null>(null);
   /**
-   * 重置密码（issue #113）：确认弹层 → 独立结果弹层，结果不内联插在本窗口里。
+   * 重置密码：确认弹层 → 独立结果弹层，结果不内联插在本窗口里。
    *
    * 三个阶段**同时只挂载一个弹层**：`AdminModal` / `ConfirmDialog` 各自在 document 上
    * 注册 Esc 监听、卸载时清空 `body` 滚动锁 —— 叠加挂载会出现「取消确认后详情还开着、
@@ -179,7 +179,6 @@ export function MemberDetailPanel({
                     { label: "班级", value: detail.className, muted: !detail.className },
                   ]}
                 />
-                <p className="admin-note">{copy.detail.contactsNote}</p>
               </div>
 
               {stats ? (
@@ -459,10 +458,7 @@ function SkillsForm({
 }) {
   const copy = adminCopy.members.skills;
   const [busy, setBusy] = useState(false);
-  /**
-   * 受控选择：原先是 `defaultChecked` + `FormData`，改一个标签要先把整张表读一遍
-   * 才看得出选了什么。现在选择状态就在组件里，`TagPicker` 上下两处都能即时反映。
-   */
+  /** 技能选择使用受控状态，只提交当前选择。 */
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
     detail.skills.map((skill) => skill.id),
   );

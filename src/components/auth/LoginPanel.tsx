@@ -17,7 +17,7 @@ type LoginPanelProps = {
  * 同一 Auth 壳：登录 ↔ 邀请码注册仅换标题与表单，不跳公开营销布局。
  * `mode` 由 `/login?mode=register` 驱动；切换用 Link.replace，保证返回键合理。
  *
- * 切换链接与两个表单都带着同一个 `returnTo`（任务 6 返修 F4）：候选目标不能在
+ * 切换链接与两个表单都带着同一个 `returnTo`：候选目标不能在
  * 「登录 ↔ 注册」之间掉链子。它仍然只是候选，提交时由服务端按白名单与当前角色重判。
  */
 export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
@@ -31,7 +31,6 @@ export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
       title={shell.title}
       titleId="login-title"
       eyebrow={shell.eyebrow}
-      lead={shell.lead}
       className={isRegister ? "auth-login__panel--register" : undefined}
     >
       {isRegister ? (

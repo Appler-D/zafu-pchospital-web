@@ -7,23 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { SkillTableContext } from "../../src/components/admin/skill-table-spec";
 import type { SkillAdminView } from "../../src/types/contracts";
 
-/**
- * 技能标签表迁移到内核后的 **DOM 契约测试**。
- *
- * 「迁移前后 DOM 等价」是这次改造唯一不能妥协的约束（`AGENTS.md` §2：操作前后除明确要改的
- * 那一处，其它像素不该移动）。因此这里不测「组件能不能跑」，而是把迁移前那张表的标记逐项
- * 固定下来：列的顺序与表头文案、每个单元格的 `data-label`、类名、空值占位 `—`、
- * 行内控件的类名与无障碍名称、以及**不该出现的 `admin-table__num`**。
- *
- * 期望值全部从 `SkillAdminPanel.tsx` 迁移前的那段 `<table>` 逐项抄来，**不**从这个 spec
- * 反推 —— 否则测试只能证明「代码和它自己一致」。
- *
- * 用 `react-dom/server` 渲染，不需要 jsdom，也不需要浏览器 —— 断言优先于截图（§8.1）。
- *
- * 为什么要挂一个全局 `React`：`tsconfig` 的 `jsx` 是 `preserve`（Next 自己用自动运行时
- * 编译），而 `tsx` 跑测试时走的是**经典**运行时，组件源码里因此没有 `import React`。
- * 这里先把它挂到全局，再**动态**加载组件 —— 静态 import 会在赋值之前执行，来不及。
- */
+/** 验证表格的列顺序、单元格内容与可访问性标记。 */
 (globalThis as unknown as { React: typeof React }).React = React;
 
 type AdminConfig = typeof import("../../src/config/admin");

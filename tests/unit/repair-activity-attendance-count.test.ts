@@ -5,7 +5,7 @@ import test from "node:test";
 import { adminCopy } from "../../src/config/admin";
 
 /**
- * 活动管理页「出勤」列（issue #107）的接线契约。
+ * 活动管理页「出勤」列的接线契约。
  *
  * 这一改动的 runtime 面很薄（一次 groupBy 计数 + 一个表格单元格），
  * 真正会悄悄坏掉的是**接线**：字段改名、copy 键丢失、面板绑错字段，
@@ -54,7 +54,7 @@ test("活动管理页表格有「出勤」列并绑定 attendedCount", () => {
 });
 
 test("出勤人数只回计数：管理端列表源码不下发成员身份字段", () => {
-  // 管理端列表永远只回计数。出勤明细已由 issue #107 后续在成员看板落地
+  // 管理端列表永远只回计数。出勤明细已由  后续在成员看板落地
   // （`repair-activity-staff-service.ts` 的管理员名单 + 只读弹层，
   // 接线契约见 `repair-activity-attendance-members.test.ts`）——
   // 那是独立服务、独立端点；这里的红线是不把 memberProfileId / checkedInAt

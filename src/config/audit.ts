@@ -1,16 +1,6 @@
 import { adminCopy } from "@/config/admin";
 
-/**
- * 审计日志的展示格式（从 `AuditLogPanel` 里原样搬出来）。
- *
- * 为什么单独成文件：这三个函数是**渲染层的公共依赖** —— 表格 spec 与变更摘要窗口都要用，
- * 留在页面组件里会让 spec 反过来 import 组件。与 `src/config/member.ts` 的
- * `formatShanghaiDate` 同一处理。
- *
- * 顺带记一笔：`formatDateTime` 目前在七个后台面板里各有一份逐字相同的拷贝
- * （评论 / 报名 / 邀请码 / 公开设置 / 成员 / 审计…）。统一它们属于「其余面板迁移」
- * 的一部分，本轮不动 —— 一次只改一件事，免得 diff 里全是无关改动。
- */
+/** 审计表格与变更摘要共用的展示格式。 */
 
 /** 表格里只显示短 ID（8 位）；完整值在单元格的 `title` 里，需要时也能复制。 */
 export function shortAuditId(id: string): string {

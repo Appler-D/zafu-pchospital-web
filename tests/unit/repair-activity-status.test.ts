@@ -10,9 +10,15 @@ import {
   deriveRepairActivityStatus,
   remainingCapacity,
   RepairActivityIssueType,
+  RepairActivityStatus,
   repairActivityIssueTypeLabels,
+  repairActivityStatusLabels,
 } from "../../src/features/repair-activities/repair-activity-validation";
-import { repairActivitiesPage } from "../../src/config/repair-activities";
+import {
+  memberRepairActivityStatusLabels,
+  repairActivitiesPage,
+} from "../../src/config/repair-activities";
+import { memberRepairActivityStatusBadgeClass } from "../../src/components/repair-activities/activity-status-badge";
 import { AppError } from "../../src/lib/api/errors";
 
 const base = {
@@ -76,6 +82,19 @@ test("优先级：已结束压过报名截止与报满", () => {
   );
 });
 
+test("成员端状态文案：CLOSED 显示可出勤，公开页仍为报名截止（issue #239）", () => {
+  assert.equal(memberRepairActivityStatusLabels.CLOSED, "可出勤");
+  assert.equal(repairActivityStatusLabels.CLOSED, "报名截止");
+  assert.equal(Object.values(memberRepairActivityStatusLabels).includes("报名截止"), false);
+  assert.deepEqual(
+    Object.keys(memberRepairActivityStatusLabels).sort(),
+    [...RepairActivityStatus].sort(),
+    "成员端状态文案必须覆盖全部五态",
+  );
+  assert.ok(memberRepairActivityStatusBadgeClass("CLOSED").includes("admin-tag--accent"));
+  assert.equal(memberRepairActivityStatusBadgeClass("OPEN").includes("admin-tag--accent"), false);
+});
+
 test("软删释放名额后 FULL 回到 OPEN", () => {
   const duringWindow = new Date("2026-09-25T12:00:00.000Z");
   assert.equal(
@@ -113,7 +132,7 @@ test("边界：opensAt 瞬间为 OPEN；closesAt 瞬间为 CLOSED；activityAt �
     }),
     "CLOSED",
   );
-  // 活动当天（上海 10-01）含 23:59 仍按报名窗口判定（已截止），不是 ENDED（issue #79）。
+  // 活动当天（上海 10-01）含 23:59 仍按报名窗口判定（已截止），不是 ENDED。
   assert.equal(
     deriveRepairActivityStatus({
       ...base,
@@ -305,7 +324,7 @@ test("管理报名 PATCH 使用同一 issueType 白名单", () => {
 
 test("报名页给出的每个故障类型都被服务端接受，且两处文案一致", () => {
   const options = repairActivitiesPage.issueTypes;
-  // 前端选项与服务端白名单/标签是两份数据，很容易只改一处 —— issue #62 要求新增
+  // 前端选项与服务端白名单/标签是两份数据，很容易只改一处 ——  要求新增
   // 「软件 / 系统问题」时，两边必须同步。
   for (const option of options) {
     assert.equal(assertValidIssueType(option.value), option.value);

@@ -40,8 +40,8 @@ let destructiveAllowed = false;
 /**
  * 整表清空（只用于 `_test` 库）：`before` 与 `after` 共用同一份。
  *
- * 只在开头清会让本文件写下的 `account_notifications`（issue #179）与测试分类
- * （issue #184 里 m5 曾反过来依赖它）遗留到后续文件；结束前复用同一套清理，
+ * 只在开头清会让本文件写下的 `account_notifications`与测试分类
+ * （里 m5 曾反过来依赖它）遗留到后续文件；结束前复用同一套清理，
  * 做到「自己走完不留东西」。顺序与注释见下方各步。
  */
 async function resetDatabase(): Promise<void> {
@@ -59,7 +59,7 @@ async function resetDatabase(): Promise<void> {
   await db.repairTimelineEvent.deleteMany();
   await db.repairReview.deleteMany();
   await db.repairPhoto.deleteMany();
-  // 参与行（issue #114）引用 repair_records 且是 RESTRICT：必须先于记录清空。
+  // 参与行引用 repair_records 且是 RESTRICT：必须先于记录清空。
   await db.repairRecordParticipant.deleteMany();
   await db.repairRecord.deleteMany();
   await db.repairHistoryPending.deleteMany();
@@ -363,7 +363,7 @@ dbTest("报名通过发放的 QQ 身份可登录，首次改密会轮换并撤�
   });
   assert.equal(reviewed.provisionStatus, "SUCCEEDED");
   assert.ok(reviewed.initializationSecret);
-  // issue #93：初始密码为 QQ 号后 6 位（不足 6 位取整串）。
+  // 初始密码为 QQ 号后 6 位（不足 6 位取整串）。
   assert.equal(reviewed.initializationSecret, input.qq.slice(-6));
   const login = await authService.login(
     { qq: input.qq, password: reviewed.initializationSecret! },
@@ -739,7 +739,7 @@ dbTest("M2 草稿、照片、提交、审核、可见性与统计形成闭环", 
   );
 });
 
-// PR #73 评审 3：新建页「进页面即建档」，反复进出不应攒出多个空白草稿。
+// 新建页「进页面即建档」，反复进出不应攒出多个空白草稿。
 dbTest("M2 空白建档请求复用本人最新空白草稿，填写后另建", async () => {
   const created = await memberService.create(
     {
