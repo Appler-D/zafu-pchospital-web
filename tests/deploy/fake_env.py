@@ -166,6 +166,9 @@ def fake_dump():
 
 def run_mysql(sql):
     normalized = " ".join(sql.split())
+    if os.environ.get("FAKE_DB_PLAN_FAIL") == "1" and "CONCAT(MIGRATION_NAME" in normalized.upper():
+        print("fake mysql: simulated _prisma_migrations read failure", file=sys.stderr)
+        return 1
     if normalized.upper().startswith("SHOW TABLES"):
         for table in table_names():
             print(table)

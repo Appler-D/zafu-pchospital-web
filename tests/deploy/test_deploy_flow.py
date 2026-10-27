@@ -236,10 +236,11 @@ class DeploySandbox:
             f'source "{(self.repo / "tools/deploy/deploy-prod.sh").as_posix()}" "$@"\n',
         )
 
-    def run_deploy(self, fail_path="", extra_args=()):
+    def run_deploy(self, fail_path="", extra_args=(), db_plan_fail=False):
         env = os.environ.copy()
         env.pop("WHALE_NOTIFY_CONFIG", None)
         env.pop("FAKE_CURL_FAIL_PATH", None)
+        env.pop("FAKE_DB_PLAN_FAIL", None)
         env.update(
             {
                 "DEPLOY_HOST": "fixture@example.invalid",
@@ -262,6 +263,8 @@ class DeploySandbox:
         if fail_path:
             # Git Bash converts path-like env values for native Python; keep it slash-free.
             env["FAKE_CURL_FAIL_PATH"] = fail_path.strip("/")
+        if db_plan_fail:
+            env["FAKE_DB_PLAN_FAIL"] = "1"
         completed = subprocess.run(
             [
                 BASH,
@@ -414,6 +417,17 @@ class DeployFlowTests(unittest.TestCase):
         self.assertEqual(sandbox.service_state("docs-sync.timer"), "active")
         self.assertEqual(sandbox.service_stops(), [])
         self.assertEqual(sandbox.notification()["status"], "failed")
+
+    def test_database_state_read_failure_falls_back_to_db_stage(self):
+        sandbox = self.sandbox("pure", name="db_unreadable")
+        completed, log = sandbox.run_deploy(db_plan_fail=True)
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("无法读取 _prisma_migrations", log)
+        self.assertIn("无法确认数据库已应用版本", log)
+        self.assertIn("迁移前快照", log)
+        self.assertIn("已应用 2 / 目录 2", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertEqual(sandbox.notification()["status"], "success")
 
     def test_schema_without_migration_can_be_explicitly_allowed(self):
         sandbox = self.sandbox("schema_without_migration", name="schema_allowed")
