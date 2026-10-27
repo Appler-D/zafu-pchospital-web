@@ -124,6 +124,60 @@ export type StaffBoardView = {
   pendingServeRegistration: StaffPendingServe | null;
 };
 
+/** 高频快照不携带低频明细；计数始终遵循当前角色的可见范围。 */
+export type StaffLiveBoardView = Omit<StaffBoardView, "served" | "attendanceMembers"> & {
+  servedCount: number;
+  attendanceCount: number | null;
+};
+export type StaffServedBoardView = { served: StaffServedRow[] };
+export type StaffAttendanceBoardView = { attendanceMembers: StaffAttendanceMemberView[] };
+
+const registrationSelect = {
+  id: true,
+  activityId: true,
+  name: true,
+  phone: true,
+  issueType: true,
+  deviceModel: true,
+  status: true,
+  checkedInAt: true,
+  servedAt: true,
+  repairRecordId: true,
+  createdAt: true,
+} as const;
+const servedRecordSelect = { id: true, status: true, submittedAt: true, deletedAt: true } as const;
+type ServedRegistration = Prisma.RepairActivityRegistrationGetPayload<{
+  include: { repairRecord: { select: typeof servedRecordSelect } };
+}>;
+
+function servedRows(
+  rows: ServedRegistration[],
+  memberId: string,
+  canAdmin: boolean,
+): StaffServedRow[] {
+  return rows
+    .filter(
+      (row) => row.status === "SERVED" && (canAdmin || row.servedByMemberProfileId === memberId),
+    )
+    .sort((a, b) => (b.servedAt?.getTime() ?? 0) - (a.servedAt?.getTime() ?? 0))
+    .map((row) => {
+      const recordStatus =
+        row.repairRecord && !row.repairRecord.deletedAt
+          ? (row.repairRecord.status as RepairStatus)
+          : null;
+      const pendingRecord = row.repairRecordId === null;
+      const legacyDraft =
+        row.repairRecordId !== null && recordStatus === "DRAFT" && !row.repairRecord?.submittedAt;
+      return {
+        ...toStaffReg(row),
+        recordStatus,
+        canRevert:
+          (pendingRecord || legacyDraft) && (canAdmin || row.servedByMemberProfileId === memberId),
+        canFill: pendingRecord && row.servedByMemberProfileId === memberId,
+      };
+    });
+}
+
 export type ServeResultView = {
   registration: StaffRegistrationView;
 };
@@ -404,6 +458,113 @@ export const repairActivityStaffService = {
     });
   },
 
+  async getLiveBoard(activityId: string, actor: AuthorizedActor): Promise<StaffLiveBoardView> {
+    const member = await requireStaffMember(actor);
+    const canAdmin = actor.permissions.includes("activity:admin");
+    const activity = await loadActivityOrThrow(activityId);
+    const [counts, attendance, registrations, pendingServe, attendanceCount, ownServedCount] =
+      await Promise.all([
+        getDb().repairActivityRegistration.groupBy({
+          by: ["status"],
+          where: { activityId, ...effectiveStatusFilter },
+          _count: { _all: true },
+        }),
+        getDb().repairActivityAttendance.findUnique({
+          where: { activityId_memberProfileId: { activityId, memberProfileId: member.id } },
+          select: { checkedInAt: true },
+        }),
+        getDb().repairActivityRegistration.findMany({
+          where: {
+            activityId,
+            deletedAt: null,
+            status: canAdmin ? { in: ["REGISTERED", "CHECKED_IN"] } : "CHECKED_IN",
+          },
+          select: registrationSelect,
+        }),
+        findPendingServe(member.id),
+        canAdmin
+          ? getDb().repairActivityAttendance.count({ where: { activityId } })
+          : Promise.resolve(null),
+        canAdmin
+          ? Promise.resolve(null)
+          : getDb().repairActivityRegistration.count({
+              where: {
+                activityId,
+                deletedAt: null,
+                status: "SERVED",
+                servedByMemberProfileId: member.id,
+              },
+            }),
+      ]);
+    const registeredCount = counts.reduce((sum, row) => sum + row._count._all, 0);
+    return {
+      activity: toListItem(activity, registeredCount, Boolean(attendance), new Date()),
+      attended: Boolean(attendance),
+      attendanceCheckedInAt: attendance?.checkedInAt.toISOString() ?? null,
+      canAdmin,
+      attendanceCount,
+      servedCount: canAdmin
+        ? (counts.find((row) => row.status === "SERVED")?._count._all ?? 0)
+        : ownServedCount!,
+      eligible: canAdmin
+        ? registrations
+            .filter((row) => row.status === "REGISTERED")
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+            .map(toStaffReg)
+        : [],
+      queue: sortQueueByCheckedInAt(registrations.filter((row) => row.status === "CHECKED_IN")).map(
+        toStaffReg,
+      ),
+      pendingServeRegistration: pendingServe,
+    };
+  },
+
+  async getServedBoard(activityId: string, actor: AuthorizedActor): Promise<StaffServedBoardView> {
+    const member = await requireStaffMember(actor);
+    const canAdmin = actor.permissions.includes("activity:admin");
+    await loadActivityOrThrow(activityId);
+    const rows = await getDb().repairActivityRegistration.findMany({
+      where: {
+        activityId,
+        deletedAt: null,
+        status: "SERVED",
+        ...(canAdmin ? {} : { servedByMemberProfileId: member.id }),
+      },
+      include: { repairRecord: { select: servedRecordSelect } },
+    });
+    return { served: servedRows(rows, member.id, canAdmin) };
+  },
+
+  async getAttendanceBoard(
+    activityId: string,
+    actor: AuthorizedActor,
+  ): Promise<StaffAttendanceBoardView> {
+    await requireAdminMember(actor);
+    await loadActivityOrThrow(activityId);
+    const rows = await getDb().repairActivityAttendance.findMany({
+      where: { activityId },
+      orderBy: [{ checkedInAt: "asc" }, { id: "asc" }],
+      select: {
+        memberProfileId: true,
+        checkedInAt: true,
+        memberProfile: {
+          select: { nickname: true, realName: true, user: { select: { displayName: true } } },
+        },
+      },
+    });
+    return {
+      attendanceMembers: rows.map((row) => ({
+        memberProfileId: row.memberProfileId,
+        name: resolveDisplayName({
+          nickname: row.memberProfile.nickname,
+          realName: row.memberProfile.realName,
+          displayName: row.memberProfile.user.displayName,
+        }),
+        checkedInAt: row.checkedInAt.toISOString(),
+      })),
+    };
+  },
+
   async getBoard(activityId: string, actor: AuthorizedActor): Promise<StaffBoardView> {
     const member = await requireStaffMember(actor);
     const canAdmin = actor.permissions.includes("activity:admin");
@@ -478,33 +639,7 @@ export const repairActivityStaffService = {
       registrations.filter((r) => r.status === "CHECKED_IN"),
     ).map(toStaffReg);
 
-    const served: StaffServedRow[] = registrations
-      // 查询已经把成员范围收窄；这里再兜一层，防止以后改查询时把他人接待记录漏给成员。
-      .filter(
-        (row) => row.status === "SERVED" && (canAdmin || row.servedByMemberProfileId === member.id),
-      )
-      .sort((a, b) => (b.servedAt?.getTime() ?? 0) - (a.servedAt?.getTime() ?? 0))
-      .map((row) => {
-        const recordStatus =
-          row.repairRecord && !row.repairRecord.deletedAt
-            ? (row.repairRecord.status as RepairStatus)
-            : null;
-        // 待补建 = 接待已占位、维修单还没创建。
-        const pendingRecord = row.repairRecordId === null;
-        // 存量接待草稿撤销时会删除未提交草稿及照片。
-        const legacyDraft =
-          row.repairRecordId !== null && recordStatus === "DRAFT" && !row.repairRecord?.submittedAt;
-        return {
-          ...toStaffReg(row),
-          recordStatus,
-          // 撤销接待：未建单或旧 serve 草稿；本人或活动管理员。
-          canRevert:
-            (pendingRecord || legacyDraft) &&
-            (canAdmin || row.servedByMemberProfileId === member.id),
-          // 继续填写：只有接待者本人能补建记录（管理员不代填）。
-          canFill: pendingRecord && row.servedByMemberProfileId === member.id,
-        };
-      });
+    const served = servedRows(registrations, member.id, canAdmin);
 
     const attendanceMembers: StaffAttendanceMemberView[] = attendanceRows.map((row) => ({
       memberProfileId: row.memberProfileId,

@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -18,6 +19,8 @@ import {
   formatShanghaiDateTime,
   formatShanghaiTime,
 } from "@/components/repair-activities/activity-format";
+import { BoardSyncStatus } from "./BoardSyncStatus";
+import { useBoardResource } from "./useBoardResource";
 import { RegistrationPhone } from "@/components/repair-activities/RegistrationPhone";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -37,7 +40,9 @@ import {
   type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
 import type {
-  StaffBoardView,
+  StaffLiveBoardView,
+  StaffServedBoardView,
+  StaffAttendanceBoardView,
   StaffRegistrationView,
   StaffServedRow,
   StaffPendingServe,
@@ -66,9 +71,15 @@ function BoardAlert({ message }: { message: string }) {
 
 export function MemberRepairActivityBoard({ activityId }: Props) {
   const router = useRouter();
+  const activityTarget = useMemo(() => ({ id: activityId }), [activityId]);
+  const currentActivity = useRef<typeof activityTarget | null>(null);
+  useLayoutEffect(() => {
+    currentActivity.current = activityTarget;
+    return () => {
+      currentActivity.current = null;
+    };
+  }, [activityTarget]);
   const copy = memberRepairActivitiesCopy.board;
-  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
-  const [board, setBoard] = useState<StaffBoardView | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [serverEnded, setServerEnded] = useState(false);
   const [message, setMessage] = useState("");
@@ -86,10 +97,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
   );
   const [checkInError, setCheckInError] = useState("");
   const checkInPending = useRef(false);
-  const hasBoard = useRef(false);
   const boardElement = useRef<HTMLDivElement>(null);
   const scrollPosition = useRef<{ x: number; y: number } | null>(null);
-  const request = useRef<{ background: boolean } | null>(null);
   /** 全局接单拦截弹层：点击「接待」命中未完成草稿时出现，不发请求。 */
   const [pendingNotice, setPendingNotice] = useState<StaffPendingServe | null>(null);
   /** 出勤成员弹层：仅活动管理员，只读名单。 */
@@ -107,109 +116,100 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     revertTarget !== null ||
     pendingNotice !== null ||
     attendanceOpen;
-  const pausedRef = useRef(paused);
-  pausedRef.current = paused;
-
-  const load = useCallback(
-    async (background = false): Promise<StaffBoardView | null> => {
-      if (background && (pausedRef.current || request.current)) return null;
-      // 用请求身份丢弃过期响应；清理 effect 时不主动 abort，避免开发模式报取消异常。
-      const active = { background };
-      request.current = active;
-      if (!background) setMessage("");
-      try {
-        const response = await fetch(`/api/v1/member/repair-activities/${activityId}/board`, {
-          cache: "no-store",
-        });
-        const json = (await response.json()) as {
-          success: boolean;
-          data?: StaffBoardView;
-          error?: { message?: string };
-        };
-        if (request.current !== active) return null;
-        if (background && (pausedRef.current || document.visibilityState !== "visible"))
-          return null;
-        if (!response.ok || !json.success || !json.data) {
-          throw new Error(json.error?.message ?? copy.loadFailed);
-        }
-        if (hasBoard.current && boardElement.current) {
-          scrollPosition.current = { x: window.scrollX, y: window.scrollY };
-          // 列表缩短时保留原高度，避免浏览器先把滚动位置夹回页首。
-          if (window.scrollY > 0) {
-            boardElement.current.style.minHeight = `${boardElement.current.getBoundingClientRect().height}px`;
-          }
-        }
-        const next = json.data;
-        setBoard(next);
-        setClock(Date.now());
-        // 粘滞：写请求或前一次 GET 已判定结束的活动不会「复活」，避免一次旧快照
-        // 把结束态与 60 秒节拍重置回可用状态（换活动时由 effect 显式清零）。
-        setServerEnded((ended) => ended || next.activity.status === "ENDED");
-        hasBoard.current = true;
-        // 首次加载落定手机端默认分区；已有选择（用户点过）保持不变。
-        setMobilePane(
-          (current) =>
-            current ?? (next.canAdmin && next.eligible.length > 0 ? "eligible" : "queue"),
-        );
-        const eligibleIds = new Set(next.eligible.map((row) => row.id));
-        setSelected((current) => new Set([...current].filter((id) => eligibleIds.has(id))));
-        setState("ready");
-        return next;
-      } catch (error) {
-        if (request.current !== active) return null;
-        // 自动同步失败保留数据与操作反馈，下一轮继续重试。
-        if (background && hasBoard.current) return null;
-        if (hasBoard.current) {
-          setMessage(copy.refreshFailed);
-        } else {
-          setState("error");
-          setMessage(error instanceof Error ? error.message : copy.loadFailed);
-        }
-        return null;
-      } finally {
-        if (request.current === active) request.current = null;
-      }
+  const [desktop, setDesktop] = useState(false);
+  function preservePosition() {
+    if (!boardElement.current) return;
+    scrollPosition.current = { x: window.scrollX, y: window.scrollY };
+    if (window.scrollY > 0)
+      boardElement.current.style.minHeight = `${boardElement.current.getBoundingClientRect().height}px`;
+  }
+  const live = useBoardResource<StaffLiveBoardView>(activityId, "live", {
+    automatic: true,
+    paused,
+    interval: serverEnded ? 60_000 : 5_000,
+    succeeded(next) {
+      if (live.state.data) preservePosition();
+      setClock(Date.now());
+      setMessage((current) =>
+        current === copy.checkInRefreshFailed || current === copy.refreshFailed ? "" : current,
+      );
+      setServerEnded((ended) => ended || next.activity.status === "ENDED");
+      setMobilePane(
+        (current) => current ?? (next.canAdmin && next.eligible.length > 0 ? "eligible" : "queue"),
+      );
+      const ids = new Set(next.eligible.map((row) => row.id));
+      setSelected((current) => new Set([...current].filter((id) => ids.has(id))));
     },
-    [activityId, copy.loadFailed, copy.refreshFailed],
-  );
-
+  });
+  const served = useBoardResource<StaffServedBoardView>(activityId, "served", {
+    automatic: Boolean(live.state.data) && (desktop || mobilePane === "served"),
+    paused,
+    interval: 60_000,
+    succeeded: preservePosition,
+  });
+  const attendance = useBoardResource<StaffAttendanceBoardView>(activityId, "attendance", {
+    automatic: false,
+    paused,
+    interval: 60_000,
+  });
+  const board = live.state.data
+    ? {
+        ...live.state.data,
+        served: served.state.data?.served ?? [],
+        attendanceMembers: attendance.state.data?.attendanceMembers ?? [],
+      }
+    : null;
+  const state = board ? "ready" : live.state.failures > 0 ? "error" : "loading";
+  const load = useCallback(async () => live.read({ manual: true }), [live]);
+  async function refreshVisible() {
+    await Promise.all([
+      load(),
+      desktop || mobilePane === "served" ? served.read({ manual: true }) : null,
+    ]);
+  }
+  async function refreshAfterWrite() {
+    await Promise.all([load(), served.read({ manual: true })]);
+  }
   useEffect(() => {
-    void load();
-    const onResize = () => {
+    const media = window.matchMedia("(min-width: 1100px)");
+    const resize = () => {
+      setDesktop(media.matches);
       if (boardElement.current) boardElement.current.style.minHeight = "";
     };
-    window.addEventListener("resize", onResize);
-    return () => {
-      request.current = null;
-      window.removeEventListener("resize", onResize);
-    };
-  }, [load]);
-
-  // 换一场活动 = 重新落定默认分区（同一组件实例被复用时旧选择不跨活动保留）。
-  useEffect(() => {
+    resize();
+    media.addEventListener("change", resize);
+    return () => media.removeEventListener("change", resize);
+  }, []);
+  useLayoutEffect(() => {
+    // 只有换目标才清空操控状态；同场刷新不碰弹窗草稿与有效选择。
     setMobilePane(null);
     setServerEnded(false);
+    setSelected(new Set());
+    setMessage("");
+    setToast(null);
+    setBusy(null);
+    setWithdrawTarget(null);
+    setRevertTarget(null);
+    setRevertBusy(false);
+    setPendingNotice(null);
+    setAttendanceOpen(false);
+    setCheckInConfirmOpen(false);
+    setCheckInRows([]);
+    setIssueTypeDrafts({});
+    setCheckInError("");
+    checkInPending.current = false;
+    scrollPosition.current = null;
+    if (boardElement.current) boardElement.current.style.minHeight = "";
   }, [activityId]);
-
   useEffect(() => {
-    if (paused && request.current?.background) request.current = null;
-    const refresh = () => {
-      // 弹层内暂停取数，但仍用原有节拍更新操作窗口，不能让旧确认窗越过结束时间。
+    const timer = window.setInterval(() => {
       setClock(Date.now());
-      if (document.visibilityState === "visible") void load(true);
-    };
-    refresh();
-    // 结束后接待台通常只剩查看/纠错：节拍降到 60 秒，减少无谓的看板 GET；
-    // `serverEnded` 变化会重建本 effect，并立即 refresh 一次完成收尾。
-    const timer = window.setInterval(refresh, serverEnded ? 60_000 : 5_000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [load, paused, serverEnded]);
+      const activity = live.state.data?.activity;
+      if (activity && Date.now() >= activityEndExclusive(new Date(activity.activityAt)).getTime())
+        setServerEnded(true);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [live]);
 
   useLayoutEffect(() => {
     const position = scrollPosition.current;
@@ -217,14 +217,16 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     if (position && (window.scrollX !== position.x || window.scrollY !== position.y)) {
       window.scrollTo({ left: position.x, top: position.y, behavior: "instant" });
     }
-  }, [board]);
+  }, [live.state.data, served.state.data]);
 
   async function postJson<T>(
     path: string,
     body: Record<string, unknown>,
   ): Promise<{ ok: true; data: T } | { ok: false; message: string; code?: string }> {
     // 写请求开始时使旧的读取失效，不能让提交前的快照覆盖操作结果。
-    request.current = null;
+    live.invalidate();
+    served.invalidate();
+    attendance.invalidate();
     try {
       const response = await fetch(path, {
         method: "POST",
@@ -236,6 +238,8 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         data?: T;
         error?: { message?: string; code?: string };
       };
+      if (currentActivity.current !== activityTarget)
+        return { ok: false, message: "", code: "STALE_ACTIVITY" };
       if (!json.success || json.data === undefined) {
         if (json.error?.code === "ACTIVITY_ENDED") {
           setServerEnded(true);
@@ -289,13 +293,14 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       `/api/v1/member/repair-activities/${activityId}/attendance`,
       {},
     );
+    if (currentActivity.current !== activityTarget) return;
     setBusy(null);
     if (!result.ok) {
       setMessage(result.message);
       return;
     }
     setToast({ text: copy.attendSuccess, tone: "success" });
-    await load();
+    await refreshAfterWrite();
   }
 
   function openCheckInConfirm() {
@@ -344,6 +349,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
         ...(issueTypeUpdates.length ? { issueTypeUpdates } : {}),
       },
     );
+    if (currentActivity.current !== activityTarget) return;
     if (!result.ok) {
       setCheckInError(result.message);
       checkInPending.current = false;
@@ -355,7 +361,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     setIssueTypeDrafts({});
     setSelected(new Set());
     // 即使后续刷新失败，也展示已经提交成功的队列及其保存后的类型。
-    setBoard((current) => {
+    live.update((current) => {
       if (!current) return current;
       const savedIds = new Set(result.data.checkedIn.map((row) => row.id));
       return {
@@ -372,6 +378,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       tone: "success",
     });
     const fresh = await load();
+    if (currentActivity.current !== activityTarget) return;
     if (!fresh) setMessage(copy.checkInRefreshFailed);
     checkInPending.current = false;
     setBusy(null);
@@ -387,6 +394,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       `/api/v1/member/repair-activities/${activityId}/withdraw`,
       { registrationId },
     );
+    if (currentActivity.current !== activityTarget) return;
     setBusy(null);
     if (!result.ok) {
       setMessage(result.message);
@@ -394,7 +402,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     }
     setWithdrawTarget(null);
     setToast({ text: copy.withdrawSuccess, tone: "neutral" });
-    await load();
+    await refreshAfterWrite();
   }
 
   async function serve(registrationId: string) {
@@ -406,12 +414,14 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       `/api/v1/member/repair-activities/${activityId}/serve`,
       { registrationId },
     );
+    if (currentActivity.current !== activityTarget) return;
     setBusy(null);
     if (!result.ok) {
       if (result.code === "ACTIVITY_SERVE_PENDING") {
         // 服务端兜底（多标签 / 并发）：先刷新看板，再按最新的未建单接待弹层；
         // 刷新后若已无待补建（例如另一标签刚提交），退回内联提示。
         const fresh = await load();
+        if (currentActivity.current !== activityTarget) return;
         if (fresh?.pendingServeRegistration) setPendingNotice(fresh.pendingServeRegistration);
         else setMessage(result.message);
         return;
@@ -420,7 +430,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       return;
     }
     setToast({ text: copy.serveSuccess, tone: "success" });
-    await load();
+    await refreshAfterWrite();
   }
 
   /** 撤销接待：仅接待者本人 / 活动管理员可见按钮，服务端再校一遍。 */
@@ -432,6 +442,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       `/api/v1/member/repair-activities/${activityId}/revert-serve`,
       { registrationId: revertTarget.id },
     );
+    if (currentActivity.current !== activityTarget) return;
     setRevertBusy(false);
     setRevertTarget(null);
     if (!result.ok) {
@@ -439,7 +450,7 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       return;
     }
     setToast({ text: copy.revertServeSuccess, tone: "neutral" });
-    await load();
+    await refreshAfterWrite();
   }
 
   /** 点击「接待」：先看客户端已加载的待补建接待，非空则弹层且**不发请求**。 */
@@ -500,8 +511,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
       <div className="activity-board">
         {renderHead(copy.title)}
         <p className="admin-status admin-status--error" role="alert">
-          {message || copy.loadFailed}
+          {message || live.state.error || copy.loadFailed}
         </p>
+        <Button onClick={() => void load()} disabled={live.state.pending}>
+          {copy.retry}
+        </Button>
         <Button href="/member/repair-activities" variant="ghost">
           {copy.back}
         </Button>
@@ -526,11 +540,11 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
     ? [
         ["eligible", copy.eligibleTitle, board.eligible.length],
         ["queue", copy.queueTitle, board.queue.length],
-        ["served", copy.servedTitle, board.served.length],
+        ["served", copy.servedTitle, board.servedCount],
       ]
     : [
         ["queue", copy.queueTitle, board.queue.length],
-        ["served", copy.servedTitle, board.served.length],
+        ["served", copy.servedTitle, board.servedCount],
       ];
   // 滑块位置：与 mobilePanes 顺序一致；理论上必有匹配，找不到时回落到第一段。
   const activeIndex = Math.max(
@@ -568,11 +582,22 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
             className="activity-board__attendance-entry"
             variant="ghost"
             trailingIcon="chevronRight"
-            onClick={() => setAttendanceOpen(true)}
+            onClick={() => {
+              setAttendanceOpen(true);
+              void attendance.read({ manual: true });
+            }}
           >
-            {copy.attendanceEntry.replace("{count}", String(board.attendanceMembers.length))}
+            {copy.attendanceEntry.replace("{count}", String(board.attendanceCount ?? 0))}
           </Button>
         ) : null}
+        <BoardSyncStatus label={copy.queueSyncedAt} state={live.state} />
+        <Button
+          variant="ghost"
+          onClick={() => void refreshVisible()}
+          disabled={paused || live.state.pending || served.state.pending}
+        >
+          {copy.refresh}
+        </Button>
       </div>
 
       {showAttendBanner ? (
@@ -777,11 +802,25 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           <header className="activity-board__pane-head">
             <h2>
               {copy.servedTitle}
-              <span className="activity-board__pane-count">{board.served.length}</span>
+              <span className="activity-board__pane-count">{board.servedCount}</span>
             </h2>
             <span className="member-section__tag">{copy.servedTag}</span>
           </header>
-          {board.served.length === 0 ? (
+          <div className="activity-board__sync-row">
+            <BoardSyncStatus label={copy.servedSyncedAt} state={served.state} />
+            <Button
+              variant="ghost"
+              onClick={() => void served.read({ manual: true })}
+              disabled={paused || served.state.pending}
+            >
+              {copy.refresh}
+            </Button>
+          </div>
+          {!served.state.data ? (
+            <p className="muted activity-board__empty" role="status">
+              {served.state.failures ? copy.servedLoadFailed : copy.servedLoading}
+            </p>
+          ) : board.served.length === 0 ? (
             <p className="muted activity-board__empty">
               {board.canAdmin ? copy.servedEmpty : copy.servedEmptySelf}
             </p>
@@ -985,7 +1024,21 @@ export function MemberRepairActivityBoard({ activityId }: Props) {
           subtitle={`${board.activity.title} · ${formatShanghaiDateTime(board.activity.activityAt)}`}
           onClose={() => setAttendanceOpen(false)}
         >
-          {board.attendanceMembers.length === 0 ? (
+          <div className="activity-board__sync-row">
+            <BoardSyncStatus label={copy.attendanceSyncedAt} state={attendance.state} />
+            <Button
+              variant="ghost"
+              onClick={() => void attendance.read({ manual: true })}
+              disabled={attendance.state.pending}
+            >
+              {copy.refresh}
+            </Button>
+          </div>
+          {!attendance.state.data ? (
+            <p className="muted m-0" role="status">
+              {attendance.state.failures ? copy.attendanceLoadFailed : copy.attendanceLoading}
+            </p>
+          ) : board.attendanceMembers.length === 0 ? (
             <p className="muted m-0">{copy.attendanceEmpty}</p>
           ) : (
             <ul className="activity-board__attendance-list">

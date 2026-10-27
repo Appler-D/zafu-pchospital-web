@@ -1335,6 +1335,17 @@ dbTest("成员「已接待」只含本人接待；管理员仍看本场全部（
     "成员只看本人接待，且计数与列表同源",
   );
   assert.equal(memberBoard.served.length, 1);
+  // 增量路径与完整兼容路径遵守同一成员可见范围；live 不下发低频明细。
+  const live = await repairActivityStaffService.getLiveBoard(ACTIVITY_ID, memberActor);
+  assert.equal(live.servedCount, 1);
+  assert.equal(live.attendanceCount, null);
+  assert.equal("served" in live, false);
+  assert.equal("attendanceMembers" in live, false);
+  assert.equal(JSON.stringify(live).includes(otherServed.id), false);
+  assert.deepEqual(
+    (await repairActivityStaffService.getServedBoard(ACTIVITY_ID, memberActor)).served,
+    memberBoard.served,
+  );
   assert.ok(memberBoard.queue.some((row) => row.id === queued.id));
 
   const adminBoard = await repairActivityStaffService.getBoard(ACTIVITY_ID, staffActor);
@@ -1347,4 +1358,43 @@ dbTest("成员「已接待」只含本人接待；管理员仍看本场全部（
     [mine.id, otherServed.id, staffServed.id],
     "管理员仍按 servedAt 倒序查看本场全部接待",
   );
+  const adminLive = await repairActivityStaffService.getLiveBoard(ACTIVITY_ID, staffActor);
+  assert.equal(adminLive.servedCount, adminBoard.served.length);
+  assert.equal(adminLive.attendanceCount, adminBoard.attendanceMembers.length);
+  assert.deepEqual(adminLive.eligible, adminBoard.eligible);
+  assert.deepEqual(adminLive.queue, adminBoard.queue);
+  assert.deepEqual(
+    (await repairActivityStaffService.getAttendanceBoard(ACTIVITY_ID, staffActor))
+      .attendanceMembers,
+    adminBoard.attendanceMembers,
+  );
+  await assert.rejects(
+    () => repairActivityStaffService.getAttendanceBoard(ACTIVITY_ID, memberActor),
+    (error: unknown) => (error as { code: string }).code === "FORBIDDEN",
+  );
+});
+
+dbTest("board 增量 Route：视图校验、成员权限、私有缓存与原信封", async () => {
+  const route = async (view: string, cookie = staffCookie) => {
+    const response = await GET_BOARD(
+      new Request(
+        `http://localhost/api/v1/member/repair-activities/${ACTIVITY_ID}/board?view=${view}`,
+        { headers: { cookie } },
+      ),
+      { params: Promise.resolve({ id: ACTIVITY_ID }) },
+    );
+    return { status: response.status, headers: response.headers, json: await response.json() };
+  };
+  for (const view of ["live", "served", "attendance", "full"]) {
+    const result = await route(view);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("cache-control"), "private, no-store");
+    assert.equal(result.json.success, true);
+    assert.ok(result.json.meta);
+  }
+  const denied = await route("attendance", absentCookie);
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers.get("cache-control"), "private, no-store");
+  const invalid = await route("unknown");
+  assert.equal(invalid.status, 400);
 });

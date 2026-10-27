@@ -89,7 +89,13 @@ function board(attended = true): StaffBoardView {
 }
 
 /** 复用已有客户端测试的 Node hook 装置，运行真实看板 JSX 和事件；不启动浏览器或 DB。 */
-async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnded = false) {
+async function mount(
+  t: TestContext,
+  data: StaffBoardView,
+  now: Date,
+  rejectEnded = false,
+  desktop = true,
+) {
   t.mock.timers.enable({ apis: ["Date", "setInterval"], now });
   const originals = ["window", "document"].map(
     (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
@@ -99,6 +105,7 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     value: {
       setInterval,
       clearInterval,
+      matchMedia: () => ({ matches: desktop, addEventListener() {}, removeEventListener() {} }),
       scrollX: 0,
       scrollY: 0,
       addEventListener() {},
@@ -148,7 +155,7 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     if (!(index in slots)) slots[index] = { current: initial };
     return slots[index];
   });
-  t.mock.method(React, "useEffect", (effect: () => void | (() => void), deps?: unknown[]) => {
+  const effectHook = (effect: () => void | (() => void), deps?: unknown[]) => {
     const index = effectCursor++;
     if (!mounted) {
       effectSlots[index] = { deps };
@@ -159,8 +166,15 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     if (previous && !depsChanged(previous.deps, deps)) return;
     previous?.cleanup?.();
     effectSlots[index] = { deps, cleanup: runEffect(effect) };
+  };
+  t.mock.method(React, "useEffect", effectHook);
+  t.mock.method(React, "useLayoutEffect", effectHook);
+  t.mock.method(React, "useMemo", (factory: () => unknown, deps?: unknown[]) => {
+    const index = callbackCursor++;
+    if (!callbackSlots[index] || depsChanged(callbackSlots[index].deps, deps))
+      callbackSlots[index] = { deps, callback: factory() };
+    return callbackSlots[index].callback;
   });
-  t.mock.method(React, "useLayoutEffect", () => {});
   t.mock.method(React, "useCallback", (callback: unknown, deps?: unknown[]) => {
     const index = callbackCursor++;
     if (!callbackSlots[index] || depsChanged(callbackSlots[index].deps, deps))
@@ -171,11 +185,16 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     assert.equal(context, AppRouterContext);
     return { push() {}, refresh() {} };
   });
+  let currentActivityId = "activity";
+  let networkFailure = false;
+  const reads: { view: string; at: number }[] = [];
+  let postResponse: (() => Promise<Response>) | null = null;
   const posts: string[] = [];
   let gets = 0;
   t.mock.method(globalThis, "fetch", async (input: unknown, init?: RequestInit) => {
     if (init?.method === "POST") {
       posts.push(String(input));
+      if (postResponse) return postResponse();
       assert.ok(rejectEnded, "截止后不能发出写请求");
       return Response.json(
         { success: false, error: { code: "ACTIVITY_ENDED", message: "server" } },
@@ -183,7 +202,20 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
       );
     }
     gets += 1;
-    return Response.json({ success: true, data });
+    const view = new URL(String(input), "http://localhost").searchParams.get("view") ?? "full";
+    reads.push({ view, at: Date.now() });
+    if (networkFailure) throw new Error("isolated network failure");
+    const result =
+      view === "served"
+        ? { served: data.served }
+        : view === "attendance"
+          ? { attendanceMembers: data.attendanceMembers }
+          : {
+              ...data,
+              servedCount: data.served.length,
+              attendanceCount: data.canAdmin ? data.attendanceMembers.length : null,
+            };
+    return Response.json({ success: true, data: result });
   });
   const { MemberRepairActivityBoard } =
     await import("../../src/components/repair-activities/MemberRepairActivityBoard");
@@ -191,7 +223,7 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     cursor = 0;
     effectCursor = 0;
     callbackCursor = 0;
-    return MemberRepairActivityBoard({ activityId: "activity" });
+    return MemberRepairActivityBoard({ activityId: currentActivityId });
   };
   view();
   mounted = true;
@@ -206,6 +238,8 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     }
   });
   await setImmediate();
+  view();
+  await setImmediate();
   function button(label: string) {
     const found = elements(view()).find(
       (element) => typeof element.type !== "string" && element.props.children === label,
@@ -217,7 +251,25 @@ async function mount(t: TestContext, data: StaffBoardView, now: Date, rejectEnde
     return elements(view()).find((element) => element.props.title === copy.checkInConfirmTitle)
       ?.props;
   }
-  return { view, button, dialog, posts, gets: () => gets, elements: () => elements(view()) };
+  return {
+    replyToPost: (reply: () => Promise<Response>) => {
+      postResponse = reply;
+    },
+    switchActivity: (id: string) => {
+      currentActivityId = id;
+      return view();
+    },
+    failReads: (fail: boolean) => {
+      networkFailure = fail;
+    },
+    reads,
+    view,
+    button,
+    dialog,
+    posts,
+    gets: () => gets,
+    elements: () => elements(view()),
+  };
 }
 
 test("结束的看板保留历史、出勤状态和纠错，三项控件禁用且不误报尚未截止", async (t) => {
@@ -311,4 +363,169 @@ test("结束后轮询节拍降为 60 秒，历史看板保留", async (t) => {
     ui.elements().some((element) => element.props.message === copy.activityEnded),
     true,
   );
+});
+
+test("自动失败可见、保留看板与勾选、退避恢复后回到 5 秒", async (t) => {
+  const ui = await mount(t, board(), new Date(end.getTime() - 600_000));
+  ui.elements().find((element) => element.props.type === "checkbox")!.props.onChange!();
+  ui.failReads(true);
+  const start = Date.now();
+  const baseline = ui.reads.length;
+  for (const duration of [5_000, 10_000, 20_000, 40_000]) {
+    t.mock.timers.tick(duration);
+    await setImmediate();
+    ui.view();
+  }
+  assert.deepEqual(
+    ui.reads
+      .slice(baseline)
+      .filter((read) => read.view === "live")
+      .map((read) => read.at - start),
+    [5_000, 15_000, 35_000, 75_000],
+  );
+  const statuses = ui
+    .elements()
+    .filter((element) => typeof element.type !== "string" && element.props.className === undefined);
+  assert.ok(statuses.length > 0);
+  assert.ok(text(ui.view()).includes("隔离活动"));
+  assert.equal(
+    ui.elements().find((element) => element.props.type === "checkbox")!.props.checked,
+    true,
+  );
+  const sync = ui
+    .elements()
+    .find((element) => (element.props as { label?: string }).label === copy.queueSyncedAt)!;
+  assert.equal((sync.props as { state: { failures: number } }).state.failures, 4);
+  ui.failReads(false);
+  ui.button(copy.refresh).onClick!();
+  await setImmediate();
+  ui.view();
+  assert.equal(
+    (
+      ui
+        .elements()
+        .find((element) => (element.props as { label?: string }).label === copy.queueSyncedAt)!
+        .props as { state: { failures: number } }
+    ).state.failures,
+    0,
+  );
+  const count = ui.reads.filter((read) => read.view === "live").length;
+  t.mock.timers.tick(5_000);
+  await setImmediate();
+  assert.equal(ui.reads.filter((read) => read.view === "live").length, count + 1);
+});
+
+test("同实例切活动且新请求失败时不再显示旧场数据和勾选", async (t) => {
+  const ui = await mount(t, board(), new Date(end.getTime() - 600_000));
+  ui.elements().find((element) => element.props.type === "checkbox")!.props.onChange!();
+  ui.failReads(true);
+  ui.switchActivity("second");
+  await setImmediate();
+  assert.equal(text(ui.view()).includes("隔离活动"), false);
+  assert.ok(ui.button(copy.retry));
+});
+
+test("桌面历史按 60 秒读取，出勤名单只在打开弹层时读取", async (t) => {
+  const data = board();
+  const ui = await mount(t, data, new Date(end.getTime() - 600_000));
+  assert.equal(ui.reads.filter((read) => read.view === "attendance").length, 0);
+  const baseline = ui.reads.filter((read) => read.view === "served").length;
+  for (let i = 0; i < 11; i++) {
+    t.mock.timers.tick(5_000);
+    await setImmediate();
+    ui.view();
+  }
+  assert.equal(ui.reads.filter((read) => read.view === "served").length, baseline);
+  t.mock.timers.tick(5_000);
+  await setImmediate();
+  ui.view();
+  assert.equal(ui.reads.filter((read) => read.view === "served").length, baseline + 1);
+  ui.button(copy.attendanceEntry.replace("{count}", "0")).onClick!();
+  await setImmediate();
+  ui.view();
+  assert.equal(ui.reads.filter((read) => read.view === "attendance").length, 1);
+});
+
+test("手机未显示已接待分区时不读取历史，切入后才读取", async (t) => {
+  const ui = await mount(t, board(), new Date(end.getTime() - 600_000), false, false);
+  assert.equal(
+    ui.reads.some((read) => read.view === "served"),
+    false,
+  );
+  const pane = ui
+    .elements()
+    .find(
+      (element) =>
+        element.props.className === "activity-board__seg-btn" &&
+        text(element.props.children).includes(copy.servedTitle),
+    )!;
+  pane.props.onClick!();
+  ui.view();
+  await setImmediate();
+  assert.equal(ui.reads.filter((read) => read.view === "served").length, 1);
+});
+
+test("旧活动写请求迟到的结束响应不污染新活动（含 A→B→A）", async (t) => {
+  const ui = await mount(t, board(false), new Date(end.getTime() - 600_000));
+  let resolve!: (response: Response) => void;
+  ui.replyToPost(
+    () =>
+      new Promise<Response>((done) => {
+        resolve = done;
+      }),
+  );
+  ui.button(copy.attendCta).onClick!();
+  ui.switchActivity("second");
+  await setImmediate();
+  ui.view();
+  await setImmediate();
+  ui.switchActivity("activity");
+  await setImmediate();
+  ui.view();
+  await setImmediate();
+  resolve(
+    Response.json(
+      { success: false, error: { code: "ACTIVITY_ENDED", message: "old target" } },
+      { status: 404 },
+    ),
+  );
+  await setImmediate();
+  ui.view();
+  assert.equal(ui.button(copy.attendCta).disabled, false);
+  assert.equal(text(ui.view()).includes(copy.activityEnded), false);
+  assert.equal(
+    ui.elements().some((element) => element.props.message === copy.activityEnded),
+    false,
+  );
+});
+
+test("签到成功但刷新失败的提示在恢复后解除，不残留失败浮条", async (t) => {
+  const ui = await mount(t, board(), new Date(end.getTime() - 600_000));
+  ui.replyToPost(async () => {
+    ui.failReads(true);
+    return Response.json({
+      success: true,
+      data: { checkedIn: [{ ...row, status: "CHECKED_IN" }] },
+    });
+  });
+  ui.elements().find((element) => element.props.type === "checkbox")!.props.onChange!();
+  ui.button(copy.checkIn).onClick!();
+  ui.dialog()!.onConfirm!();
+  await setImmediate();
+  ui.view();
+  await setImmediate();
+  assert.equal(ui.posts.length, 1);
+  assert.equal(
+    ui.elements().some((element) => element.props.message === copy.checkInRefreshFailed),
+    true,
+  );
+  ui.failReads(false);
+  ui.button(copy.refresh).onClick!();
+  await setImmediate();
+  ui.view();
+  assert.equal(
+    ui.elements().some((element) => element.props.message === copy.checkInRefreshFailed),
+    false,
+  );
+  assert.equal(ui.posts.length, 1, "恢复只重读，不能自动重放写请求");
 });
