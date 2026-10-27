@@ -3690,12 +3690,16 @@ html[data-theme="black-yellow"] {
   .member-workspace {
     padding-block: clamp(5.75rem, 10vh, 7rem) var(--s-8);
   }
-  /* 消息通知：成员页使用紧凑页头，不继承官网首屏留白。 */
-  .member-notifications-workspace.page-head {
+  /* 成员紧凑工作区：页头与内容使用成员间距，不继承官网首屏留白。 */
+  .member-compact-workspace.page-head {
     padding-block: clamp(1.5rem, 3vw, 2.5rem) var(--s-8);
   }
-  .member-notifications-workspace .sec-title {
+  .member-compact-workspace .sec-title {
     font-size: clamp(2rem, 3vw, 3rem);
+  }
+  /* 维修子页的页头与正文分别成段，页头自身不再叠加底部间距。 */
+  .repair-page .member-page-head {
+    margin-bottom: 0;
   }
   .member-workspace__content {
     display: grid;
