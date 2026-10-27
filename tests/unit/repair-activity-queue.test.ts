@@ -18,6 +18,14 @@ function text(node: ReactNode): string {
   if (React.isValidElement<{ children?: ReactNode }>(node)) return text(node.props.children);
   return typeof node === "string" || typeof node === "number" ? String(node) : "";
 }
+function liveText(node: ReactNode): string[] {
+  if (Array.isArray(node)) return node.flatMap(liveText);
+  if (React.isValidElement<{ children?: ReactNode; "aria-live"?: string }>(node)) {
+    if (node.props["aria-live"] === "polite") return [text(node.props.children)];
+    return liveText(node.props.children);
+  }
+  return [];
+}
 function refreshButton(node: ReactNode): ReactElement<{ disabled: boolean; onClick(): void }> {
   if (React.isValidElement<{ children?: ReactNode; onClick?: () => void }>(node)) {
     if (node.props.onClick) return node as ReturnType<typeof refreshButton>;
@@ -224,4 +232,26 @@ test("#244 请求超时解除忙碌并按 30 秒退避，不能永久挂住刷�
   assert.equal(ui.requests.length, 1);
   t.mock.timers.tick(1);
   assert.equal(ui.requests.length, 2);
+});
+
+test("#244 普通同步只更新时间，不重复宣告；人数变化、失败和结束有简短播报", async (t) => {
+  const ui = await mount(t);
+  assert.deepEqual(liveText(ui.view()), [""]);
+  await ui.finish(0, sample(6));
+  assert.deepEqual(liveText(ui.view()), [`6 ${copy.waiting}`]);
+
+  t.mock.timers.tick(30_000);
+  await ui.finish(1, { ...sample(6), observedAt: "2026-10-27T10:31:00Z" });
+  assert.ok(text(ui.view()).includes("18:31"), "可见更新时间仍正常变化");
+  assert.deepEqual(liveText(ui.view()), [`6 ${copy.waiting}`], "更新时间不能进入播报区域");
+
+  ui.focus();
+  await ui.finish(2, sample(3));
+  assert.deepEqual(liveText(ui.view()), [`3 ${copy.waiting}`]);
+  ui.focus();
+  await ui.finish(3, null);
+  assert.deepEqual(liveText(ui.view()), [copy.stale]);
+  ui.focus();
+  await ui.finish(4, null, "ACTIVITY_ENDED");
+  assert.deepEqual(liveText(ui.view()), [copy.ended]);
 });

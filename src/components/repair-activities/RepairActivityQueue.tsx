@@ -115,6 +115,18 @@ export function RepairActivityQueue({ activityId }: { activityId: string }) {
   }, [activityId]);
 
   const title = terminal === "ended" ? copy.ended : terminal === "missing" ? copy.missing : null;
+  // 时间与忙碌状态不会改变此文本；普通成功同步不触发重复播报。
+  const announcement =
+    title ??
+    (failed
+      ? sample
+        ? copy.stale
+        : copy.unavailable
+      : sample
+        ? sample.waitingCount === null
+          ? copy.notOpen
+          : `${sample.waitingCount} ${copy.waiting}`
+        : "");
   return (
     <section className={styles.queue} aria-labelledby="activity-queue-title">
       <div className={styles.queueHead}>
@@ -125,7 +137,7 @@ export function RepairActivityQueue({ activityId }: { activityId: string }) {
           {copy.refresh}
         </Button>
       </div>
-      <div className={styles.queueResult} aria-live="polite" aria-atomic="true">
+      <div className={styles.queueResult}>
         {title ? (
           <p>{title}</p>
         ) : sample?.waitingCount === null ? (
@@ -153,6 +165,9 @@ export function RepairActivityQueue({ activityId }: { activityId: string }) {
         ) : null}
         {!terminal && sample && failed ? <p className={styles.queueWarning}>{copy.stale}</p> : null}
       </div>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
       <p className={styles.queueGuidance}>{copy.guidance}</p>
     </section>
   );
