@@ -15,7 +15,7 @@ import { shanghaiDayToDateOnly, toDateOnlyBounds, type UtcRange } from "@/lib/ac
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { assertCanReadRepair } from "./repair-policy";
-import { repairDetailInclude, repairRepository } from "./repair-repository";
+import { repairListInclude, repairRepository } from "./repair-repository";
 import { repairOrderBy } from "./repair-sort";
 import { toRepairDetail, toRepairView } from "./repair-view";
 import { isFavorited } from "@/features/community/favorite-service";
@@ -46,7 +46,8 @@ export const repairQueryService: RepairQueryServiceContract = {
       getDb().repairRecord.count({ where }),
       getDb().repairRecord.findMany({
         where,
-        include: repairDetailInclude,
+        // 列表 DTO 不返回审核记录 / 时间线，只读取列表需要的关联。
+        include: repairListInclude,
         // 用户点过表头就按用户的选择排（白名单与映射见 `repair-sort.ts`），否则按
         // 维修日期倒序；两条路径都由 `repairOrderBy` 补 `id` 兜底 ——
         // 主排序键重复时没有确定名次，`skip` / `take` 的分页就会重复或漏行。

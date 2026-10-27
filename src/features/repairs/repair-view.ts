@@ -1,10 +1,11 @@
 import type { Prisma } from "@/generated/prisma/client";
-import { repairDetailInclude } from "@/features/repairs/repair-repository";
+import { repairDetailInclude, repairListInclude } from "@/features/repairs/repair-repository";
 import { uploadLimits } from "@/features/repairs/repair-photo-storage";
 import { canAttachRepairPhotos } from "@/features/repairs/repair-policy";
 import type { AuthorizedActor, RepairDetailView, RepairView } from "@/types/contracts";
 
-type RecordRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
+type RepairListRow = Prisma.RepairRecordGetPayload<{ include: typeof repairListInclude }>;
+type RepairDetailRow = Prisma.RepairRecordGetPayload<{ include: typeof repairDetailInclude }>;
 
 /** 展示名回退链：昵称 → 真实姓名 → 账号显示名 → 「成员」。 */
 function memberDisplayName(member: {
@@ -21,7 +22,7 @@ function memberDisplayName(member: {
  * `ownerName` 在成员区内全站可见，不参与收口。
  */
 export function toRepairView(
-  record: RecordRow,
+  record: RepairListRow,
   options: { canViewOwnerPhone?: boolean } = {},
 ): RepairView {
   const name = memberDisplayName(record.memberProfile);
@@ -78,7 +79,7 @@ export function toRepairView(
 }
 
 export function toRepairDetail(
-  record: RecordRow,
+  record: RepairDetailRow,
   actor: AuthorizedActor,
   options: { isFavorited?: boolean } = {},
 ): RepairDetailView {

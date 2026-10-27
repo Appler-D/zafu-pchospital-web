@@ -563,6 +563,19 @@ DELETE     /api/v1/admin/comments/:id
   不会出现「已审核通过但照片后到」。照片上限仍按 `photoLimits`。
 - `RepairDetailView` 增加 `canAttachPhotos: boolean`，只控制详情页入口，服务端仍独立复核。
 
+### 照片顺序与维修列表读取（issue #235）
+
+- 有效照片的 `sortOrder` 始终为连续的 `0..n-1`：新上传接在末尾；删除后压缩剩余照片；
+  换序按目标位置移动后整体重排。三者都在既有记录行锁事务内完成，历史数据里的空洞 /
+  重复序号会在下一次写操作后收敛。
+- `PATCH /api/v1/repairs/:id/photos/:photoId` 请求体的 `sortOrder` 仍是**目标位置**
+  （`0..n-1` 的数组下标），不是直接写入的存储序号；权限、审核窗口、数量 / 体积限制与
+  现有文件均不变。详情附件组件在写操作成功后按展示顺序收敛本地序号；编辑页仍以服务端刷新为准。
+- 维修列表改用只包含 `memberProfile` / `category` / `photos` / `participants` 的
+  `repairListInclude`，不再读取列表 DTO 不返回的审核记录与时间线及其关联用户；
+  详情继续使用 `repairDetailInclude`。列表 DTO、照片元数据、参与人、排序筛选、机主电话
+  权限与导出均不变；无 Schema / Migration / 索引变更。
+
 ### 成员案例库准入规则（issue #134，前端页面，无新接口）
 
 `/member/cases` 取数复用 `GET /api/v1/repairs` 的既有筛选

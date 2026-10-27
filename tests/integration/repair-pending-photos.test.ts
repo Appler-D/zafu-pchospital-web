@@ -209,6 +209,22 @@ async function createPendingRecord(memberProfileId: string): Promise<string> {
   return id;
 }
 
+async function activePhotos(recordId: string) {
+  return getDb().repairPhoto.findMany({
+    where: { repairRecordId: recordId, deletedAt: null },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, sortOrder: true },
+  });
+}
+
+function assertContiguous(rows: Array<{ sortOrder: number }>) {
+  assert.deepEqual(
+    rows.map((row) => row.sortOrder),
+    rows.map((_, index) => index),
+    "有效照片序号必须连续为 0..n-1",
+  );
+}
+
 before(async () => {
   if (!enabled) return;
   uploadTestRoot = await mkdtemp(join(tmpdir(), "pc226-photos-"));
@@ -268,6 +284,130 @@ dbTest("PENDING 未审核：本人可上传、排序、删除照片", async () =
     }),
     1,
   );
+});
+
+dbTest("删除中间照片后补传：序号连续，详情顺序与刷新一致（issue #235）", async () => {
+  const member = await createMember("顺序补传");
+  const owner = ownerActor(member);
+  const recordId = await createPendingRecord(member.profileId);
+  const uploaded = await repairPhotoService.upload(
+    recordId,
+    [pngFile("a.png"), pngFile("b.png"), pngFile("c.png")],
+    owner,
+  );
+  assert.deepEqual(
+    uploaded.map((photo) => photo.sortOrder),
+    [0, 1, 2],
+  );
+
+  await repairPhotoService.remove(recordId, uploaded[1]!.id, owner);
+  let rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [uploaded[0]!.id, uploaded[2]!.id],
+  );
+  assertContiguous(rows);
+
+  const appended = await repairPhotoService.upload(recordId, [pngFile("d.png")], owner);
+  assert.equal(appended[0]!.sortOrder, 2, "补传接在末尾，不能复用已释放的中间序号");
+  rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [uploaded[0]!.id, uploaded[2]!.id, appended[0]!.id],
+  );
+  assertContiguous(rows);
+
+  const detail = await repairQueryService.getById(recordId, owner);
+  assert.deepEqual(
+    detail.photos.map((photo) => photo.id),
+    rows.map((row) => row.id),
+    "详情顺序应与刷新后的数据库顺序一致",
+  );
+});
+
+dbTest("删除后上移 / 下移：按数组位置移动且序号连续（issue #235）", async () => {
+  const member = await createMember("删除后换序");
+  const owner = ownerActor(member);
+  const recordId = await createPendingRecord(member.profileId);
+  const uploaded = await repairPhotoService.upload(
+    recordId,
+    [pngFile("a.png"), pngFile("b.png"), pngFile("c.png")],
+    owner,
+  );
+  await repairPhotoService.remove(recordId, uploaded[1]!.id, owner);
+
+  const movedUp = await repairPhotoService.reorder(recordId, uploaded[2]!.id, 0, owner);
+  assert.equal(movedUp.sortOrder, 0);
+  let rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [uploaded[2]!.id, uploaded[0]!.id],
+  );
+  assertContiguous(rows);
+
+  const movedDown = await repairPhotoService.reorder(recordId, uploaded[2]!.id, 1, owner);
+  assert.equal(movedDown.sortOrder, 1);
+  rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [uploaded[0]!.id, uploaded[2]!.id],
+  );
+  assertContiguous(rows);
+
+  const detail = await repairQueryService.getById(recordId, owner);
+  assert.deepEqual(
+    detail.photos.map((photo) => photo.id),
+    [uploaded[0]!.id, uploaded[2]!.id],
+  );
+});
+
+dbTest("历史空洞 / 重复序号在下一次写操作后收敛（issue #235）", async () => {
+  const member = await createMember("序号收敛");
+  const owner = ownerActor(member);
+  const recordId = await createPendingRecord(member.profileId);
+  const uploaded = await repairPhotoService.upload(
+    recordId,
+    [pngFile("a.png"), pngFile("b.png")],
+    owner,
+  );
+
+  // 模拟旧数据留下的空洞：[0, 2]
+  await getDb().repairPhoto.update({
+    where: { id: uploaded[1]!.id },
+    data: { sortOrder: 2 },
+  });
+  const appended = await repairPhotoService.upload(recordId, [pngFile("c.png")], owner);
+  assert.equal(appended[0]!.sortOrder, 2);
+  let rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [uploaded[0]!.id, uploaded[1]!.id, appended[0]!.id],
+  );
+  assertContiguous(rows);
+
+  // 模拟重复序号：前两张都是 0；固定 createdAt 让重复项之间的顺序可预期。
+  const first = rows[0]!;
+  const second = rows[1]!;
+  const third = rows[2]!;
+  await getDb().repairPhoto.update({ where: { id: first.id }, data: { sortOrder: 0 } });
+  await getDb().repairPhoto.update({ where: { id: second.id }, data: { sortOrder: 0 } });
+  await getDb().repairPhoto.update({
+    where: { id: first.id },
+    data: { createdAt: new Date("2026-10-01T00:00:00.000Z") },
+  });
+  await getDb().repairPhoto.update({
+    where: { id: second.id },
+    data: { createdAt: new Date("2026-10-01T00:00:01.000Z") },
+  });
+
+  const moved = await repairPhotoService.reorder(recordId, third.id, 0, owner);
+  assert.equal(moved.sortOrder, 0);
+  rows = await activePhotos(recordId);
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    [third.id, first.id, second.id],
+  );
+  assertContiguous(rows);
 });
 
 dbTest("审核通过关闭补传窗口；退回后恢复", async () => {

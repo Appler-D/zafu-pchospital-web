@@ -6,7 +6,11 @@ import {
   createRepairPhotoService,
   detectImageType,
 } from "../../src/features/repairs/repair-photo-service";
-import { repairRepository } from "../../src/features/repairs/repair-repository";
+import {
+  repairDetailInclude,
+  repairListInclude,
+  repairRepository,
+} from "../../src/features/repairs/repair-repository";
 import { uploadLimits } from "../../src/features/repairs/repair-photo-storage";
 import { isRepairTransitionAllowed } from "../../src/features/repairs/repair-state";
 import {
@@ -30,6 +34,7 @@ import {
 } from "../../src/features/repairs/repair-http";
 import { listWhere } from "../../src/features/repairs/repair-query-service";
 import { toRepairView } from "../../src/features/repairs/repair-view";
+import { normalizePhotoViewOrder } from "../../src/components/repairs/photo-order";
 
 /** 管理端维修列表的筛选：日期走 DATE 列边界，结束日必须含全天（与  同源）。 */
 test("维修列表日期筛选：DATE 列边界 + 结束日含全天", () => {
@@ -411,6 +416,26 @@ test("图片魔数拒绝伪造 MIME 并识别 JPEG PNG WebP", () => {
   assert.equal(detectImageType(Uint8Array.from(Buffer.from("not-an-image"))), null);
 });
 
+test("照片本地顺序：写操作后按展示顺序收敛为 0..n-1（issue #235）", () => {
+  const photo = (id: string, sortOrder: number) => ({
+    id,
+    contentUrl: `/api/v1/repair-photos/${id}/content`,
+    originalName: null,
+    mimeType: "image/png",
+    sizeBytes: 1,
+    sortOrder,
+    createdAt: "2026-10-01T00:00:00.000Z",
+  });
+  const input = [photo("a", 0), photo("b", 2), photo("c", 2)];
+  const output = normalizePhotoViewOrder(input);
+  assert.deepEqual(
+    output.map((item) => item.sortOrder),
+    [0, 1, 2],
+  );
+  assert.equal(output[0], input[0], "序号已正确的项保持原对象");
+  assert.notEqual(output[1], input[1], "序号需要修正的项返回新对象");
+});
+
 test("已有照片加本次上传超限时，在读取文件和调用存储前拒绝", async (t) => {
   const { maxFiles } = uploadLimits();
   t.mock.method(repairRepository, "getById", async () =>
@@ -439,6 +464,17 @@ test("已有照片加本次上传超限时，在读取文件和调用存储前�
   assert.equal(read.mock.callCount(), 0);
   assert.equal(storage.put.mock.callCount(), 0);
   assert.equal(storage.delete.mock.callCount(), 0);
+});
+
+test("维修列表查询只读取列表 DTO 需要的关联（issue #235）", () => {
+  assert.equal("reviews" in repairListInclude, false, "列表不返回审核记录，不应读取");
+  assert.equal("timeline" in repairListInclude, false, "列表不返回时间线，不应读取");
+  for (const key of ["memberProfile", "category", "photos", "participants"]) {
+    assert.ok(key in repairListInclude, `列表 DTO 需要的 ${key} 必须保留`);
+    assert.ok(key in repairDetailInclude, `详情应包含列表关联 ${key}`);
+  }
+  assert.ok("reviews" in repairDetailInclude);
+  assert.ok("timeline" in repairDetailInclude);
 });
 
 test("维修列表 status 查询白名单：合法预选，非法忽略", () => {
