@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { MemberNav } from "@/components/member/MemberNav";
+import { BrowserHint } from "@/components/ui/BrowserHint";
 
 /**
  * MemberShell —— 成员端外壳
@@ -18,7 +19,10 @@ export function MemberShell({ children, displayName = null }: MemberShellProps) 
   return (
     <div className="member-shell">
       <MemberNav displayName={displayName} />
-      <div className="member-shell__main">{children}</div>
+      <div className="member-shell__main">
+        <BrowserHint />
+        {children}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { MemberRepairActivityList } from "@/components/repair-activities/MemberRepairActivityList";
+import { RepairWorkflowLink } from "@/components/ui/RepairWorkflowLink";
 import { Section } from "@/components/ui/Section";
 import { memberRepairActivitiesCopy } from "@/config/repair-activities";
 import { requireActiveMemberPage } from "@/lib/auth/member-page";
@@ -22,6 +23,7 @@ export default async function MemberRepairActivitiesPage() {
           {copy.title}
         </h1>
         <p className="muted">{copy.lead}</p>
+        <RepairWorkflowLink />
       </header>
       <MemberRepairActivityList />
     </Section>

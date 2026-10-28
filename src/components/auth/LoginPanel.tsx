@@ -3,6 +3,8 @@ import Link from "next/link";
 import { AuthPanel } from "@/components/auth/AuthPanel";
 import { InviteRegistrationForm } from "@/components/auth/InviteRegistrationForm";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { BrowserHint } from "@/components/ui/BrowserHint";
+import { RepairWorkflowLink } from "@/components/ui/RepairWorkflowLink";
 import { loginCopy, registerCopy } from "@/config/auth";
 
 export type AuthPanelMode = "login" | "register";
@@ -33,6 +35,7 @@ export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
       eyebrow={shell.eyebrow}
       className={isRegister ? "auth-login__panel--register" : undefined}
     >
+      <BrowserHint />
       {isRegister ? (
         <InviteRegistrationForm returnTo={returnTo} />
       ) : (
@@ -69,6 +72,7 @@ export function LoginPanel({ mode = "login", returnTo }: LoginPanelProps) {
             </p>
           </>
         )}
+        <RepairWorkflowLink />
         <Link className="auth-login__home" href="/">
           {shell.backHome}
         </Link>
