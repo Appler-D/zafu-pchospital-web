@@ -259,6 +259,47 @@ test("排队区块只在活动开始后、活动自然日结束前渲染", async
   assert.equal(queueElement(ui.view()), undefined);
 });
 
+test("排队区块在活动开始边界由定时器显示", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, {
+    ...activity,
+    activityAt: "2026-10-24T10:00:00Z",
+    signupOpensAt: "2026-10-23T04:00:00Z",
+    signupClosesAt: "2026-10-24T09:00:00Z",
+    status: "CLOSED",
+  });
+  assert.equal(queueElement(ui.view()), undefined);
+
+  // 状态已是 CLOSED，不会再有倒计时重取；只能由开始边界的定时器切到可见。
+  t.mock.timers.tick(6 * 60 * 60 * 1000);
+  assert.ok(queueElement(ui.view()));
+});
+
+test("远期活动跨过 setTimeout 上限后仍按链路显示排队", async (t) => {
+  const ui = await mount(t);
+  const day = 24 * 60 * 60 * 1000;
+  const start = Date.parse("2026-10-24T04:00:01Z") + 30 * day;
+  await ui.finish(0, {
+    ...activity,
+    activityAt: new Date(start).toISOString(),
+    signupOpensAt: new Date(start - 5 * day).toISOString(),
+    signupClosesAt: new Date(start - day).toISOString(),
+    status: "CLOSED",
+  });
+  assert.equal(queueElement(ui.view()), undefined);
+
+  // 超过浏览器约 24.8 天的最大 setTimeout；链式重排不能提前显示。
+  t.mock.timers.tick(2_147_483_647);
+  assert.equal(queueElement(ui.view()), undefined);
+
+  t.mock.timers.tick(30 * day - 2_147_483_647 + 1_000);
+  assert.ok(queueElement(ui.view()));
+
+  // 继续跨过活动上海自然日结束点后移除。
+  t.mock.timers.tick(day);
+  assert.equal(queueElement(ui.view()), undefined);
+});
+
 test("切换活动会使旧请求失效，旧活动响应不能覆盖新目标", async (t) => {
   const ui = await mount(t);
   ui.changeId("b");

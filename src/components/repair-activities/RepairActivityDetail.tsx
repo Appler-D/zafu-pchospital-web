@@ -35,6 +35,9 @@ import styles from "./RepairActivityDetail.module.css";
 
 type Props = { activityId: string };
 
+/** 浏览器 setTimeout 的最大安全延时；超出会溢出并提前触发。 */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 export function RepairActivityDetail({ activityId }: Props) {
   const copy = repairActivitiesPage.detail;
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
@@ -169,15 +172,26 @@ export function RepairActivityDetail({ activityId }: Props) {
     const startMs = Date.parse(activity.activityAt);
     const endMs = activityEndExclusive(new Date(activity.activityAt)).getTime();
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+    let cancelled = false;
     const timers: number[] = [];
     const schedule = (boundary: number) => {
       const delay = boundary - (Date.now() + serverOffsetMs);
-      if (delay <= 0) return;
-      timers.push(window.setTimeout(() => setNowMs(Date.now()), delay + 100));
+      if (cancelled || delay <= 0) return;
+      const wait = Math.min(delay + 100, MAX_TIMER_DELAY_MS);
+      timers.push(
+        window.setTimeout(() => {
+          if (cancelled) return;
+          setNowMs(Date.now());
+          schedule(boundary);
+        }, wait),
+      );
     };
     schedule(startMs);
     schedule(endMs);
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, [activity, serverOffsetMs]);
 
   /** 倒计时归零转为可报名时，给读屏一次性播报（数字块本身不进入 live region）。 */
