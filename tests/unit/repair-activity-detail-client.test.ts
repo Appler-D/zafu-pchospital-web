@@ -33,6 +33,13 @@ function findElement(
 function signupDialog(node: ReactNode) {
   return findElement(node, (element) => typeof element.props.onConfirm === "function");
 }
+
+function queueElement(node: ReactNode) {
+  return findElement(node, (element) => {
+    const type = element.type as { name?: string } | string;
+    return typeof type === "function" && type.name === "RepairActivityQueue";
+  });
+}
 const activity: RepairActivityPublicView = {
   id: "a",
   title: "原活动",
@@ -55,7 +62,10 @@ async function mount(t: TestContext) {
     if (originalCss) require.extensions[".css"] = originalCss;
     else delete require.extensions[".css"];
   });
-  t.mock.timers.enable({ apis: ["Date", "setInterval"], now: new Date("2026-10-24T04:00:01Z") });
+  t.mock.timers.enable({
+    apis: ["Date", "setInterval", "setTimeout"],
+    now: new Date("2026-10-24T04:00:01Z"),
+  });
   (globalThis as unknown as { React: typeof React }).React = React;
   const originals = ["window", "document"].map(
     (key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const,
@@ -68,7 +78,7 @@ async function mount(t: TestContext) {
   const document = { visibilityState: "visible", ...events };
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { setInterval, clearInterval, ...events },
+    value: { setInterval, clearInterval, setTimeout, clearTimeout, ...events },
   });
   Object.defineProperty(globalThis, "document", { configurable: true, value: document });
   const slots: unknown[] = [];
@@ -222,6 +232,31 @@ test("活动轮询慢请求不叠加，隐藏时暂停，迟到响应与失败�
   assert.ok(text(ui.view()).includes("最新活动"));
   t.mock.timers.tick(60_000);
   assert.equal(ui.requests.length, 4, "状态已开放，停止等待开放的轮询");
+});
+
+test("排队区块只在活动开始后、活动自然日结束前渲染", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, {
+    ...activity,
+    activityAt: "2026-10-24T10:00:00Z",
+    signupOpensAt: "2026-10-24T04:00:00Z",
+    signupClosesAt: "2026-10-24T09:00:00Z",
+    status: "UPCOMING",
+  });
+  assert.equal(queueElement(ui.view()), undefined);
+  // 倒计时归零后组件自动复查状态；用它进入活动进行中的响应。
+  await ui.finish(1, {
+    ...activity,
+    activityAt: "2026-10-24T03:00:00Z",
+    signupOpensAt: "2026-10-23T04:00:00Z",
+    signupClosesAt: "2026-10-24T02:00:00Z",
+    status: "CLOSED",
+  });
+  assert.ok(queueElement(ui.view()));
+
+  // 当前测试时钟为 04:00:01Z，活动上海自然日结束于 16:00:00Z。
+  t.mock.timers.tick(12 * 60 * 60 * 1000);
+  assert.equal(queueElement(ui.view()), undefined);
 });
 
 test("切换活动会使旧请求失效，旧活动响应不能覆盖新目标", async (t) => {

@@ -317,3 +317,16 @@ export function activityEndExclusive(activityAt: Date): Date {
   // Date.UTC 自动处理 day + 1 的跨月 / 跨年进位；再减上海固定偏移得到 UTC 时刻。
   return new Date(Date.UTC(year, month - 1, day + 1) - SHANGHAI_OFFSET_MS);
 }
+
+/** 公开排队只在活动开始后、活动上海自然日结束前展示。 */
+export function canShowPublicQueue(
+  activity: { activityAt: Date | string },
+  now = new Date(),
+): boolean {
+  const activityAt = new Date(activity.activityAt);
+  if (Number.isNaN(activityAt.getTime())) return false;
+  return (
+    now.getTime() >= activityAt.getTime() &&
+    now.getTime() < activityEndExclusive(activityAt).getTime()
+  );
+}

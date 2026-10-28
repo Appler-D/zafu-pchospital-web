@@ -7,6 +7,7 @@ import {
   assertValidIssueType,
   canAcceptNewRegistration,
   canEditIssueType,
+  canShowPublicQueue,
   deriveRepairActivityStatus,
   remainingCapacity,
   RepairActivityIssueType,
@@ -228,6 +229,22 @@ test("activityAt 恰为上海 00:00：仍取该自然日，次日 00:00（上海
       effectiveRegistrationCount: 0,
     }),
     "ENDED",
+  );
+});
+
+test("公开排队：活动开始后、上海次日零点前显示", () => {
+  const activity = { activityAt: new Date("2026-10-23T10:30:00.000Z") }; // 上海 18:30
+  assert.equal(canShowPublicQueue(activity, new Date("2026-10-23T10:29:59.999Z")), false);
+  assert.equal(canShowPublicQueue(activity, activity.activityAt), true);
+  assert.equal(canShowPublicQueue(activity, new Date("2026-10-23T15:59:59.999Z")), true);
+  assert.equal(canShowPublicQueue(activity, new Date("2026-10-23T16:00:00.000Z")), false);
+  assert.equal(canShowPublicQueue({ activityAt: "not-a-date" }), false);
+  assert.equal(
+    canShowPublicQueue(
+      { activityAt: "2026-10-23T10:30:00.000Z" },
+      new Date("2026-10-23T10:30:00.000Z"),
+    ),
+    true,
   );
 });
 
