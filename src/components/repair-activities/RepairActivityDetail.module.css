@@ -154,6 +154,33 @@
   font-size: var(--t-sm);
 }
 
+.signupResult {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border: 1px solid var(--status-success-line);
+  border-radius: var(--r-mid);
+  background: var(--status-success-wash);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.signupResult strong {
+  color: var(--status-success-deep);
+}
+
+.signupResult p {
+  margin: 0;
+}
+
+.signupInfo {
+  margin: 0;
+  padding-left: var(--s-3);
+  border-left: 2px solid var(--accent);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
 .lookup {
   padding-top: var(--s-5);
   border-top: 1px solid var(--line);

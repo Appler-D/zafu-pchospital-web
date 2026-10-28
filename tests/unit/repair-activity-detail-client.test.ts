@@ -3,7 +3,10 @@ import { createRequire } from "node:module";
 import { setImmediate } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import type { ReactElement, ReactNode } from "react";
-import type { RepairActivityPublicView } from "../../src/features/repair-activities/repair-activity-service";
+import type {
+  RegistrationPublicView,
+  RepairActivityPublicView,
+} from "../../src/features/repair-activities/repair-activity-service";
 import { repairActivitiesPage } from "../../src/config/repair-activities";
 
 const require = createRequire(import.meta.url);
@@ -43,6 +46,16 @@ const activity: RepairActivityPublicView = {
   signupOpensAt: "2026-10-24T04:00:00Z",
   signupClosesAt: "2026-10-24T09:00:00Z",
   status: "UPCOMING",
+};
+const registration: RegistrationPublicView = {
+  id: "r1",
+  activityId: "a",
+  name: "测试客户",
+  phoneMasked: "138****0000",
+  issueType: "CLEAN_PASTE",
+  deviceModel: "测试机型",
+  status: "REGISTERED",
+  createdAt: "2026-10-24T04:00:01Z",
 };
 
 /** 与既有客户端测试相同的 hook 存储方式；只驱动真实 JSX/effect，不启动 Next 或 DB。 */
@@ -272,7 +285,7 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
     deviceModel: "测试机型",
     consentAccepted: true,
   });
-  ui.requests[1].finish(Response.json({ success: true }));
+  ui.requests[1].finish(Response.json({ success: true, data: registration }));
   await setImmediate();
   let success = signupDialog(ui.view());
   assert.equal(success?.props.title, repairActivitiesPage.detail.signupSuccessTitle);
@@ -292,7 +305,48 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
   assert.equal(success?.props.title, repairActivitiesPage.detail.signupSuccessTitle);
   (success?.props.onConfirm as () => void)();
   assert.equal(signupDialog(ui.view()), undefined);
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
+  assert.ok(text(ui.view()).includes(registration.phoneMasked), "弹层关闭后仍显示已报名记录");
   assert.equal(ui.requests.filter((request) => request.init.method === "POST").length, 1);
+});
+
+test("报名确认连点只发送一个 POST，成功后保留已报名提示", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  const consent = ui.requestSignup();
+  (consent.props.onConfirm as () => void)();
+  (consent.props.onConfirm as () => void)();
+  assert.equal(
+    ui.requests.filter((request) => request.init.method === "POST").length,
+    1,
+    "确认按钮连点不能重复提交",
+  );
+  ui.requests[1].finish(Response.json({ success: true, data: registration }));
+  await setImmediate();
+  (signupDialog(ui.view())?.props.onConfirm as () => void)();
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
+  assert.ok(text(ui.view()).includes(registration.phoneMasked));
+});
+
+test("重复报名提示引导查询已有记录，不覆盖为普通失败", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  const consent = ui.requestSignup();
+  (consent.props.onConfirm as () => void)();
+  ui.requests[1].finish(
+    Response.json(
+      {
+        success: false,
+        error: { code: "ACTIVITY_REGISTRATION_DUPLICATE", message: "该手机号已报名本场活动" },
+      },
+      { status: 409 },
+    ),
+  );
+  await setImmediate();
+  assert.equal(signupDialog(ui.view()), undefined);
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.duplicateHint));
+  assert.equal(ui.formResets(), 0, "重复报名时保留已填写的表单以便查询");
+  assert.equal(ui.requests.length, 2, "重复报名不刷新活动");
 });
 
 test("报名失败只显示错误，保留输入以便重试，不显示成功提醒", async (t) => {

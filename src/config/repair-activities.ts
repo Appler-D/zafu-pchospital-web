@@ -63,6 +63,10 @@ export const repairActivitiesPage = {
     submitLookup: "查询报名",
     submitUpdate: "保存故障类型",
     signupSuccess: "请按时到场，可使用报名手机号查询记录。到场前请做好以下准备",
+    /** 报名成功后的常驻提示：弹层关闭后仍能看到。 */
+    registeredHint: "如需修改故障类型，可使用下方「已经报名？」查询",
+    /** 同一手机号已报名时不再显示为失败，而是引导查询已有记录。 */
+    duplicateHint: "该手机号已报名本场活动，可使用下方「已经报名？」查询或修改故障类型",
     precautionsTitle: "到场前，记好这四件事",
     signupSuccessTitle: "报名成功",
     acknowledgePrecautions: "我已知晓",

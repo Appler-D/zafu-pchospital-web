@@ -26,6 +26,7 @@ import {
 } from "@/features/repair-activities/repair-activity-validation";
 import type {
   RegistrationLookupView,
+  RegistrationPublicView,
   RepairActivityPublicView,
 } from "@/features/repair-activities/repair-activity-service";
 
@@ -44,6 +45,8 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [notice, setNotice] = useState<AdminToastMessage | null>(null);
   const [busy, setBusy] = useState(false);
   const [signupSucceeded, setSignupSucceeded] = useState(false);
+  const [registrationResult, setRegistrationResult] = useState<RegistrationPublicView | null>(null);
+  const [signupInfo, setSignupInfo] = useState("");
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
   /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
@@ -54,6 +57,10 @@ export function RepairActivityDetail({ activityId }: Props) {
     deviceModel: string;
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
+  /** 防止连点在 busy 重新渲染前发出第二个 POST。 */
+  const submittingRef = useRef(false);
+  /** 换活动后丢弃旧报名的迟到响应。 */
+  const signupAttemptRef = useRef(0);
   const request = useRef<{ background: boolean; controller: AbortController } | null>(null);
 
   /**
@@ -109,8 +116,14 @@ export function RepairActivityDetail({ activityId }: Props) {
   );
 
   useEffect(() => {
+    signupAttemptRef.current += 1;
+    submittingRef.current = false;
     setState("loading");
     setActivity(null);
+    setSignupSucceeded(false);
+    setRegistrationResult(null);
+    setSignupInfo("");
+    setPendingSignup(null);
     void load();
     return () => {
       const active = request.current;
@@ -178,8 +191,10 @@ export function RepairActivityDetail({ activityId }: Props) {
   /** 填好表单 → 先弹免责声明，不直接提交。 */
   function requestSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || submittingRef.current || pendingSignup) return;
     setProblem("");
     setNotice(null);
+    setSignupInfo("");
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     setPendingSignup({
       name: data.name ?? "",
@@ -191,7 +206,9 @@ export function RepairActivityDetail({ activityId }: Props) {
 
   /** 弹层里点过「我已阅读并同意」之后才真正提交。 */
   async function confirmSignup() {
-    if (!pendingSignup) return;
+    if (!pendingSignup || submittingRef.current) return;
+    const attempt = ++signupAttemptRef.current;
+    submittingRef.current = true;
     setBusy(true);
     setProblem("");
     setNotice(null);
@@ -203,24 +220,37 @@ export function RepairActivityDetail({ activityId }: Props) {
       });
       const json = (await response.json()) as {
         success: boolean;
-        error?: { message?: string };
+        data?: RegistrationPublicView;
+        error?: { code?: string; message?: string };
       };
+      if (signupAttemptRef.current !== attempt) return;
       if (!json.success) {
         // 失败要让报名者看得见原因，而错误提示在弹层后面 —— 先关弹层再报错。
         setPendingSignup(null);
-        setProblem(json.error?.message ?? "报名失败");
+        if (json.error?.code === "ACTIVITY_REGISTRATION_DUPLICATE") {
+          setSignupInfo(copy.duplicateHint);
+        } else {
+          setProblem(json.error?.message ?? "报名失败");
+        }
       } else {
         setSignupSucceeded(true);
+        setRegistrationResult(json.data ?? null);
+        setSignupInfo("");
         signupFormRef.current?.reset();
         // 刷新独立收尾，不延长 POST 的忙碌周期，也不解除下一次操作的禁用。
         // 报名已成功：刷新失败时保留当前页面与成功提醒。
         void load(true);
       }
     } catch {
-      setPendingSignup(null);
-      setProblem("网络异常，请稍后重试");
+      if (signupAttemptRef.current === attempt) {
+        setPendingSignup(null);
+        setProblem("网络异常，请稍后重试");
+      }
     } finally {
-      setBusy(false);
+      if (signupAttemptRef.current === attempt) {
+        submittingRef.current = false;
+        setBusy(false);
+      }
     }
   }
 
@@ -427,6 +457,20 @@ export function RepairActivityDetail({ activityId }: Props) {
             <h2 className="admin-panel__title" id="repair-activity-signup-title">
               {copy.signupTitle}
             </h2>
+            {registrationResult ? (
+              <div className={styles.signupResult} role="status">
+                <strong>{copy.signupSuccessTitle}</strong>
+                <p>
+                  {registrationResult.name} · {registrationResult.phoneMasked}
+                </p>
+                <p className="muted">{copy.registeredHint}</p>
+              </div>
+            ) : null}
+            {signupInfo ? (
+              <p className={styles.signupInfo} role="status">
+                {signupInfo}
+              </p>
+            ) : null}
             {!open ? <p className="muted">{signupDisabledReason}</p> : null}
             {/* 开始时间解析不出（契约保证不会）时整块不渲染，避免数字块出现 Infinity。 */}
             {activity.status === "UPCOMING" && Number.isFinite(countdownMs) ? (

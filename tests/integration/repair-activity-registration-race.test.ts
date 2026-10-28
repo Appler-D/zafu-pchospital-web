@@ -1,0 +1,157 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { after, beforeEach, test } from "node:test";
+
+import { repairActivityService } from "../../src/features/repair-activities/repair-activity-service";
+import { AppError } from "../../src/lib/api/errors";
+import { disconnectDb, getDb } from "../../src/lib/db/client";
+import type { PublicRequestContext } from "../../src/types/contracts";
+import { integrationTestsEnabled } from "./db-guard";
+
+const enabled = integrationTestsEnabled();
+const dbTest = enabled ? test : test.skip;
+const PREFIX = "RACE262 ";
+const HOUR = 60 * 60 * 1000;
+
+const context: PublicRequestContext = {
+  requestId: "req_race262",
+  ipAddress: "127.0.0.1",
+  userAgent: "integration-race262",
+};
+
+async function cleanupFixtures(): Promise<void> {
+  const db = getDb();
+  const activities = await db.repairActivity.findMany({
+    where: { title: { startsWith: PREFIX } },
+    select: { id: true },
+  });
+  const activityIds = activities.map((row) => row.id);
+  if (activityIds.length === 0) return;
+  const registrations = await db.repairActivityRegistration.findMany({
+    where: { activityId: { in: activityIds } },
+    select: { id: true },
+  });
+  const registrationIds = registrations.map((row) => row.id);
+  await db.auditLog.deleteMany({
+    where: { targetType: "RepairActivityRegistration", targetId: { in: registrationIds } },
+  });
+  await db.repairActivityRegistration.deleteMany({ where: { activityId: { in: activityIds } } });
+  await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });
+}
+
+async function createActivity(capacity: number): Promise<string> {
+  const now = new Date();
+  const id = randomUUID();
+  await getDb().repairActivity.create({
+    data: {
+      id,
+      title: `${PREFIX}${capacity} 人场`,
+      capacity,
+      activityAt: new Date(now.getTime() + 7 * 24 * HOUR),
+      signupOpensAt: new Date(now.getTime() - HOUR),
+      signupClosesAt: new Date(now.getTime() + HOUR),
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  return id;
+}
+
+function registerInput(phone: string, name: string) {
+  return {
+    name,
+    phone,
+    issueType: "CLEAN_ONLY",
+    consentAccepted: true,
+  };
+}
+
+function assertCode(error: unknown, code: string): boolean {
+  return error instanceof AppError && error.code === code;
+}
+
+async function activeRows(activityId: string) {
+  return getDb().repairActivityRegistration.findMany({
+    where: { activityId, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, phone: true, name: true },
+  });
+}
+
+beforeEach(async () => {
+  if (!enabled) return;
+  await cleanupFixtures();
+});
+
+after(async () => {
+  if (!enabled) return;
+  try {
+    await cleanupFixtures();
+  } finally {
+    await disconnectDb();
+  }
+});
+
+dbTest("同手机号并发报名只落一条，其余返回重复", async () => {
+  const activityId = await createActivity(10);
+  const phone = "13800000001";
+  const results = await Promise.allSettled(
+    Array.from({ length: 5 }, (_, index) =>
+      repairActivityService.register(activityId, registerInput(phone, `竞态客户${index}`), context),
+    ),
+  );
+  const successes = results.filter((result) => result.status === "fulfilled");
+  const duplicates = results.filter(
+    (result) =>
+      result.status === "rejected" && assertCode(result.reason, "ACTIVITY_REGISTRATION_DUPLICATE"),
+  );
+  assert.equal(successes.length, 1, "同一手机号并发报名只能成功一次");
+  assert.equal(duplicates.length, 4, "其余请求应明确返回重复");
+  const rows = await activeRows(activityId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.phone, phone);
+  assert.equal(rows[0]!.id, (successes[0] as PromiseFulfilledResult<{ id: string }>).value.id);
+});
+
+dbTest("容量 1 时不同手机号并发报名不会超卖", async () => {
+  const activityId = await createActivity(1);
+  const results = await Promise.allSettled([
+    repairActivityService.register(activityId, registerInput("13800000002", "竞态甲"), context),
+    repairActivityService.register(activityId, registerInput("13800000003", "竞态乙"), context),
+  ]);
+  const successes = results.filter((result) => result.status === "fulfilled");
+  const full = results.filter(
+    (result) => result.status === "rejected" && assertCode(result.reason, "ACTIVITY_FULL"),
+  );
+  assert.equal(successes.length, 1);
+  assert.equal(full.length, 1);
+  const rows = await activeRows(activityId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.id, (successes[0] as PromiseFulfilledResult<{ id: string }>).value.id);
+});
+
+dbTest("容量 2 时 5 人并发报名只成功两名", async () => {
+  const activityId = await createActivity(2);
+  const results = await Promise.allSettled(
+    Array.from({ length: 5 }, (_, index) =>
+      repairActivityService.register(
+        activityId,
+        registerInput(`1380000001${index}`, `并发客户${index}`),
+        context,
+      ),
+    ),
+  );
+  const successes = results.filter((result) => result.status === "fulfilled");
+  const full = results.filter(
+    (result) => result.status === "rejected" && assertCode(result.reason, "ACTIVITY_FULL"),
+  );
+  assert.equal(successes.length, 2);
+  assert.equal(full.length, 3);
+  const rows = await activeRows(activityId);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(
+    rows.map((row) => row.id).sort(),
+    successes.map((result) => (result as PromiseFulfilledResult<{ id: string }>).value.id).sort(),
+    "成功响应必须对应真实落库的记录",
+  );
+});
