@@ -225,6 +225,17 @@ def run_pnpm(args):
     if command == "install":
         (Path.cwd() / "node_modules").mkdir(exist_ok=True)
         return 0
+    if command == "build":
+        # 只产出部署脚本会断言的产物；文档 revision 写进 handbook，便于测试断言缓存是否被正确绕过。
+        docs_rev = os.environ.get("DOCS_REVISION") or "local"
+        root = Path.cwd()
+        (root / ".next").mkdir(exist_ok=True)
+        (root / ".next/BUILD_ID").write_text(f"fixture-build-{docs_rev[:10]}\n", encoding="utf-8")
+        handbook = root / "public/handbook"
+        handbook.mkdir(parents=True, exist_ok=True)
+        (handbook / "index.html").write_text(f"<html>docs={docs_rev}</html>\n", encoding="utf-8")
+        print("fake next build: ok")
+        return 0
     if command == "db:generate":
         models = Path.cwd() / "src/generated/prisma/models"
         models.mkdir(parents=True, exist_ok=True)

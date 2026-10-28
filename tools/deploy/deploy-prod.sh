@@ -526,6 +526,14 @@ done
 echo "回滚后站点内部状态码：$code（BUILD_ID=$(cat .next/BUILD_ID 2>/dev/null || echo 缺失)）"
 REMOTE
 
+  RB_DOCS_STATE="$(remote_script <<REMOTE
+if rm -f "$DOCS_SYNC_STATE" 2>/dev/null; then echo INVALIDATED; else echo FAILED; fi
+REMOTE
+)"
+  if [ "$RB_DOCS_STATE" = "FAILED" ]; then
+    warn "回滚后未能删除 docs-sync 状态（$DOCS_SYNC_STATE）；请手工检查，revision 标记会在下次同步兜底。"
+  fi
+
   say "外部验证…"
   NOTIFY_SMOKE=unknown
   local RB_BAD=0 code
@@ -545,6 +553,7 @@ REMOTE
   fi
   ok "产物已回滚，站点正常。"
   say "  注意：回滚只换了产物 —— 服务器代码检出仍是最新提交，数据库迁移不回滚（前向迁移规矩）。"
+  say "  docs-sync 状态已失效：下次同步会按 gh-pages 重新发布文档（回滚的 handbook.old 可能被新文档替换）。"
   say "  如需连代码一起退（git reset 属破坏性操作），按 skill 第 9 节人工处理。"
   say ""
   say "${C_BOLD}ROLLBACK RESULT: SUCCESS${C_OFF}"
@@ -861,12 +870,14 @@ ensure_docs_source_current() {
   die "文档源码未能更新到 origin/main（$src）。为避免发布旧文档，已中止；确认要用当前快照时加 --allow-stale-docs。"
 }
 
+DOCS_REV=""
 if [ -n "$DOCS_SRC" ]; then
   ensure_docs_source_current "$DOCS_SRC"
   if [ ! -f "$DOCS_SRC/theme/pc-hospital.css" ] || [ ! -f "$DOCS_SRC/theme/pc-hospital.js" ]; then
     die "文档源码缺 theme/pc-hospital.css|js（$DOCS_SRC）—— 检出太旧，不能用于构建。更新它或换 --docs-source。"
   fi
-  DOCS_ENV=(DOCS_SOURCE_DIR="$DOCS_SRC")
+  DOCS_REV="$(git -C "$DOCS_SRC" rev-parse HEAD 2>/dev/null || true)"
+  DOCS_ENV=(DOCS_SOURCE_DIR="$DOCS_SRC" DOCS_REVISION="${DOCS_REV:-unknown}")
   ok "文档源码：$DOCS_SRC（revision $(git -C "$DOCS_SRC" rev-parse --short HEAD 2>/dev/null || echo local)）"
 else
   warn "未发现 .docs-source：构建时 tools/build-docs.mjs 会浅克隆文档仓库（需要能访问 GitHub）。"
@@ -875,13 +886,20 @@ fi
 BUILD_ID=""
 CHUNK_PATH=""
 ART_SHA256=""
+ART_DOCS_REV=""
+if [ -f "$ART" ]; then
+  ART_DOCS_REV="$(tar -xzOf "$ART" BUILD_COMMIT 2>/dev/null | sed -n 's/^docs_revision=//p' | tr -d '\r\n' || true)"
+fi
 
-if [ -f "$ART" ] && [ "$FORCE_REBUILD" != "1" ]; then
-  warn "发现同提交的已有产物，跳过构建：$ART（如需按现在的文档状态重建，加 --rebuild）"
+if [ -f "$ART" ] && [ "$FORCE_REBUILD" != "1" ] && [ -n "$DOCS_REV" ] && [ "$ART_DOCS_REV" = "$DOCS_REV" ]; then
+  warn "发现同提交且同文档修订的已有产物，跳过构建：$ART（如需按现在的文档状态重建，加 --rebuild）"
   BUILD_ID="$(tar -xzOf "$ART" .next/BUILD_ID 2>/dev/null | tr -d '\r\n' || true)"
   [ -n "$BUILD_ID" ] || die "已有产物损坏（读不出 .next/BUILD_ID）：删掉它重跑，或加 --rebuild。"
   ART_SHA256="$(sha256sum "$ART" | awk '{print $1}')"
 else
+  if [ -f "$ART" ] && [ "$FORCE_REBUILD" != "1" ]; then
+    warn "已有产物与当前文档源码不一致（缓存 docs=${ART_DOCS_REV:-unknown}，当前 ${DOCS_REV:-auto/unknown}），重新构建。"
+  fi
   say "创建独立构建 worktree（不碰当前工作区，本地未提交改动不受影响）…"
   git -C "$REPO_ROOT" worktree add --detach "$WT" "$TARGET_SHA" >/dev/null
   WT_CREATED=1
@@ -920,6 +938,7 @@ else
     echo "node=$(node -v)"
     echo "mdbook=$MDBOOK_VERSION"
     echo "build_id=$BUILD_ID"
+    echo "docs_revision=${DOCS_REV:-auto/unknown}"
   } > "$BUILD_DIR/BUILD_COMMIT"
   tar -czf "$ART" --exclude='.next/cache' -C "$WT" .next public/handbook -C "$BUILD_DIR" BUILD_COMMIT
   CACHE_N="$(tar -tzf "$ART" | grep -c '\.next/cache' || true)"
@@ -1210,8 +1229,11 @@ else
 fi
 # 部署把 public/handbook 换成了本次构建的版本；docs-sync 的 deployed-sha 已不能代表目录内容，
 # 失效后下一次同步会重新核对 gh-pages（也覆盖“产物缓存里的旧文档”）。
-rm -f "$DOCS_SYNC_STATE" 2>/dev/null || true
-echo "DOCS_SYNC_STATE_INVALIDATED=1"
+if rm -f "$DOCS_SYNC_STATE" 2>/dev/null; then
+  echo "DOCS_SYNC_STATE_INVALIDATED=1"
+else
+  echo "DOCS_SYNC_STATE_INVALIDATION_FAILED=1"
+fi
 chown -R $ZAFU_USER:$ZAFU_USER .next public/handbook
 systemctl start $SERVICE
 for i in \$(seq 1 20); do
@@ -1237,7 +1259,11 @@ DOWNTIME=$((START_TS - STOP_TS))
 SERVICE_STOPPED=0
 ok "服务已启动，内部 curl 200；停机时长 ${DOWNTIME}s。上一版产物在 .next.old（--rollback 秒级回退）。"
 verify_runtime_commit || true
-note "docs-sync 状态已失效：下一次定时同步会按 gh-pages 重新核对并发布文档。"
+if printf '%s\n' "$SWAP_OUT" | grep -q '^DOCS_SYNC_STATE_INVALIDATION_FAILED=1'; then
+  warn "docs-sync 状态文件未能删除（$DOCS_SYNC_STATE）：请手工检查；revision 标记仍会在下次同步兜底。"
+else
+  note "docs-sync 状态已失效：下一次定时同步会按 gh-pages 重新核对并发布文档。"
+fi
 
 # ---------------------------------------------------------------------------
 # [P9] 冒烟验证

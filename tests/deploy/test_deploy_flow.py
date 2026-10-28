@@ -152,6 +152,8 @@ class DeploySandbox:
         shutil.copytree(DEPLOY_DIR, self.repo / "tools/deploy")
         shutil.copy2(ROOT / ".gitignore", self.repo / ".gitignore")
         write(self.repo / "README.md", "# fixture\n")
+        # 让 public/ 被 Git 跟踪，避免第二次部署时未跟踪的 handbook.old 被折叠成 "?? public/"
+        write(self.repo / "public/.gitkeep", "\n")
         write(self.repo / "prisma/schema.prisma", SCHEMA)
         write(self.repo / "prisma/seed.ts", "export {};\n")
         write(self.repo / "prisma.config.ts", "export default {};\n")
@@ -255,7 +257,8 @@ class DeploySandbox:
                 archive,
                 "BUILD_COMMIT",
                 f"commit={self.target}\nbuilt_at=2026-01-01T00:00:00Z\nnode=v22.12.0\n"
-                f"mdbook=mdbook v0.5.4\nbuild_id={self.build_id}\n",
+                f"mdbook=mdbook v0.5.4\nbuild_id={self.build_id}\n"
+                "docs_revision=fixture-cache-docs\n",
             )
 
         fake = self.root / "fake_env.py"
@@ -344,6 +347,9 @@ class DeploySandbox:
 
     def server_head(self):
         return self.git("rev-parse", "HEAD", cwd=self.app).stdout.strip()
+
+    def server_handbook(self):
+        return (self.app / "public/handbook/index.html").read_text(encoding="utf-8")
 
     def service_state(self, unit="zafu-pchospital-web"):
         return (self.systemd / f"{unit}.state").read_text(encoding="utf-8").strip()
@@ -526,6 +532,30 @@ class DeployFlowTests(unittest.TestCase):
         self.assertEqual(sandbox.git("rev-parse", "HEAD", cwd=docs).stdout.strip(), new)
         self.assertEqual(sandbox.server_head(), sandbox.target)
         self.assertFalse(sandbox.docs_sync_state.exists())
+
+    def test_docs_revision_change_invalidates_cached_artifact(self):
+        sandbox = self.sandbox("pure", name="docs_cache")
+        docs, _old, new = sandbox.make_docs_source()
+
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("已有产物与当前文档源码不一致", log)
+        self.assertNotIn("发现同提交且同文档修订的已有产物", log)
+        self.assertEqual(sandbox.server_handbook(), f"<html>docs={new}</html>\n")
+
+    def test_same_code_and_docs_revision_reuses_artifact(self):
+        sandbox = self.sandbox("pure", name="docs_cache_reuse", fetch_ok=True)
+        docs, _old, new = sandbox.make_docs_source()
+
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertEqual(completed.returncode, 0, log)
+        completed, log = sandbox.run_deploy(
+            extra_args=("--docs-source", docs.as_posix(), "--redeploy")
+        )
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("发现同提交且同文档修订的已有产物", log)
+        self.assertNotIn("重新构建", log)
+        self.assertEqual(sandbox.server_handbook(), f"<html>docs={new}</html>\n")
 
     def test_stale_docs_source_aborts_by_default_and_can_be_allowed(self):
         sandbox = self.sandbox("pure", name="docs_stale")
