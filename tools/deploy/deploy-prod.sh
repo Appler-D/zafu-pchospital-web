@@ -38,7 +38,9 @@
 #   --key <path>           SSH 私钥（缺省 $DEPLOY_SSH_KEY；都没有则用 ssh 默认配置）
 #   --base <url>           冒烟验证地址（缺省 https://pczafu.cn）
 #   --build-dir <dir>      本地构建目录（缺省 仓库同级 .zafu-deploy-build）
-#   --docs-source <dir>    文档源码检出（缺省 仓库内 .docs-source，缺失则自动克隆）
+#   --docs-source <dir>    文档源码检出（缺省 仓库内 .docs-source，缺失则自动克隆）；
+#                          显式路径也会先 fetch/ff-only，更新失败默认中止
+#   --allow-stale-docs     文档源码无法更新时仍继续用当前检出构建（可能发布旧文档）
 #   --rebuild              忽略已有产物缓存，强制重新构建
 #   --redeploy             允许对服务器当前已部署的同一提交重复部署
 #   --yes                  跳过人工确认（停机窗口确认等），非交互环境必须加
@@ -50,7 +52,9 @@
 #   DEPLOY_FETCH_TIMEOUT / DEPLOY_FETCH_ATTEMPTS
 #       服务器主仓库 fetch 的单次超时与尝试次数（缺省 30 秒 × 1 次，失败即走 bundle）
 #   DEPLOY_DOCS_FETCH_TIMEOUT / DEPLOY_DOCS_FETCH_ATTEMPTS
-#       .docs-source 的 fetch 参数（缺省 20 秒 × 1 次；失败只告警，不影响 7A 部署）
+#       服务器 .docs-source 的 fetch 参数（缺省 20 秒 × 1 次；失败只告警，不影响 7A 部署）
+#   DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS
+#       本地构建用文档源码的 fetch/ff-only 尝试次数（缺省 3；失败默认中止）
 #
 # 恢复与兜底：
 #   · 失败时脚本不自动回滚，会按中断的阶段打印恢复指引（服务在停机前失败都还活着）。
@@ -152,6 +156,7 @@ BASE_URL="${DEPLOY_BASE_URL:-https://pczafu.cn}"
 ALLOW_RISKY_MIGRATION="${ALLOW_RISKY_MIGRATION:-0}"
 ALLOW_ENV_CHANGE="${ALLOW_ENV_CHANGE:-0}"
 ALLOW_SCHEMA_WITHOUT_MIGRATION="${ALLOW_SCHEMA_WITHOUT_MIGRATION:-0}"
+ALLOW_STALE_DOCS="${ALLOW_STALE_DOCS:-0}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -169,6 +174,7 @@ while [ $# -gt 0 ]; do
     --allow-risky-migration) ALLOW_RISKY_MIGRATION=1; shift ;;
     --allow-env-change) ALLOW_ENV_CHANGE=1; shift ;;
     --allow-schema-without-migration) ALLOW_SCHEMA_WITHOUT_MIGRATION=1; shift ;;
+    --allow-stale-docs) ALLOW_STALE_DOCS=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; die "未知参数：$1" ;;
   esac
@@ -193,11 +199,15 @@ FETCH_TIMEOUT="${DEPLOY_FETCH_TIMEOUT:-30}"
 FETCH_MAX_ATTEMPTS="${DEPLOY_FETCH_ATTEMPTS:-1}"
 DOCS_FETCH_TIMEOUT="${DEPLOY_DOCS_FETCH_TIMEOUT:-20}"
 DOCS_FETCH_MAX_ATTEMPTS="${DEPLOY_DOCS_FETCH_ATTEMPTS:-1}"
+DOCS_SOURCE_ATTEMPTS="${DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS:-3}"
+# docs-sync 的已发布 SHA；部署换入自己的 handbook 后要让它失效，下一次同步才会重新核对内容。
+DOCS_SYNC_STATE="${DOCS_SYNC_STATE_FILE:-/var/lib/docs-sync/deployed-sha}"
 for pair in \
   "DEPLOY_FETCH_TIMEOUT=$FETCH_TIMEOUT" \
   "DEPLOY_FETCH_ATTEMPTS=$FETCH_MAX_ATTEMPTS" \
   "DEPLOY_DOCS_FETCH_TIMEOUT=$DOCS_FETCH_TIMEOUT" \
-  "DEPLOY_DOCS_FETCH_ATTEMPTS=$DOCS_FETCH_MAX_ATTEMPTS"; do
+  "DEPLOY_DOCS_FETCH_ATTEMPTS=$DOCS_FETCH_MAX_ATTEMPTS" \
+  "DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS=$DOCS_SOURCE_ATTEMPTS"; do
   positive_int "${pair#*=}" || die "${pair%%=*} 必须是正整数（当前：${pair#*=}）"
 done
 
@@ -823,16 +833,36 @@ if [ -n "$DOCS_DIR_OPT" ]; then
   DOCS_SRC="$DOCS_DIR_OPT"
 elif [ -d "$REPO_ROOT/.docs-source" ]; then
   DOCS_SRC="$REPO_ROOT/.docs-source"
-  say "更新本地文档源码（.docs-source）…"
-  DOCS_UPDATED=0
-  for i in 1 2 3; do
-    if git -C "$DOCS_SRC" fetch origin main --quiet 2>/dev/null && git -C "$DOCS_SRC" merge --ff-only origin/main >/dev/null 2>&1; then DOCS_UPDATED=1; break; fi
-    warn "文档源码更新第 $i 次失败（网络？）"
-    sleep 2
-  done
-  [ "$DOCS_UPDATED" = "1" ] || warn "文档源码没更新成功：用现有检出构建（docs-sync 之后会把最新文档同步上线）。"
 fi
+
+ensure_docs_source_current() {
+  local src="$1" attempt
+  if ! git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [ "$ALLOW_STALE_DOCS" = "1" ]; then
+      warn "文档源码不是 git 检出，无法确认是否最新；--allow-stale-docs 放行：$src"
+      return 0
+    fi
+    die "文档源码不是 git 检出，无法确认是否最新（$src）。请传入最新检出，或加 --allow-stale-docs。"
+  fi
+  say "更新本地文档源码（$src）…"
+  for attempt in $(seq 1 "$DOCS_SOURCE_ATTEMPTS"); do
+    if GIT_TERMINAL_PROMPT=0 git -C "$src" fetch origin main --quiet 2>/dev/null &&
+       git -C "$src" merge --ff-only origin/main >/dev/null 2>&1; then
+      ok "文档源码已更新：$(git -C "$src" log --oneline -1 | cat)"
+      return 0
+    fi
+    warn "文档源码更新第 ${attempt}/${DOCS_SOURCE_ATTEMPTS} 次失败（网络或本地改动？）"
+    if [ "$attempt" -lt "$DOCS_SOURCE_ATTEMPTS" ]; then sleep 2; fi
+  done
+  if [ "$ALLOW_STALE_DOCS" = "1" ]; then
+    warn "文档源码未能更新；--allow-stale-docs 放行，使用当前检出构建（可能不是最新文档）。"
+    return 0
+  fi
+  die "文档源码未能更新到 origin/main（$src）。为避免发布旧文档，已中止；确认要用当前快照时加 --allow-stale-docs。"
+}
+
 if [ -n "$DOCS_SRC" ]; then
+  ensure_docs_source_current "$DOCS_SRC"
   if [ ! -f "$DOCS_SRC/theme/pc-hospital.css" ] || [ ! -f "$DOCS_SRC/theme/pc-hospital.js" ]; then
     die "文档源码缺 theme/pc-hospital.css|js（$DOCS_SRC）—— 检出太旧，不能用于构建。更新它或换 --docs-source。"
   fi
@@ -1178,6 +1208,10 @@ else
   if [ -d .next.old/cache ]; then cp -a .next.old/cache .next/cache; fi
   echo "SWAPPED BUILD_ID=\$(cat .next/BUILD_ID)"
 fi
+# 部署把 public/handbook 换成了本次构建的版本；docs-sync 的 deployed-sha 已不能代表目录内容，
+# 失效后下一次同步会重新核对 gh-pages（也覆盖“产物缓存里的旧文档”）。
+rm -f "$DOCS_SYNC_STATE" 2>/dev/null || true
+echo "DOCS_SYNC_STATE_INVALIDATED=1"
 chown -R $ZAFU_USER:$ZAFU_USER .next public/handbook
 systemctl start $SERVICE
 for i in \$(seq 1 20); do
@@ -1203,6 +1237,7 @@ DOWNTIME=$((START_TS - STOP_TS))
 SERVICE_STOPPED=0
 ok "服务已启动，内部 curl 200；停机时长 ${DOWNTIME}s。上一版产物在 .next.old（--rollback 秒级回退）。"
 verify_runtime_commit || true
+note "docs-sync 状态已失效：下一次定时同步会按 gh-pages 重新核对并发布文档。"
 
 # ---------------------------------------------------------------------------
 # [P9] 冒烟验证
