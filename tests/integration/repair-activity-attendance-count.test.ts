@@ -28,7 +28,8 @@ const STAFF_USER_ID = "e7700000-0000-4000-8000-000000000002";
 const STAFF_PROFILE_ID = "e7700000-0000-4000-8000-000000000003";
 const ATTEND_ACTIVITY_ID = "e7700000-0000-4000-8000-000000000004";
 const OTHER_ACTIVITY_ID = "e7700000-0000-4000-8000-000000000005";
-const FIXTURE_ACTIVITY_IDS = [ATTEND_ACTIVITY_ID, OTHER_ACTIVITY_ID];
+const LATER_ACTIVITY_ID = "e7700000-0000-4000-8000-000000000006";
+const FIXTURE_ACTIVITY_IDS = [ATTEND_ACTIVITY_ID, OTHER_ACTIVITY_ID, LATER_ACTIVITY_ID];
 const FIXTURE_USER_IDS = [ADMIN_USER_ID, STAFF_USER_ID];
 const FIXTURE_PROFILE_IDS = [STAFF_PROFILE_ID];
 const TITLE_PREFIX = "REG107 ";
@@ -85,12 +86,12 @@ async function cleanupFixtures(): Promise<void> {
         where: { targetType: "RepairActivityAttendance", targetId: { in: attendanceIds } },
       });
     }
-  await db.repairActivityAttendance.deleteMany({ where: { activityId: { in: activityIds } } });
-  // 安全网：按成员档案再清一次出勤行，避免任何漏网活动让下一步删档案撞外键。
-  await db.repairActivityAttendance.deleteMany({
-    where: { memberProfileId: { in: FIXTURE_PROFILE_IDS } },
-  });
-  await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });
+    await db.repairActivityAttendance.deleteMany({ where: { activityId: { in: activityIds } } });
+    // 安全网：按成员档案再清一次出勤行，避免任何漏网活动让下一步删档案撞外键。
+    await db.repairActivityAttendance.deleteMany({
+      where: { memberProfileId: { in: FIXTURE_PROFILE_IDS } },
+    });
+    await db.repairActivity.deleteMany({ where: { id: { in: activityIds } } });
   }
   await db.auditLog.deleteMany({ where: { actorUserId: { in: FIXTURE_USER_IDS } } });
   await db.memberProfile.deleteMany({ where: { id: { in: FIXTURE_PROFILE_IDS } } });
@@ -122,15 +123,16 @@ async function prepareFixtures(): Promise<void> {
       createdAt: now,
     },
   });
-  for (const [id, title] of [
-    [ATTEND_ACTIVITY_ID, `${TITLE_PREFIX}出勤主场`],
-    [OTHER_ACTIVITY_ID, `${TITLE_PREFIX}隔离场`],
+  for (const [id, title, offsetDays] of [
+    [ATTEND_ACTIVITY_ID, `${TITLE_PREFIX}出勤主场`, 7],
+    [OTHER_ACTIVITY_ID, `${TITLE_PREFIX}隔离场`, 7],
+    [LATER_ACTIVITY_ID, `${TITLE_PREFIX}较晚场`, 14],
   ] as const) {
     await db.repairActivity.create({
       data: {
         id,
         title,
-        activityAt: new Date(now.getTime() + 7 * 24 * HOUR),
+        activityAt: new Date(now.getTime() + offsetDays * 24 * HOUR),
         capacity: 100,
         signupOpensAt: new Date(now.getTime() - HOUR),
         signupClosesAt: new Date(now.getTime() - HOUR / 2),
@@ -226,5 +228,34 @@ dbTest("公开列表不包含 attendedCount", async () => {
   assert.ok(items.length > 0, "公开列表应有活动");
   for (const item of items) {
     assert.equal("attendedCount" in (item as unknown as Record<string, unknown>), false);
+  }
+});
+
+dbTest("管理端活动列表按活动时间倒序，最新在前", async () => {
+  const { status, json } = await callRoute(GET_ADMIN_ACTIVITIES, ADMIN_LIST_URL, {
+    headers: { cookie: adminCookie },
+  });
+  assert.equal(status, 200);
+  const items = json.data as Array<{ id: string; activityAt: string; createdAt: string }>;
+  const laterIndex = items.findIndex((item) => item.id === LATER_ACTIVITY_ID);
+  const earlierIndex = items.findIndex((item) => item.id === ATTEND_ACTIVITY_ID);
+  assert.ok(laterIndex >= 0 && earlierIndex >= 0, "排序夹具应出现在管理端列表");
+  assert.ok(laterIndex < earlierIndex, "较晚的活动应排在较早的活动之前");
+
+  for (let index = 1; index < items.length; index += 1) {
+    const previous = items[index - 1]!;
+    const current = items[index]!;
+    const previousAt = Date.parse(previous.activityAt);
+    const currentAt = Date.parse(current.activityAt);
+    assert.ok(
+      previousAt >= currentAt,
+      `管理端列表应按活动时间倒序：${previous.id} 早于 ${current.id}`,
+    );
+    if (previousAt === currentAt) {
+      assert.ok(
+        Date.parse(previous.createdAt) >= Date.parse(current.createdAt),
+        `同一活动时间应按创建时间倒序：${previous.id} 早于 ${current.id}`,
+      );
+    }
   }
 });

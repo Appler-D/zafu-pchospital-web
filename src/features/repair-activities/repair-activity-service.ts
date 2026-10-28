@@ -348,7 +348,8 @@ export const repairActivityService = {
     const now = new Date();
     const rows = await getDb().repairActivity.findMany({
       where: { deletedAt: null },
-      orderBy: [{ activityAt: "asc" }, { createdAt: "asc" }],
+      // 管理端按活动时间倒序，最新在前；同时间用创建时间与 id 稳定兜底。
+      orderBy: [{ activityAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     });
     const counts = await loadCounts(rows.map((r) => r.id));
     const attendanceCounts = await loadAttendanceCounts(rows.map((r) => r.id));
