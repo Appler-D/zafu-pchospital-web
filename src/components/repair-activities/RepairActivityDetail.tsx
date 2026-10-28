@@ -17,7 +17,9 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { repairActivitiesPage } from "@/config/repair-activities";
 import {
+  activityEndExclusive,
   canAcceptNewRegistration,
+  canShowPublicQueue,
   REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH,
   repairActivityIssueTypeLabels,
   repairActivityStatusLabels,
@@ -33,6 +35,9 @@ import type {
 import styles from "./RepairActivityDetail.module.css";
 
 type Props = { activityId: string };
+
+/** 浏览器 setTimeout 的最大安全延时；超出会溢出并提前触发。 */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export function RepairActivityDetail({ activityId }: Props) {
   const copy = repairActivitiesPage.detail;
@@ -145,6 +150,8 @@ export function RepairActivityDetail({ activityId }: Props) {
     ? signupOpensAtMs - (nowMs + serverOffsetMs)
     : Number.POSITIVE_INFINITY;
   const waitingForOpen = activity?.status === "UPCOMING" && countdownMs <= 0;
+  const queueVisible =
+    activity !== null && canShowPublicQueue(activity, new Date(nowMs + serverOffsetMs));
 
   /**
    * 倒计时归零：立刻重取活动状态（服务端按自己的时钟判定 OPEN / FULL / CLOSED）。
@@ -171,6 +178,34 @@ export function RepairActivityDetail({ activityId }: Props) {
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [waitingForOpen, load]);
+
+  /** 排队区块只在活动开始到活动自然日结束之间出现；在边界时刻刷新可见性。 */
+  useEffect(() => {
+    if (!activity) return;
+    const startMs = Date.parse(activity.activityAt);
+    const endMs = activityEndExclusive(new Date(activity.activityAt)).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return;
+    let cancelled = false;
+    const timers: number[] = [];
+    const schedule = (boundary: number) => {
+      const delay = boundary - (Date.now() + serverOffsetMs);
+      if (cancelled || delay <= 0) return;
+      const wait = Math.min(delay + 100, MAX_TIMER_DELAY_MS);
+      timers.push(
+        window.setTimeout(() => {
+          if (cancelled) return;
+          setNowMs(Date.now());
+          schedule(boundary);
+        }, wait),
+      );
+    };
+    schedule(startMs);
+    schedule(endMs);
+    return () => {
+      cancelled = true;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [activity, serverOffsetMs]);
 
   /** 倒计时归零转为可报名时，给读屏一次性播报（数字块本身不进入 live region）。 */
   const prevStatusRef = useRef<RepairActivityStatus | null>(null);
@@ -422,7 +457,7 @@ export function RepairActivityDetail({ activityId }: Props) {
         </dl>
       </header>
 
-      <RepairActivityQueue key={activity.id} activityId={activity.id} />
+      {queueVisible ? <RepairActivityQueue key={activity.id} activityId={activity.id} /> : null}
 
       <AdminToast toast={notice} onDismiss={() => setNotice(null)} />
       {problem ? (
