@@ -869,7 +869,6 @@ DELETE     /api/v1/admin/comments/:id
 - 不改 Schema / Migration / 新端点 / 权限；`ACTIVITY_REGISTRATION_DUPLICATE` 与
   `ACTIVITY_FULL` 的 HTTP 状态保持 409。
 
-
 ## 成员工作台出勤成员名单（issue #107）
 
 `GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
