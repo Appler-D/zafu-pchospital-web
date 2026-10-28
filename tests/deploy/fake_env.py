@@ -26,6 +26,7 @@ REPLACEMENTS = {
     "/opt/zafu-pchospital-web": APP.as_posix(),
     "/opt/zafu-pchospital-backups": (SERVER_OPT / "zafu-pchospital-backups").as_posix(),
     "/opt/zafu-pchospital-db": (SERVER_OPT / "zafu-pchospital-db").as_posix(),
+    "/var/lib/docs-sync": (SANDBOX / "docs-sync").as_posix(),
     "/opt": SERVER_OPT.as_posix(),
     "/tmp/": TMP.as_posix() + "/",
 }

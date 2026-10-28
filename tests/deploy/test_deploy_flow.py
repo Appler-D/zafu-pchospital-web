@@ -220,7 +220,7 @@ class DeploySandbox:
         write(self.app / ".next/DEPLOY_COMMIT", f"commit={self.old}\nbuild_id=old-build-id\n")
         write(self.app / "public/handbook/index.html", "<html>old</html>\n")
         # 与生产 /var/lib/docs-sync 一样放在应用目录之外，避免触发 P1 脏工作区检查。
-        self.docs_sync_state = self.root / "docs-sync-state"
+        self.docs_sync_state = self.root / "docs-sync" / "deployed-sha"
         write(self.docs_sync_state, "old-docs-sha\n")
 
         write(self.root / "server/opt/zafu-pchospital-db/.env", "GREATSQL_ROOT_PASSWORD=fixture-root\n")
@@ -309,7 +309,6 @@ class DeploySandbox:
                 "DEPLOY_DOCS_FETCH_TIMEOUT": "1",
                 "DEPLOY_DOCS_FETCH_ATTEMPTS": "1",
                 "DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS": "1",
-                "DOCS_SYNC_STATE_FILE": self.docs_sync_state.as_posix(),
             }
         )
         if fail_path:
