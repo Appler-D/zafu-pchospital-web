@@ -3,9 +3,9 @@
 # 站内文档同步：ZAFU-PCHospital-Doc 的 gh-pages 产物 → 生产的 public/handbook。
 #
 # 由 docs-sync.timer 每 30 分钟调用（也可手工执行，幂等）：
-#   1. 比对 gh-pages SHA；无变化也检查实际 HTTP 资源与官网定制；
+#   1. 比对 gh-pages SHA 与产物里的 revision 标记；无变化也检查实际 HTTP 资源与官网定制；
 #   2. 按 SHA 下载，校验源码与实际产物主题，复用官网定制处理；
-#   3. 探测新文件可访问后替换目录，HTTP 验证通过才记录 SHA；失败回滚。
+#   3. 探测新文件可访问后替换目录，写入 revision 标记，HTTP 验证通过才记录 SHA；失败回滚。
 #
 # 只碰 public/handbook：不重建站点、不重启服务、不动数据库、不动 .docs-source。
 # 必须由 nginx 直接服务 /handbook/，见 nginx-handbook.conf；不依赖 Next 静态清单。
@@ -30,6 +30,8 @@ STATE_DIR="${DOCS_SYNC_STATE_DIR:-/var/lib/docs-sync}"
 SHA_FILE="${STATE_DIR}/deployed-sha"
 BASE_URL="${DOCS_SYNC_BASE_URL:-https://pczafu.cn/handbook/}"
 helper="${TOOLS_DIR}/tools/handbook.mjs"
+# 部署产物里也写一份 revision：只靠 deployed-sha 无法发现“目录被别的部署换成旧版”。
+REVISION_FILE="${DEST}/.pc-hospital-docs-revision"
 
 log() { echo "[docs-sync] $*"; }
 warn() { echo "[docs-sync] $*" >&2; }
@@ -71,12 +73,13 @@ remote_sha="$(fetch_remote_sha)" || die "连续 5 次取不到 ${DOCS_BRANCH} �
 [[ "$remote_sha" =~ ^[0-9a-f]{40}$ ]] || die "远端 SHA 格式无效：${remote_sha}"
 
 deployed_sha="$(cat "$SHA_FILE" 2>/dev/null || true)"
+deployed_revision="$(cat "$REVISION_FILE" 2>/dev/null || true)"
 if [ "${remote_sha}" = "${deployed_sha}" ]; then
-  if node "$helper" verify "$DEST" "$BASE_URL"; then
-    log "无变化且 HTTP 校验通过（${remote_sha:0:12}），退出"
+  if [ "${deployed_revision}" = "${remote_sha}" ] && node "$helper" verify "$DEST" "$BASE_URL"; then
+    log "无变化且内容标记/HTTP 校验通过（${remote_sha:0:12}），退出"
     exit 0
   fi
-  warn "SHA 无变化但产物或 HTTP 校验失败，重新同步修复"
+  warn "SHA 无变化但内容标记或 HTTP 校验不一致，重新同步修复"
 fi
 log "检测到更新：${deployed_sha:0:12} → ${remote_sha:0:12}"
 
@@ -126,6 +129,7 @@ node "$helper" probe "$DEST" "$BASE_URL" ||
 # 在目标文件系统内 staging；两次 rename 之间有极短的目录缺口。
 rm -rf "$STAGE"
 cp -a "$src" "$STAGE"
+printf '%s\n' "$remote_sha" >"${STAGE}/.pc-hospital-docs-revision"
 rm -rf "$PREV"
 if [ -d "$DEST" ]; then mv "$DEST" "$PREV"; fi
 if ! mv "$STAGE" "$DEST"; then

@@ -89,7 +89,7 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 | P0 | 参数与本地环境预检（pnpm / mdbook / node / ssh / 目标提交已合并） | 正常 |
 | P1 | 服务器侦察（只读：HEAD、工作区、服务、内存、磁盘） | 正常 |
 | P2 | 变更评估（提交列表 / 迁移风险扫描 / **数据库变更计划 + 已应用版本核对** / .env.example 变化）+ **人工确认①** | 正常 |
-| P3 | 本地构建与打包（独立 worktree，仓库同级的 `.zafu-deploy-build/`，不碰当前工作区；同提交产物复用） | 正常 |
+| P3 | 本地构建与打包（先 fetch/ff-only 文档源码，更新失败默认中止；独立 worktree，仓库同级的 `.zafu-deploy-build/`，不碰当前工作区；同提交**且文档 revision 相同**才复用产物） | 正常 |
 | P4 | 数据库备份 + 闸门（表数 ≥ 27、有 INSERT、gzip 完整；纯代码发布也保留） | 正常 |
 | P5 | 上传产物并暂存校验（双端 sha256 + 服务器端解包断言） | 正常 |
 | P6 | 更新服务器代码（ff-only）与 `.docs-source`、依赖、`pnpm db:generate`；服务器 fetch 缺省只等 30 秒，失败立即走本地 bundle | 正常 |
@@ -111,6 +111,8 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 --allow-risky-migration  已人工读过含 DROP/MODIFY/UPDATE 的迁移 SQL 后放行
 --allow-env-change       已确认服务器 .env 随 .env.example 更新后放行
 --allow-schema-without-migration  已人工确认 schema 变化与数据库一致（或不涉及数据库）时放行
+--docs-source <dir>  文档源码检出（显式路径也会先 fetch/ff-only；失败默认中止）
+--allow-stale-docs   文档源码无法更新时仍用当前检出构建（可能发布旧文档）
 ```
 
 脚本退出时会打印各阶段耗时、服务器 fetch 等待与停机窗口，便于比较「等待」和「停机」；
@@ -121,8 +123,9 @@ description: 把 ZAFU-PCHospital/zafu-pchospital-web 部署到生产站点 pczaf
 ```text
 DEPLOY_FETCH_TIMEOUT=30        # 服务器主仓库单次 fetch 超时（秒）
 DEPLOY_FETCH_ATTEMPTS=1        # 服务器主仓库 fetch 次数；失败后改用本地 bundle
-DEPLOY_DOCS_FETCH_TIMEOUT=20   # .docs-source 单次 fetch 超时（秒）
-DEPLOY_DOCS_FETCH_ATTEMPTS=1   # .docs-source fetch 次数；失败只告警
+DEPLOY_DOCS_FETCH_TIMEOUT=20   # 服务器 .docs-source 单次 fetch 超时（秒）
+DEPLOY_DOCS_FETCH_ATTEMPTS=1   # 服务器 .docs-source fetch 次数；失败只告警
+DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS=3  # 本地构建用文档源码的 fetch/ff-only 次数；失败默认中止
 ```
 
 ## 3. 侦察判据（人工排查时）
@@ -229,11 +232,31 @@ ssh -i "$KEY" "$DEPLOY_HOST" '
 8. **内存**：生产机 1613MB + 2G swap —— **绝不要在服务器上构建**（旧路线曾四次压死机器）。
 9. **`next start` 对静态资源逐请求读盘**：换产物必须「先停服务 → 换目录 → 再起服务」，
    不停服务换目录会出现「内存里旧路由、盘上新文件」的不一致。
+10. **显式 `--docs-source` 曾经绕过更新**：传入一个旧检出时，旧脚本只检查 theme 就直接构建，
+    导致线上 `/handbook` 缺新文档。现在脚本会对显式路径执行 fetch/ff-only，失败默认中止；
+    不要用 `--allow-stale-docs` 掩盖网络问题。
+11. **部署换 `public/handbook` 后 docs-sync 可能“无变化”**：旧 docs-sync 只比 `deployed-sha`
+    与 HTTP 200，不检查目录内容，所以部署换入旧文档后它会误判为最新。现在部署会失效
+    `deployed-sha`，docs-sync 也会核对产物 `.pc-hospital-docs-revision` 标记。
+12. **产物缓存也要看文档 revision**：`pc-artifact-<提交>.tar.gz` 的 `BUILD_COMMIT` 写入
+    `docs_revision`；文档源更新后同一代码提交会重建，不再复用旧文档产物。看到
+    「已有产物与当前文档源码不一致，重新构建」是预期行为，不是故障。
 
 ## 9. 站内文档与 docs-sync（与部署的交集）
 
 - `/handbook/` = nginx 静态服务 + `docs-sync.timer` 每 30 分钟同步文档站产物；与部署（换
-  `public/handbook`）有低概率竞争 —— 部署脚本在停机阶段会自动停该定时器、收尾时恢复，一般不用手工干预。
+  `public/handbook`）有低概率竞争 —— 部署脚本在停机阶段会自动停该定时器、收尾时恢复。
+- **文档源必须是最新检出**：显式 `--docs-source` 也会先 `fetch origin main` + `merge --ff-only`；
+  更新失败默认中止（防止把旧文档打进产物）。只有明确接受旧快照时才加 `--allow-stale-docs`。
+  构建日志里的 `文档源码：…（revision …）` 要核对，不要看到短 SHA 就当通过。
+- **部署会失效 docs-sync 状态**：P8 换入 `public/handbook` 后删除 `/var/lib/docs-sync/deployed-sha`，
+  下一次定时同步会按 gh-pages 重新核对并发布。新 docs-sync 还会在产物写
+  `.pc-hospital-docs-revision`，`deployed-sha` 没变但目录被部署换成旧版时会被发现并重新同步。
+- **`--rollback` 也会失效 docs-sync 状态**：回滚后下一次同步仍按 gh-pages 发布文档，
+  `handbook.old` 可能被新文档替换；若必须固定回滚时的旧文档，先停 `docs-sync.timer` 再处理。
+- 部署后验证文档：`/docs` 只是入口页，正文看 `/handbook/`；至少抽查一个本次文档仓库新增/修改的页面
+  （新页面 200，或在 HTML 里搜到新段落），并确认 `deployed-sha` 与文档仓库 `gh-pages` 一致。
+  需要立即刷新时手工执行 `systemctl start docs-sync.service`（oneshot，幂等）。
 - 健康判据：`curl -sL https://pczafu.cn/handbook` 200；主题 CSS/JS/searchindex 均可访问。
 - 排障：主题资源 404 而文件在磁盘上 = nginx `location ^~ /handbook/` 配置丢失（`nginx -t` 后 reload）；
   改动 nginx 配置前先备份。

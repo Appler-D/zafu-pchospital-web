@@ -99,12 +99,61 @@ class DeploySandbox:
             errors="replace",
         )
 
+    def make_docs_source(self, unreachable=False):
+        """Create a docs checkout whose origin/main is one commit ahead."""
+        remote = self.root / "docs-remote.git"
+        work = self.root / "docs-work"
+        checkout = self.root / "docs-checkout"
+        self.git("init", "--bare", "--initial-branch=main", str(remote), cwd=self.root)
+        work.mkdir()
+        self.git("init", "-b", "main", cwd=work)
+        self.git("config", "core.autocrlf", "false", cwd=work)
+        self.git("config", "user.name", "Docs Fixture", cwd=work)
+        self.git("config", "user.email", "docs@fixture.invalid", cwd=work)
+        write(work / "theme/pc-hospital.css", "/* docs theme */\n")
+        write(work / "theme/pc-hospital.js", "// docs theme\n")
+        write(work / "src/SUMMARY.md", "# Summary\n\n- [Page](Page.md)\n")
+        write(work / "src/Page.md", "# Page\n")
+        self.git("add", ".", cwd=work)
+        self.git("commit", "-m", "docs old", cwd=work)
+        self.git("remote", "add", "origin", str(remote), cwd=work)
+        self.git("push", "-u", "origin", "main", cwd=work)
+        old = self.git("rev-parse", "HEAD", cwd=work).stdout.strip()
+
+        self.git(
+            "-c",
+            "core.autocrlf=false",
+            "clone",
+            str(remote),
+            str(checkout),
+            cwd=self.root,
+        )
+        self.git("config", "core.autocrlf", "false", cwd=checkout)
+
+        write(work / "src/New.md", "# New\n")
+        self.git("add", ".", cwd=work)
+        self.git("commit", "-m", "docs new", cwd=work)
+        self.git("push", "origin", "main", cwd=work)
+        new = self.git("rev-parse", "HEAD", cwd=work).stdout.strip()
+
+        if unreachable:
+            self.git(
+                "remote",
+                "set-url",
+                "origin",
+                "http://127.0.0.1:9/unreachable.git",
+                cwd=checkout,
+            )
+        return checkout, old, new
+
     def _prepare(self):
         for folder in (self.repo, self.tmp, self.backups, self.db_state, self.systemd, self.build):
             folder.mkdir(parents=True, exist_ok=True)
         shutil.copytree(DEPLOY_DIR, self.repo / "tools/deploy")
         shutil.copy2(ROOT / ".gitignore", self.repo / ".gitignore")
         write(self.repo / "README.md", "# fixture\n")
+        # 让 public/ 被 Git 跟踪，避免第二次部署时未跟踪的 handbook.old 被折叠成 "?? public/"
+        write(self.repo / "public/.gitkeep", "\n")
         write(self.repo / "prisma/schema.prisma", SCHEMA)
         write(self.repo / "prisma/seed.ts", "export {};\n")
         write(self.repo / "prisma.config.ts", "export default {};\n")
@@ -172,6 +221,9 @@ class DeploySandbox:
         write(self.app / ".next/BUILD_ID", "old-build-id\n")
         write(self.app / ".next/DEPLOY_COMMIT", f"commit={self.old}\nbuild_id=old-build-id\n")
         write(self.app / "public/handbook/index.html", "<html>old</html>\n")
+        # 与生产 /var/lib/docs-sync 一样放在应用目录之外，避免触发 P1 脏工作区检查。
+        self.docs_sync_state = self.root / "docs-sync" / "deployed-sha"
+        write(self.docs_sync_state, "old-docs-sha\n")
 
         write(self.root / "server/opt/zafu-pchospital-db/.env", "GREATSQL_ROOT_PASSWORD=fixture-root\n")
         for unit in ("zafu-pchospital-web", "docs-sync.timer", "docs-sync.service"):
@@ -205,7 +257,8 @@ class DeploySandbox:
                 archive,
                 "BUILD_COMMIT",
                 f"commit={self.target}\nbuilt_at=2026-01-01T00:00:00Z\nnode=v22.12.0\n"
-                f"mdbook=mdbook v0.5.4\nbuild_id={self.build_id}\n",
+                f"mdbook=mdbook v0.5.4\nbuild_id={self.build_id}\n"
+                "docs_revision=fixture-cache-docs\n",
             )
 
         fake = self.root / "fake_env.py"
@@ -258,6 +311,7 @@ class DeploySandbox:
                 "DEPLOY_FETCH_ATTEMPTS": "1",
                 "DEPLOY_DOCS_FETCH_TIMEOUT": "1",
                 "DEPLOY_DOCS_FETCH_ATTEMPTS": "1",
+                "DEPLOY_DOCS_SOURCE_FETCH_ATTEMPTS": "1",
             }
         )
         if fail_path:
@@ -293,6 +347,9 @@ class DeploySandbox:
 
     def server_head(self):
         return self.git("rev-parse", "HEAD", cwd=self.app).stdout.strip()
+
+    def server_handbook(self):
+        return (self.app / "public/handbook/index.html").read_text(encoding="utf-8")
 
     def service_state(self, unit="zafu-pchospital-web"):
         return (self.systemd / f"{unit}.state").read_text(encoding="utf-8").strip()
@@ -333,6 +390,7 @@ class DeployFlowTests(unittest.TestCase):
         self.assertEqual(len(sandbox.service_stops()), 1)
         self.assertTrue((sandbox.app / ".next.old/BUILD_ID").exists())
         self.assertTrue((sandbox.app / "public/handbook.old/index.html").exists())
+        self.assertFalse(sandbox.docs_sync_state.exists())
         payload = sandbox.notification()
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["smoke"], "passed")
@@ -464,6 +522,60 @@ class DeployFlowTests(unittest.TestCase):
         self.assertNotIn("改用本地 bundle", log)
         self.assertEqual(sandbox.server_head(), sandbox.target)
         self.assertEqual(sandbox.notification()["status"], "success")
+
+    def test_explicit_docs_source_is_updated_before_build(self):
+        sandbox = self.sandbox("pure", name="docs_update")
+        docs, _old, new = sandbox.make_docs_source()
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("文档源码已更新", log)
+        self.assertEqual(sandbox.git("rev-parse", "HEAD", cwd=docs).stdout.strip(), new)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertFalse(sandbox.docs_sync_state.exists())
+
+    def test_docs_revision_change_invalidates_cached_artifact(self):
+        sandbox = self.sandbox("pure", name="docs_cache")
+        docs, _old, new = sandbox.make_docs_source()
+
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("已有产物与当前文档源码不一致", log)
+        self.assertNotIn("发现同提交且同文档修订的已有产物", log)
+        self.assertEqual(sandbox.server_handbook(), f"<html>docs={new}</html>\n")
+
+    def test_same_code_and_docs_revision_reuses_artifact(self):
+        sandbox = self.sandbox("pure", name="docs_cache_reuse", fetch_ok=True)
+        docs, _old, new = sandbox.make_docs_source()
+
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertEqual(completed.returncode, 0, log)
+        completed, log = sandbox.run_deploy(
+            extra_args=("--docs-source", docs.as_posix(), "--redeploy")
+        )
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("发现同提交且同文档修订的已有产物", log)
+        self.assertNotIn("重新构建", log)
+        self.assertEqual(sandbox.server_handbook(), f"<html>docs={new}</html>\n")
+
+    def test_stale_docs_source_aborts_by_default_and_can_be_allowed(self):
+        sandbox = self.sandbox("pure", name="docs_stale")
+        docs, _old, _new = sandbox.make_docs_source(unreachable=True)
+
+        completed, log = sandbox.run_deploy(extra_args=("--docs-source", docs.as_posix()))
+        self.assertNotEqual(completed.returncode, 0, log)
+        self.assertIn("文档源码未能更新到 origin/main", log)
+        self.assertIn("--allow-stale-docs", log)
+        self.assertEqual(sandbox.server_head(), sandbox.old)
+        self.assertEqual(sandbox.service_stops(), [])
+        self.assertTrue(sandbox.docs_sync_state.exists())
+
+        completed, log = sandbox.run_deploy(
+            extra_args=("--docs-source", docs.as_posix(), "--allow-stale-docs")
+        )
+        self.assertEqual(completed.returncode, 0, log)
+        self.assertIn("--allow-stale-docs 放行", log)
+        self.assertEqual(sandbox.server_head(), sandbox.target)
+        self.assertFalse(sandbox.docs_sync_state.exists())
 
     def test_smoke_failure_returns_nonzero_and_restores_timer(self):
         sandbox = self.sandbox("pure")
