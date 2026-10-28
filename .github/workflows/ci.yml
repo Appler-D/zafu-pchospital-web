@@ -6,15 +6,17 @@
 # 而本仓库**没有配置部署前的任何拦截**。这个 workflow 就是那道拦截。
 #
 # 触发：
-#   - pull_request → main：改动进 main 之前先验一遍（不部署）
-#   - push → main：合并后再验一遍，通过则调用部署
-#   - workflow_dispatch：手动触发，可选文档版本与是否部署
+#   - pull_request → main：改动进 main 之前先验一遍
+#   - push → main：合并后再验一遍
+#   - workflow_dispatch：手动触发，可选文档仓库版本
+#
+# 本 workflow 只校验与构建，**不执行部署**：生产发布由维护者在本地用
+# tools/deploy/deploy-prod.sh 完成（含备份、迁移核对、原子切换与回滚）。
 #
 # 仓库侧设置（不在代码里，见 AGENTS.md 第 11 节）：
-#   1. main 的保护已生效：仓库 ruleset「default」要求所有改动走 PR，并把本 workflow 的
-#      「校验与构建」设为必需状态检查（同时禁止强推与删除），所以直接 push main 会被拒绝。
-#   2. 待办：配置仓库变量 DEPLOY_COMMAND（部署命令）与可选的 DOCS_REF（文档仓库分支）。
-#      未配置 DEPLOY_COMMAND 时部署步骤只打印 ::warning::，不会失败。
+#   - main 的保护已生效：仓库 ruleset「default」要求所有改动走 PR，并把本 workflow 的
+#     「校验与构建」设为必需状态检查（同时禁止强推与删除），所以直接 push main 会被拒绝。
+#   - 可选：设置仓库变量 DOCS_REF 指定文档仓库分支（默认 main）。
 name: CI
 
 on:
@@ -28,11 +30,6 @@ on:
         description: 文档仓库的分支/标签（留空则用仓库变量 DOCS_REF，再否则 main）
         required: false
         type: string
-      deploy:
-        description: 手动触发时是否调用部署
-        required: false
-        type: boolean
-        default: false
 
 # 同一分支上新的推送取消上一次未完成的运行，避免排队堆积
 concurrency:
@@ -49,9 +46,6 @@ jobs:
   verify:
     name: 校验与构建
     runs-on: ubuntu-latest
-    outputs:
-      # 把「校验过的那个文档版本」传给部署 job，保证部署的就是验证过的内容
-      docs_sha: ${{ steps.docs.outputs.sha }}
     steps:
       - name: 检出官网仓库
         uses: actions/checkout@v4
@@ -186,70 +180,3 @@ jobs:
             .next
             public/handbook
           retention-days: 3
-
-  deploy:
-    name: 部署
-    needs: verify
-    runs-on: ubuntu-latest
-    # 只在 main 上部署；PR 与手动触发默认不部署
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy)
-    steps:
-      - name: 检出官网仓库
-        uses: actions/checkout@v4
-
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: 安装依赖
-        run: pnpm install --frozen-lockfile
-
-      # 用 verify 里已解析并校验过的那个 sha，而不是重新解一次引用 ——
-      # 否则部署的可能不是刚刚验证过的文档版本。
-      # （若部署目标想要"部署已验证产物"而非重新构建，可改为 download-artifact
-      #   下载 site-with-handbook；代价是部署环境还需要 node_modules 才能 next start。）
-      - name: 检出文档仓库到 .docs-source
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.DOCS_REPO }}
-          ref: ${{ needs.verify.outputs.docs_sha }}
-          path: .docs-source
-          fetch-depth: 1
-
-      - name: 安装 mdBook（固定版）
-        run: |
-          set -euo pipefail
-          url="https://github.com/rust-lang/mdBook/releases/download/${MDBOOK_VERSION}/mdbook-${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSL "$url" -o /tmp/mdbook.tar.gz
-          mkdir -p "$HOME/.local/bin"
-          tar -xzf /tmp/mdbook.tar.gz -C "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: 完整构建（文档 + 官网）
-        run: pnpm build
-
-      # 部署目标尚未确定，所以这里只留一个由仓库变量驱动的钩子：
-      # 配置 仓库变量 DEPLOY_COMMAND（例如把 .next 与 public/handbook 同步到服务器、
-      # 推镜像、或调用托管平台的发布 API），这个步骤就会执行它。
-      # 未配置时明确提示，而不是静默跳过。
-      - name: 调用部署命令
-        if: ${{ vars.DEPLOY_COMMAND != '' }}
-        env:
-          DEPLOY_COMMAND: ${{ vars.DEPLOY_COMMAND }}
-        run: |
-          set -euo pipefail
-          echo "执行 DEPLOY_COMMAND：${DEPLOY_COMMAND}"
-          bash -c "${DEPLOY_COMMAND}"
-
-      - name: 未配置部署命令
-        if: ${{ vars.DEPLOY_COMMAND == '' }}
-        run: |
-          echo "::warning::尚未配置部署目标。请在仓库 Settings → Variables 里设置 DEPLOY_COMMAND，"
-          echo "::warning::或在 .github/workflows/ci.yml 的 deploy job 里写死具体部署步骤。"
