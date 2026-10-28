@@ -213,8 +213,10 @@ test("已撤销的行：撤销按钮禁用，但仍在 DOM 里（不出现/消�
   // 两端都有值 → 起止都写出来。
   assert.ok(html.includes(copy.window.from.replace("{from}", formatDateTime(REVOKED.activeFrom!))));
   assert.ok(
-    html.includes(copy.window.until.replace("{to}", formatDateTime(REVOKED.expiresAt!))),
+    html.includes(copy.window.until.replace("{until}", formatDateTime(REVOKED.expiresAt!))),
   );
+  // 回归（issue #248）：模板占位符名与替换名不一致时，页面会原样漏出 `{until}`。
+  assert.doesNotMatch(html, /\{[a-zA-Z]+\}/, "配置占位符不得原样出现在页面上");
 });
 
 test("renderRow 整行接管：格子被换掉，但 <tr> 属性与列宽照旧", async () => {
