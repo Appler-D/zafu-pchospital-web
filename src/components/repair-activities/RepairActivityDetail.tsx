@@ -39,6 +39,11 @@ const SIGNUP_REQUEST_TIMEOUT_MS = 15_000;
 /** 自动查询同样限时：查询也失败时停在待确认，避免界面无限等待。 */
 const LOOKUP_REQUEST_TIMEOUT_MS = 10_000;
 
+type LookupOutcome =
+  | { kind: "found"; data: RegistrationLookupView }
+  | { kind: "not-found"; message?: string }
+  | { kind: "unknown"; message?: string };
+
 type Props = { activityId: string };
 
 export function RepairActivityDetail({ activityId }: Props) {
@@ -56,6 +61,10 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [registeredPhone, setRegisteredPhone] = useState("");
   const [signupInfo, setSignupInfo] = useState("");
   const [signupPending, setSignupPending] = useState<{ name: string; phone: string } | null>(null);
+  /** 待确认查询的结论：未找到时提供重新填写，查询失败时只引导重试。 */
+  const [pendingCheckResult, setPendingCheckResult] = useState<"not-found" | "unknown" | null>(
+    null,
+  );
   const [signupPhoneError, setSignupPhoneError] = useState("");
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
@@ -74,6 +83,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const submittingRef = useRef(false);
   /** 换活动后丢弃旧报名的迟到响应。 */
   const signupAttemptRef = useRef(0);
+  /** 换活动后丢弃旧查询的迟到响应，并中止在途请求。 */
+  const lookupAttemptRef = useRef(0);
+  const lookupAbortRef = useRef<AbortController | null>(null);
   const request = useRef<{ background: boolean; controller: AbortController } | null>(null);
 
   /**
@@ -130,6 +142,9 @@ export function RepairActivityDetail({ activityId }: Props) {
 
   useEffect(() => {
     signupAttemptRef.current += 1;
+    lookupAttemptRef.current += 1;
+    lookupAbortRef.current?.abort();
+    lookupAbortRef.current = null;
     submittingRef.current = false;
     setState("loading");
     setActivity(null);
@@ -138,11 +153,19 @@ export function RepairActivityDetail({ activityId }: Props) {
     setRegisteredPhone("");
     setSignupInfo("");
     setSignupPending(null);
+    setPendingCheckResult(null);
     setSignupPhoneError("");
+    setLookup(null);
+    setLookupPhone("");
     setLookupPhoneError("");
     setPendingSignup(null);
+    setBusy(false);
+    setProblem("");
+    setNotice(null);
     void load();
     return () => {
+      lookupAbortRef.current?.abort();
+      lookupAbortRef.current = null;
       const active = request.current;
       request.current = null;
       active?.controller.abort();
@@ -228,22 +251,41 @@ export function RepairActivityDetail({ activityId }: Props) {
     });
   }
 
-  async function lookupByPhone(phone: string) {
+  async function lookupByPhone(phone: string): Promise<LookupOutcome> {
+    lookupAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupAbortRef.current = controller;
     try {
       const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone }),
-        signal: AbortSignal.timeout(LOOKUP_REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(LOOKUP_REQUEST_TIMEOUT_MS),
+        ]),
       });
-      if (response.status === 404) return "not-found" as const;
-      const json = (await response.json()) as {
+      let json: {
         success: boolean;
         data?: RegistrationLookupView;
+        error?: { message?: string };
       };
-      return json.success && json.data ? json.data : ("unknown" as const);
+      try {
+        json = (await response.json()) as typeof json;
+      } catch {
+        return { kind: "unknown" };
+      }
+      if (response.status === 404) {
+        return { kind: "not-found", message: json.error?.message };
+      }
+      if (!json.success || !json.data) {
+        return { kind: "unknown", message: json.error?.message };
+      }
+      return { kind: "found", data: json.data };
     } catch {
-      return "unknown" as const;
+      return { kind: "unknown" };
+    } finally {
+      if (lookupAbortRef.current === controller) lookupAbortRef.current = null;
     }
   }
 
@@ -252,21 +294,23 @@ export function RepairActivityDetail({ activityId }: Props) {
     pending: NonNullable<typeof pendingSignup>,
     attempt: number,
   ) {
-    const found = await lookupByPhone(pending.phone);
+    const outcome = await lookupByPhone(pending.phone);
     if (signupAttemptRef.current !== attempt) return;
-    if (found !== "not-found" && found !== "unknown") {
+    if (outcome.kind === "found") {
       setSignupSucceeded(true);
-      setRegistrationResult(found);
+      setRegistrationResult(outcome.data);
       setRegisteredPhone(pending.phone);
       setSignupInfo("");
       setSignupPending(null);
+      setPendingCheckResult(null);
       setNotice({ text: copy.lookupConfirmed, tone: "success" });
       void load(true);
       return;
     }
     setPendingSignup(null);
     setSignupPending({ name: pending.name, phone: pending.phone });
-    setSignupInfo(found === "not-found" ? copy.lookupNotFoundRetry : "");
+    setPendingCheckResult(outcome.kind === "not-found" ? "not-found" : "unknown");
+    setSignupInfo(outcome.kind === "not-found" ? copy.lookupNotFoundRetry : copy.lookupFailedRetry);
   }
 
   /** 弹层里点过「我已阅读并同意」之后才真正提交。 */
@@ -343,19 +387,36 @@ export function RepairActivityDetail({ activityId }: Props) {
 
   async function checkPendingSignup() {
     if (!signupPending || busy) return;
-    setBusy(true);
     const pending = signupPending;
-    const found = await lookupByPhone(pending.phone);
-    if (found !== "not-found" && found !== "unknown") {
+    const attempt = ++lookupAttemptRef.current;
+    setBusy(true);
+    const outcome = await lookupByPhone(pending.phone);
+    if (lookupAttemptRef.current !== attempt) return;
+    if (outcome.kind === "found") {
       setSignupPending(null);
-      setRegistrationResult(found);
+      setPendingCheckResult(null);
+      setRegistrationResult(outcome.data);
       setRegisteredPhone(pending.phone);
       setSignupInfo("");
       setNotice({ text: copy.lookupConfirmed, tone: "success" });
+      void load(true);
     } else {
-      setSignupInfo(found === "not-found" ? copy.lookupNotFoundRetry : copy.lookupFailedRetry);
+      setPendingCheckResult(outcome.kind === "not-found" ? "not-found" : "unknown");
+      setSignupInfo(
+        outcome.kind === "not-found" ? copy.lookupNotFoundRetry : copy.lookupFailedRetry,
+      );
     }
     setBusy(false);
+  }
+
+  /** 查询确认未报名后，解除待确认并允许重新填写；重复提交仍由服务端判重兜底。 */
+  function restartPendingSignup() {
+    setSignupPending(null);
+    setPendingCheckResult(null);
+    setSignupInfo("");
+    setSignupPhoneError("");
+    signupFormRef.current?.reset();
+    signupPhoneInputRef.current?.focus({ preventScroll: true });
   }
 
   function focusLookup(phone?: string) {
@@ -382,41 +443,48 @@ export function RepairActivityDetail({ activityId }: Props) {
       lookupPhoneInputRef.current?.focus();
       return;
     }
+    const attempt = ++lookupAttemptRef.current;
     setBusy(true);
     setProblem("");
     setNotice(null);
     setLookup(null);
     setLookupPhone("");
     setLookupPhoneError("");
-    try {
-      const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/lookup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      });
-      const json = (await response.json()) as {
-        success: boolean;
-        data?: RegistrationLookupView;
-        error?: { message?: string };
-      };
-      if (!json.success || !json.data) {
-        setProblem(json.error?.message ?? "查询失败");
-      } else {
-        setLookup(json.data);
-        setLookupPhone(data.phone ?? "");
-        setRegisteredPhone(data.phone ?? "");
-        setNotice({ text: copy.lookupSuccess, tone: "success" });
+    const outcome = await lookupByPhone(phone);
+    if (lookupAttemptRef.current !== attempt) return;
+    const matchesPending = signupPending?.phone === phone;
+    if (outcome.kind === "found") {
+      setLookup(outcome.data);
+      setLookupPhone(phone);
+      setRegisteredPhone(phone);
+      setNotice({ text: copy.lookupSuccess, tone: "success" });
+      if (matchesPending) {
+        setSignupPending(null);
+        setPendingCheckResult(null);
+        setRegistrationResult(outcome.data);
+        setSignupInfo("");
+        signupFormRef.current?.reset();
+        void load(true);
       }
-    } catch {
-      setProblem("网络异常，请稍后重试");
-    } finally {
-      setBusy(false);
+    } else if (matchesPending) {
+      setPendingCheckResult(outcome.kind === "not-found" ? "not-found" : "unknown");
+      setSignupInfo(
+        outcome.kind === "not-found" ? copy.lookupNotFoundRetry : copy.lookupFailedRetry,
+      );
+    } else {
+      setProblem(
+        outcome.kind === "not-found"
+          ? (outcome.message ?? "未找到该手机号的报名记录")
+          : (outcome.message ?? "网络异常，请稍后重试"),
+      );
     }
+    setBusy(false);
   }
 
   async function updateType(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!lookup) return;
+    const attempt = ++lookupAttemptRef.current;
     setBusy(true);
     setProblem("");
     setNotice(null);
@@ -432,6 +500,7 @@ export function RepairActivityDetail({ activityId }: Props) {
             phone: lookupPhone,
             editToken: lookup.editToken,
           }),
+          signal: AbortSignal.timeout(LOOKUP_REQUEST_TIMEOUT_MS),
         },
       );
       const json = (await response.json()) as {
@@ -439,6 +508,7 @@ export function RepairActivityDetail({ activityId }: Props) {
         data?: RegistrationLookupView;
         error?: { message?: string; code?: string };
       };
+      if (lookupAttemptRef.current !== attempt) return;
       if (!json.success) {
         setProblem(json.error?.message ?? "修改失败");
       } else {
@@ -448,9 +518,9 @@ export function RepairActivityDetail({ activityId }: Props) {
         }
       }
     } catch {
-      setProblem("网络异常，请稍后重试");
+      if (lookupAttemptRef.current === attempt) setProblem("网络异常，请稍后重试");
     } finally {
-      setBusy(false);
+      if (lookupAttemptRef.current === attempt) setBusy(false);
     }
   }
 
@@ -604,9 +674,19 @@ export function RepairActivityDetail({ activityId }: Props) {
               <div className={styles.signupPending} role="status">
                 <strong>{copy.signupPendingTitle}</strong>
                 <p className="muted">{copy.signupPendingHint}</p>
-                <Button variant="ghost" onClick={() => void checkPendingSignup()} disabled={busy}>
-                  {copy.checkResult}
-                </Button>
+                <div className={styles.signupPendingActions}>
+                  <Button variant="ghost" onClick={() => void checkPendingSignup()} disabled={busy}>
+                    {copy.checkResult}
+                  </Button>
+                  {pendingCheckResult === "not-found" ? (
+                    <Button variant="ghost" onClick={restartPendingSignup} disabled={busy}>
+                      {copy.pendingRestart}
+                    </Button>
+                  ) : null}
+                </div>
+                {pendingCheckResult === "not-found" ? (
+                  <p className="muted">{copy.pendingRestartHint}</p>
+                ) : null}
               </div>
             ) : null}
             {signupInfo ? (

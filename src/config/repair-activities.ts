@@ -79,6 +79,9 @@ export const repairActivitiesPage = {
     signupPendingTitle: "报名结果待确认",
     signupPendingHint: "网络中断或响应异常，暂无法确认报名结果。请先查询本人记录，不要重复提交",
     checkResult: "查询报名结果",
+    /** 查询确认未报名后的出口：解除待确认，允许重新填写。 */
+    pendingRestart: "重新填写",
+    pendingRestartHint: "确认未报名后可重新填写，重复提交会被服务端拦截",
     lookupNotFoundRetry: "暂未查到该手机号的报名记录，请稍后再次查询",
     lookupFailedRetry: "查询失败，请稍后再次查询，不要重复提交",
     lookupConfirmed: "已确认报名成功",

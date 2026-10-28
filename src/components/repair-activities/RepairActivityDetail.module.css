@@ -199,6 +199,12 @@
   margin: 0;
 }
 
+.signupPendingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
 .signupNotice {
   display: grid;
   gap: var(--s-2);

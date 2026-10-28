@@ -274,6 +274,79 @@ test("切换活动会使旧请求失效，旧活动响应不能覆盖新目标",
   assert.equal(text(node).includes("旧目标"), false);
 });
 
+test("切换活动时解除旧的报名在途禁用，迟到响应不能展示成功", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  assert.equal(ui.requests[1].init.method, "POST");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    true,
+    "报名在途时手机号禁用",
+  );
+
+  ui.changeId("b");
+  assert.equal(ui.requests[2].url, "/api/v1/repair-activities/b");
+  await ui.finish(2, { ...activity, id: "b", title: "新活动", status: "OPEN" });
+  assert.ok(text(ui.view()).includes("新活动"));
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "切换活动后旧报名的 busy 不能残留",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+  );
+
+  ui.requests[1].finish(Response.json({ success: true, data: registration }));
+  await setImmediate();
+  assert.equal(
+    text(ui.view()).includes(copy.signupSuccessTitle),
+    false,
+    "旧活动响应不能展示新活动成功",
+  );
+  assert.equal(signupDialog(ui.view()), undefined);
+});
+
+test("切换活动时清空查询状态并中止在途查询", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[1].url, "/api/v1/repair-activities/a/registrations/lookup");
+  const lookupSignal = ui.requests[1].signal;
+  assert.equal(lookupSignal.aborted, false);
+
+  ui.changeId("b");
+  assert.equal(lookupSignal.aborted, true, "切换活动中止旧查询");
+  assert.equal(ui.requests[2].url, "/api/v1/repair-activities/b");
+  await ui.finish(2, { ...activity, id: "b", title: "新活动", status: "OPEN" });
+
+  ui.requests[1].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+  const content = text(ui.view());
+  assert.ok(content.includes("新活动"));
+  assert.equal(content.includes(copy.lookupRegisteredTitle), false, "旧查询结果不能写入新活动");
+  assert.equal(content.includes(registration.name), false);
+  const lookupSection = findElement(
+    ui.view(),
+    (element) => element.props["aria-labelledby"] === "repair-activity-lookup-title",
+  );
+  assert.ok(lookupSection);
+  assert.equal(
+    findElement(
+      lookupSection,
+      (element) => element.type === "select" && element.props.name === "issueType",
+    ),
+    undefined,
+  );
+});
+
 test("完整须知可展开且提交前必须同意，成功只展示到场准备并且不重复提交", async (t) => {
   const ui = await mount(t);
   await ui.finish(0, { ...activity, status: "OPEN" });
@@ -472,7 +545,8 @@ test("报名响应丢失且查询不到时停在待确认，不直接报失败",
   assert.equal(text(ui.view()).includes("网络异常，请稍后重试"), false);
 });
 
-test("待确认时手动查询失败提示重试，不误报未报名", async (t) => {
+test("待确认查询失败可重试，确认未报名后可重新填写", async (t) => {
+  const copy = repairActivitiesPage.detail;
   const ui = await mount(t);
   await ui.finish(0, { ...activity, status: "OPEN" });
   (ui.requestSignup().props.onConfirm as () => void)();
@@ -480,12 +554,14 @@ test("待确认时手动查询失败提示重试，不误报未报名", async (t
   await setImmediate();
   ui.requests[2].fail(new Error("network"));
   await setImmediate();
-  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupPendingTitle));
-  const retry = findElement(
+  assert.ok(text(ui.view()).includes(copy.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(copy.lookupFailedRetry));
+  assert.equal(text(ui.view()).includes(copy.pendingRestart), false, "查询失败不提供重新填写");
+
+  let retry = findElement(
     ui.view(),
     (element) =>
-      element.props.children === repairActivitiesPage.detail.checkResult &&
-      typeof element.props.onClick === "function",
+      element.props.children === copy.checkResult && typeof element.props.onClick === "function",
   );
   assert.ok(retry);
   (retry.props.onClick as () => void)();
@@ -493,9 +569,88 @@ test("待确认时手动查询失败提示重试，不误报未报名", async (t
   assert.equal(ui.requests[3].url, "/api/v1/repair-activities/a/registrations/lookup");
   ui.requests[3].fail(new Error("network"));
   await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.lookupFailedRetry));
+  assert.equal(text(ui.view()).includes(copy.pendingRestart), false);
+
+  retry = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.checkResult && typeof element.props.onClick === "function",
+  );
+  assert.ok(retry);
+  (retry.props.onClick as () => void)();
+  await setImmediate();
+  assert.equal(ui.requests[4].url, "/api/v1/repair-activities/a/registrations/lookup");
+  ui.requests[4].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  let content = text(ui.view());
+  assert.ok(content.includes(copy.lookupNotFoundRetry));
+  assert.equal(content.includes(copy.lookupFailedRetry), false);
+
+  const restart = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.pendingRestart && typeof element.props.onClick === "function",
+  );
+  assert.ok(restart, "确认未报名后提供重新填写");
+  (restart.props.onClick as () => void)();
+
+  content = text(ui.view());
+  assert.equal(content.includes(copy.signupPendingTitle), false, "重新填写后解除待确认");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "重新填写后报名手机号恢复可编辑",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+    "重新填写后可以再次提交",
+  );
+  assert.equal(ui.formResets(), 1, "重新填写清空旧表单");
+  assert.equal(ui.requestSignup().props.title, copy.consent.title);
+});
+
+test("待确认时主查询到本人记录会清除待确认并展示凭条", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  ui.requests[2].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(copy.pendingRestart));
+
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[3].url, "/api/v1/repair-activities/a/registrations/lookup");
+  assert.ok(ui.requests[3].init.signal instanceof AbortSignal, "主查询带超时/中止信号");
+  ui.requests[3].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+
   const content = text(ui.view());
-  assert.ok(content.includes(repairActivitiesPage.detail.lookupFailedRetry));
-  assert.equal(content.includes(repairActivitiesPage.detail.lookupNotFoundRetry), false);
+  assert.equal(content.includes(copy.signupPendingTitle), false, "查到记录后不再显示待确认");
+  assert.ok(content.includes(copy.signupSuccessTitle), "主查询结果转为成功凭条");
+  assert.ok(
+    content.includes(copy.registrationNumber.replace("{id}", registration.id)),
+    "凭条展示报名编号",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "清除待确认后报名手机号恢复可编辑",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+    "清除待确认后可以再次报名",
+  );
+  assert.equal(ui.formResets(), 1, "清除待确认后清空旧报名表单");
 });
 
 test("满额页保留查询本人记录入口", async (t) => {
@@ -517,6 +672,7 @@ test("查询到本人有效报名时突出你已报名成功并保留改类型",
   ui.requestLookup("13800000000");
   assert.equal(ui.requests[1].url, "/api/v1/repair-activities/a/registrations/lookup");
   assert.equal(JSON.parse(ui.requests[1].init.body as string).phone, "13800000000");
+  assert.ok(ui.requests[1].init.signal instanceof AbortSignal, "手动查询也带超时/中止信号");
   ui.requests[1].finish(Response.json({ success: true, data: lookupRegistration }));
   await setImmediate();
   const content = text(ui.view());
