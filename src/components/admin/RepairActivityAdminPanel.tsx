@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { AdminModal } from "@/components/admin/AdminModal";
 import { AdminToast } from "@/components/admin/AdminToast";
@@ -123,15 +123,20 @@ export function RepairActivityAdminPanel() {
     await load();
   }
 
-  async function openRegistrations(activity: RepairActivityAdminView) {
-    setRegistrationActivity(activity);
-    setEditingRegistration(null);
-    setRemovingRegistration(null);
-    setRegistrationState("loading");
+  const registrationRequestRef = useRef(0);
+
+  const loadRegistrations = useCallback(async (activityId: string, showLoading: boolean) => {
+    const request = ++registrationRequestRef.current;
+    if (showLoading) {
+      setRegistrationState("loading");
+      setRegistrations([]);
+    }
     setRegistrationProblem("");
     const result = await adminFetch<RegistrationAdminView[]>(
-      `/api/v1/admin/repair-activities/${activity.id}/registrations`,
+      `/api/v1/admin/repair-activities/${activityId}/registrations`,
     );
+    // 切换活动后旧请求不能覆盖新名单。
+    if (request !== registrationRequestRef.current) return;
     if (!result.ok) {
       setRegistrationState("ready");
       setRegistrationProblem(result.message);
@@ -139,15 +144,23 @@ export function RepairActivityAdminPanel() {
     }
     setRegistrations(result.data);
     setRegistrationState("ready");
+  }, []);
+
+  async function openRegistrations(activity: RepairActivityAdminView) {
+    setRegistrationActivity(activity);
+    setEditingRegistration(null);
+    setRemovingRegistration(null);
+    await loadRegistrations(activity.id, true);
   }
 
   async function saveRegistration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!registrationActivity || !editingRegistration) return;
+    const activityId = registrationActivity.id;
     setBusy(true);
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
     const result = await adminFetch<RegistrationAdminView>(
-      `/api/v1/admin/repair-activities/${registrationActivity.id}/registrations/${editingRegistration.id}`,
+      `/api/v1/admin/repair-activities/${activityId}/registrations/${editingRegistration.id}`,
       {
         method: "PATCH",
         body: {
@@ -166,14 +179,17 @@ export function RepairActivityAdminPanel() {
       items.map((item) => (item.id === result.data.id ? result.data : item)),
     );
     setEditingRegistration(null);
-    setRegistrationProblem("");
+    // 重拉整份名单，避免其它行的「同名」标记停留在修改前的状态。
+    await loadRegistrations(activityId, false);
   }
 
   async function confirmRegistrationRemove() {
     if (!registrationActivity || !removingRegistration) return;
+    const activityId = registrationActivity.id;
+    const registrationId = removingRegistration.id;
     setBusy(true);
     const result = await adminFetch<{ deleted: boolean }>(
-      `/api/v1/admin/repair-activities/${registrationActivity.id}/registrations/${removingRegistration.id}`,
+      `/api/v1/admin/repair-activities/${activityId}/registrations/${registrationId}`,
       { method: "DELETE" },
     );
     setBusy(false);
@@ -183,13 +199,12 @@ export function RepairActivityAdminPanel() {
     }
     setRegistrations((items) =>
       items.map((item) =>
-        item.id === removingRegistration.id
-          ? { ...item, deletedAt: new Date().toISOString() }
-          : item,
+        item.id === registrationId ? { ...item, deletedAt: new Date().toISOString() } : item,
       ),
     );
     setRemovingRegistration(null);
-    setRegistrationProblem("");
+    // 删除后同样重拉：同名标记与被删行一起刷新，再更新活动列表的名额计数。
+    await loadRegistrations(activityId, false);
     await load();
   }
 
