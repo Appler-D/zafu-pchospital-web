@@ -76,9 +76,14 @@ async function mount(t: TestContext) {
     removeEventListener: (name: string) => handlers.delete(name),
   };
   const document = { visibilityState: "visible", ...events };
+  const timeoutDelays: number[] = [];
+  const recordTimeout = (handler: () => void, delay?: number) => {
+    timeoutDelays.push(delay ?? 0);
+    return setTimeout(handler, delay) as unknown as number;
+  };
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: { setInterval, clearInterval, setTimeout, clearTimeout, ...events },
+    value: { setInterval, clearInterval, setTimeout: recordTimeout, clearTimeout, ...events },
   });
   Object.defineProperty(globalThis, "document", { configurable: true, value: document });
   const slots: unknown[] = [];
@@ -163,6 +168,7 @@ async function mount(t: TestContext) {
   return {
     view,
     requests,
+    timeoutDelays,
     formResets: () => formResets,
     requestSignup() {
       const form = findElement(view(), (element) => element.props["aria-label"] === "报名参加");
@@ -287,6 +293,8 @@ test("远期活动跨过 setTimeout 上限后仍按链路显示排队", async (t
     status: "CLOSED",
   });
   assert.equal(queueElement(ui.view()), undefined);
+  assert.ok(ui.timeoutDelays.length >= 2);
+  assert.ok(ui.timeoutDelays.every((delay) => delay <= 2_147_483_647));
 
   // 超过浏览器约 24.8 天的最大 setTimeout；链式重排不能提前显示。
   t.mock.timers.tick(2_147_483_647);
