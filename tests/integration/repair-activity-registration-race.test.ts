@@ -57,6 +57,25 @@ async function createActivity(capacity: number): Promise<string> {
   return id;
 }
 
+async function createEndedActivity(capacity: number): Promise<string> {
+  const now = new Date();
+  const id = randomUUID();
+  const activityAt = new Date(now.getTime() - 48 * HOUR);
+  await getDb().repairActivity.create({
+    data: {
+      id,
+      title: `${PREFIX}已结束${capacity} 人场`,
+      capacity,
+      activityAt,
+      signupOpensAt: new Date(activityAt.getTime() - 2 * HOUR),
+      signupClosesAt: new Date(activityAt.getTime() - HOUR),
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  return id;
+}
+
 function registerInput(phone: string, name: string) {
   return {
     name,
@@ -165,4 +184,27 @@ dbTest("满额后同一手机号再次提交返回重复而不是满额", async 
     (error) => assertCode(error, "ACTIVITY_REGISTRATION_DUPLICATE"),
   );
   assert.equal((await activeRows(activityId)).length, 1);
+});
+
+dbTest("活动已结束时优先返回结束而不是重复", async () => {
+  const activityId = await createEndedActivity(1);
+  const phone = "13800000005";
+  const now = new Date();
+  await getDb().repairActivityRegistration.create({
+    data: {
+      id: randomUUID(),
+      activityId,
+      name: "历史客户",
+      phone,
+      phoneLast4: phone.slice(-4),
+      issueType: "CLEAN_ONLY",
+      status: "REGISTERED",
+      consentAcceptedAt: now,
+      createdAt: now,
+    },
+  });
+  await assert.rejects(
+    () => repairActivityService.register(activityId, registerInput(phone, "历史客户"), context),
+    (error) => assertCode(error, "ACTIVITY_ENDED"),
+  );
 });

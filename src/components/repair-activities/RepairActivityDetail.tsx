@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { repairActivitiesPage } from "@/config/repair-activities";
-import { maskActivityPhone } from "@/features/repair-activities/phone-mask";
 import {
   canAcceptNewRegistration,
   REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH,
@@ -31,8 +30,14 @@ import type {
   RegistrationPublicView,
   RepairActivityPublicView,
 } from "@/features/repair-activities/repair-activity-service";
+import { CN_MOBILE_PATTERN } from "@/lib/security/normalization";
 
 import styles from "./RepairActivityDetail.module.css";
+
+/** 报名请求超过该时长仍未返回时，按「结果待确认」先查询，不直接判失败。 */
+const SIGNUP_REQUEST_TIMEOUT_MS = 15_000;
+/** 自动查询同样限时：查询也失败时停在待确认，避免界面无限等待。 */
+const LOOKUP_REQUEST_TIMEOUT_MS = 10_000;
 
 type Props = { activityId: string };
 
@@ -51,8 +56,10 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [registeredPhone, setRegisteredPhone] = useState("");
   const [signupInfo, setSignupInfo] = useState("");
   const [signupPending, setSignupPending] = useState<{ name: string; phone: string } | null>(null);
+  const [signupPhoneError, setSignupPhoneError] = useState("");
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
+  const [lookupPhoneError, setLookupPhoneError] = useState("");
   /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
   const [pendingSignup, setPendingSignup] = useState<{
     name: string;
@@ -61,6 +68,7 @@ export function RepairActivityDetail({ activityId }: Props) {
     deviceModel: string;
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
+  const signupPhoneInputRef = useRef<HTMLInputElement>(null);
   const lookupPhoneInputRef = useRef<HTMLInputElement>(null);
   /** 防止连点在 busy 重新渲染前发出第二个 POST。 */
   const submittingRef = useRef(false);
@@ -130,6 +138,8 @@ export function RepairActivityDetail({ activityId }: Props) {
     setRegisteredPhone("");
     setSignupInfo("");
     setSignupPending(null);
+    setSignupPhoneError("");
+    setLookupPhoneError("");
     setPendingSignup(null);
     void load();
     return () => {
@@ -203,9 +213,16 @@ export function RepairActivityDetail({ activityId }: Props) {
     setNotice(null);
     setSignupInfo("");
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
+    const phone = (data.phone ?? "").trim();
+    if (!CN_MOBILE_PATTERN.test(phone)) {
+      setSignupPhoneError(copy.phoneFormatHint);
+      signupPhoneInputRef.current?.focus();
+      return;
+    }
+    setSignupPhoneError("");
     setPendingSignup({
       name: data.name ?? "",
-      phone: data.phone ?? "",
+      phone,
       issueType: data.issueType ?? "",
       deviceModel: data.deviceModel ?? "",
     });
@@ -217,6 +234,7 @@ export function RepairActivityDetail({ activityId }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone }),
+        signal: AbortSignal.timeout(LOOKUP_REQUEST_TIMEOUT_MS),
       });
       if (response.status === 404) return "not-found" as const;
       const json = (await response.json()) as {
@@ -267,6 +285,7 @@ export function RepairActivityDetail({ activityId }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...pending, consentAccepted: true }),
+          signal: AbortSignal.timeout(SIGNUP_REQUEST_TIMEOUT_MS),
         });
       } catch {
         if (signupAttemptRef.current === attempt) {
@@ -334,7 +353,7 @@ export function RepairActivityDetail({ activityId }: Props) {
       setSignupInfo("");
       setNotice({ text: copy.lookupConfirmed, tone: "success" });
     } else {
-      setSignupInfo(copy.lookupNotFoundRetry);
+      setSignupInfo(found === "not-found" ? copy.lookupNotFoundRetry : copy.lookupFailedRetry);
     }
     setBusy(false);
   }
@@ -342,6 +361,7 @@ export function RepairActivityDetail({ activityId }: Props) {
   function focusLookup(phone?: string) {
     const input = lookupPhoneInputRef.current;
     if (phone && input) input.value = phone;
+    setLookupPhoneError("");
     input?.scrollIntoView({ block: "center" });
     input?.focus({ preventScroll: true });
   }
@@ -355,17 +375,24 @@ export function RepairActivityDetail({ activityId }: Props) {
 
   async function doLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
+    const phone = (data.phone ?? "").trim();
+    if (!CN_MOBILE_PATTERN.test(phone)) {
+      setLookupPhoneError(copy.phoneFormatHint);
+      lookupPhoneInputRef.current?.focus();
+      return;
+    }
     setBusy(true);
     setProblem("");
     setNotice(null);
     setLookup(null);
     setLookupPhone("");
-    const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
+    setLookupPhoneError("");
     try {
       const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: data.phone ?? "" }),
+        body: JSON.stringify({ phone }),
       });
       const json = (await response.json()) as {
         success: boolean;
@@ -557,6 +584,13 @@ export function RepairActivityDetail({ activityId }: Props) {
                 <p>
                   {registrationResult.name} · {registrationResult.phoneMasked}
                 </p>
+                <p>
+                  {copy.receiptStatus.replace(
+                    "{status}",
+                    repairActivityRegistrationStatusLabels[registrationResult.status] ??
+                      registrationResult.status,
+                  )}
+                </p>
                 <p className={styles.signupCode}>
                   {copy.registrationNumber.replace("{id}", registrationResult.id)}
                 </p>
@@ -678,16 +712,30 @@ export function RepairActivityDetail({ activityId }: Props) {
                     {copy.phone} <span className={styles.required}>*</span>
                   </span>
                   <input
+                    ref={signupPhoneInputRef}
                     className="field__input"
+                    id="repair-activity-signup-phone"
                     name="phone"
                     placeholder={copy.phonePlaceholder}
                     required
                     inputMode="numeric"
                     maxLength={11}
-                    pattern="1[3-9]\d{9}"
-                    title={copy.phoneFormatHint}
+                    aria-invalid={signupPhoneError ? true : undefined}
+                    aria-describedby={
+                      signupPhoneError ? "repair-activity-signup-phone-error" : undefined
+                    }
+                    onInput={() => setSignupPhoneError("")}
                     disabled={!open || busy || signupPending !== null}
                   />
+                  {signupPhoneError ? (
+                    <p
+                      className="field__hint text-accent-deep"
+                      id="repair-activity-signup-phone-error"
+                      role="alert"
+                    >
+                      {signupPhoneError}
+                    </p>
+                  ) : null}
                 </label>
                 <label className="field">
                   <span className="field__label">
@@ -743,15 +791,28 @@ export function RepairActivityDetail({ activityId }: Props) {
                 <input
                   ref={lookupPhoneInputRef}
                   className="field__input"
+                  id="repair-activity-lookup-phone"
                   name="phone"
                   placeholder={copy.lookupPhonePlaceholder}
                   required
                   inputMode="numeric"
                   maxLength={11}
-                  pattern="1[3-9]\d{9}"
-                  title={copy.phoneFormatHint}
+                  aria-invalid={lookupPhoneError ? true : undefined}
+                  aria-describedby={
+                    lookupPhoneError ? "repair-activity-lookup-phone-error" : undefined
+                  }
+                  onInput={() => setLookupPhoneError("")}
                   disabled={busy}
                 />
+                {lookupPhoneError ? (
+                  <p
+                    className="field__hint text-accent-deep"
+                    id="repair-activity-lookup-phone-error"
+                    role="alert"
+                  >
+                    {lookupPhoneError}
+                  </p>
+                ) : null}
               </label>
               <div className="signup__actions">
                 <Button type="submit" disabled={busy}>
@@ -825,16 +886,27 @@ export function RepairActivityDetail({ activityId }: Props) {
         <ConfirmDialog
           title={signupSucceeded ? copy.signupSuccessTitle : copy.consent.title}
           confirmLabel={signupSucceeded ? copy.acknowledgePrecautions : copy.consent.agree}
-          cancelLabel={signupSucceeded ? undefined : copy.consent.cancel}
+          cancelLabel={signupSucceeded ? undefined : copy.confirmEdit}
           busy={!signupSucceeded && busy}
           onConfirm={signupSucceeded ? closeSignupDialog : () => void confirmSignup()}
           onClose={closeSignupDialog}
         >
           {!signupSucceeded && pendingSignup ? (
             <div className={styles.signupConfirm}>
-              <strong>
-                {pendingSignup.name} · {maskActivityPhone(pendingSignup.phone)}
-              </strong>
+              <dl className={styles.signupConfirmList}>
+                <div>
+                  <dt>{copy.confirmActivity}</dt>
+                  <dd>{activity.title}</dd>
+                </div>
+                <div>
+                  <dt>{copy.name}</dt>
+                  <dd>{pendingSignup.name}</dd>
+                </div>
+                <div>
+                  <dt>{copy.phone}</dt>
+                  <dd>{pendingSignup.phone}</dd>
+                </div>
+              </dl>
               <p className="muted">{copy.confirmIdentityHint}</p>
             </div>
           ) : null}
