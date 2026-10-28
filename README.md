@@ -122,6 +122,8 @@ pnpm dev
 
 ## 部署与维护
 
+CI 只做校验、构建与冒烟，不执行部署；CI 通过不代表已发布。
+
 发布只能由获授权的维护者执行：以 [deploy skill](.agents/skills/zafu-pchospital-deploy/SKILL.md) 为操作手册、[`tools/deploy/deploy-prod.sh`](tools/deploy/deploy-prod.sh) 为唯一入口，完成本地构建、备份、上传、原子切换与冒烟验证。生产运行需要 Node.js 服务端、GreatSQL 与可持久化的照片存储目录。
 
 参数、各阶段闸门与恢复方式见部署手册；通知配置见[部署结果通知](tools/deploy/NOTIFICATIONS.md)。

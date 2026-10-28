@@ -385,7 +385,7 @@ git switch -c feat/xxx  # 确认不在 main 上直接开发
 
 ## 11. CI 与部署
 
-`.github/workflows/ci.yml` 在 **PR** 与 **push 到 `main`** 时运行（也可手动触发）：
+`.github/workflows/ci.yml` 在 **PR** 与 **push 到 `main`** 时运行（也可手动触发），**只校验与构建，不执行部署**：
 
 1. 解析并固定文档版本（`DOCS_REF` → sha，保证构建可复现）
 2. 把文档仓库检出到 `.docs-source/`
@@ -393,7 +393,9 @@ git switch -c feat/xxx  # 确认不在 main 上直接开发
 4. `pnpm install` → `pnpm audit`（**不阻断**，见下）→ `pnpm lint` → `pnpm build`（含文档）
 5. 校验构建产物：`public/handbook/index.html`、`searchindex`、官网主题 CSS/JS、清单结构
 6. 起生产服务冒烟：`/`、`/about`、`/join`、`/docs`、`/handbook/` 必须全部 200
-7. `main` 上通过后调用部署
+
+`main` 合并后不会自动发布：生产部署由维护者在本地按 [README 的「部署与维护」](README.md#部署与维护)
+执行 `tools/deploy/deploy-prod.sh`（本地构建、备份、迁移核对、原子切换与回滚）。
 
 **依赖漏洞审计：**
 
@@ -409,8 +411,8 @@ git switch -c feat/xxx  # 确认不在 main 上直接开发
   后果：**直接 push `main` 会被拒绝**（ADMIN 也一样），PR 必须等 CI 绿了才能合并；
   0 个 approving review 即可自合并，允许的合并方式只有 squash / merge。
   要调整这些约束就改 ruleset，不要在 workflow 里想办法绕过去。
-- **部署尚未配置**：需要在仓库变量里设置 `DEPLOY_COMMAND`（部署目标尚未确定，见
-  workflow 内注释）。未配置时部署步骤只打印 `::warning::`，不会失败。
+- **CI 不部署生产**：workflow 中没有部署 job，也不需要 `DEPLOY_COMMAND` 之类的部署变量；
+  CI 绿色只代表校验与构建通过，不代表已发布。
 
 可选：设置仓库变量 `DOCS_REF` 指定文档仓库的分支（默认 `main`）。
 
