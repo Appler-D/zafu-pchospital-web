@@ -842,6 +842,13 @@ DELETE     /api/v1/admin/comments/:id
 `listAdmin` / `create` / `update`）→ 活动管理页表格列；单测
 `tests/unit/repair-activity-attendance-count.test.ts` 钉住接线与「只回计数」红线。
 
+### 管理端活动列表排序（issue #260）
+
+`GET /api/v1/admin/repair-activities` 按 `activityAt` 倒序返回，最新活动在前；
+同一 `activityAt` 再按 `createdAt` 倒序、`id` 倒序稳定排序。管理端列表不分页、
+不提供状态筛选，因此没有跨页或分组排序的额外处理。公开活动列表与成员活动列表的
+既有顺序不变；无 Schema / Migration / 新端点 / 权限变化。
+
 ## 成员工作台出勤成员名单（issue #107）
 
 `GET /api/v1/member/repair-activities/:id/board` 返回结构新增：
