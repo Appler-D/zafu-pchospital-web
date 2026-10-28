@@ -67,6 +67,24 @@ export const repairActivitiesPage = {
     registeredHint: "如需修改故障类型，可使用下方「已经报名？」查询",
     /** 同一手机号已报名时不再显示为失败，而是引导查询已有记录。 */
     duplicateHint: "该手机号已报名本场活动，可使用下方「已经报名？」查询或修改故障类型",
+    lookupMine: "查询本人记录",
+    lookupRegisteredTitle: "你已报名成功",
+    lookupStatusLabel: "当前状态：{status}",
+    registrationNumber: "报名编号 {id}",
+    receiptStatus: "报名状态：{status}",
+    confirmActivity: "活动",
+    confirmIdentityHint: "请确认活动、姓名与手机号无误；报名成功后可凭借手机号查询",
+    confirmEdit: "返回修改",
+    phoneFormatHint: "请输入 11 位中国大陆手机号",
+    signupPendingTitle: "报名结果待确认",
+    signupPendingHint: "网络中断或响应异常，暂无法确认报名结果。请先查询本人记录，不要重复提交",
+    checkResult: "查询报名结果",
+    /** 查询确认未报名后的出口：解除待确认，允许重新填写。 */
+    pendingRestart: "重新填写",
+    pendingRestartHint: "确认未报名后可重新填写，重复提交会被服务端拦截",
+    lookupNotFoundRetry: "暂未查到该手机号的报名记录，请稍后再次查询",
+    lookupFailedRetry: "查询失败，请稍后再次查询，不要重复提交",
+    lookupConfirmed: "已确认报名成功",
     precautionsTitle: "到场前，记好这四件事",
     signupSuccessTitle: "报名成功",
     acknowledgePrecautions: "我已知晓",
@@ -98,7 +116,8 @@ export const repairActivitiesPage = {
     /** 倒计时归零、状态转为可报名时对读屏的一次性播报。 */
     countdownOpened: "报名已开放，现在可以提交报名",
     closedDisabled: "报名已截止",
-    fullDisabled: "名额已满",
+    fullDisabled: "新报名名额已满",
+    fullLookupHint: "已报名者请使用下方「已经报名？」查询本人记录",
     notEditable: "当前状态不可修改故障类型（可能已签到或已接待）",
     /** 报名前的免责声明：必须点「我已阅读并同意」才能提交，服务端同样强制。 */
     consent: {
@@ -116,7 +135,6 @@ export const repairActivitiesPage = {
         "报名信息只用于本场活动的组织与到场核对，不对外公开。",
       ],
       agree: "我已阅读并同意",
-      cancel: "取消",
     },
   },
   issueTypes: [

@@ -53,6 +53,35 @@ test("活动管理页表格有「出勤」列并绑定 attendedCount", () => {
   assert.match(panelSource, cell);
 });
 
+test("报名名单默认展示有效报名，删除历史折叠并使用中文状态", () => {
+  assert.ok(serviceSource.includes("hasSameNameActive"));
+  assert.match(
+    panelSource,
+    /const activeRegistrations = registrations\.filter\(\(registration\) => !registration\.deletedAt\)/,
+  );
+  assert.match(
+    panelSource,
+    /const deletedRegistrations = registrations\.filter\(\(registration\) => registration\.deletedAt\)/,
+  );
+  assert.match(panelSource, /<details className="admin-registrations__history">/);
+  assert.doesNotMatch(panelSource, /<details[^>]*\sopen\b/, "删除历史默认折叠");
+  assert.match(panelSource, /repairActivityRegistrationStatusLabels\[registration\.status\]/);
+  assert.match(panelSource, /copy\.registrations\.deleted/);
+  assert.match(panelSource, /title=\{copy\.registrations\.sameNameHint\}/);
+  assert.match(panelSource, /copy\.registrations\.deletedHistory/);
+  assert.match(panelSource, /disabled=\{busy \|\| Boolean\(registration\.deletedAt\)\}/);
+});
+
+test("保存或删除报名后重拉名单，避免其它行的同名标记残留", () => {
+  assert.match(panelSource, /const loadRegistrations = useCallback/);
+  assert.match(panelSource, /request !== registrationRequestRef\.current/);
+  assert.equal(
+    (panelSource.match(/await loadRegistrations\(activityId, false\)/g) ?? []).length,
+    2,
+    "编辑与删除成功后都要刷新整份名单",
+  );
+});
+
 test("出勤人数只回计数：管理端列表源码不下发成员身份字段", () => {
   // 管理端列表永远只回计数。出勤明细已由  后续在成员看板落地
   // （`repair-activity-staff-service.ts` 的管理员名单 + 只读弹层，

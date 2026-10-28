@@ -67,6 +67,13 @@ export const repairActivityStatusLabels: Record<RepairActivityStatus, string> = 
   ENDED: "已结束",
 };
 
+/** 报名状态展示文案；管理端名单与公开查询共用。 */
+export const repairActivityRegistrationStatusLabels: Record<string, string> = {
+  REGISTERED: "报名成功",
+  CHECKED_IN: "已签到",
+  SERVED: "已接待",
+};
+
 /** 管理列表短标签（UX R3 / C8）：将开 / 开放 / 已满 / 截止 / 结束 */
 export const repairActivityStatusShortLabels: Record<RepairActivityStatus, string> = {
   UPCOMING: "将开",

@@ -4,10 +4,12 @@ import { setImmediate } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import type { ReactElement, ReactNode } from "react";
 import type {
+  RegistrationLookupView,
   RegistrationPublicView,
   RepairActivityPublicView,
 } from "../../src/features/repair-activities/repair-activity-service";
 import { repairActivitiesPage } from "../../src/config/repair-activities";
+import { repairActivityIssueTypeLabels } from "../../src/features/repair-activities/repair-activity-validation";
 
 const require = createRequire(import.meta.url);
 const React = require("react") as typeof import("react");
@@ -63,6 +65,11 @@ const registration: RegistrationPublicView = {
   deviceModel: "测试机型",
   status: "REGISTERED",
   createdAt: "2026-10-24T04:00:01Z",
+};
+const lookupRegistration: RegistrationLookupView = {
+  ...registration,
+  editToken: "edit-token",
+  editTokenExpiresAt: "2026-10-24T05:00:00Z",
 };
 
 /** 与既有客户端测试相同的 hook 存储方式；只驱动真实 JSX/effect，不启动 Next 或 DB。 */
@@ -150,13 +157,18 @@ async function mount(t: TestContext) {
     init: RequestInit;
     signal: AbortSignal;
     finish(response: Response): void;
+    fail(error: unknown): void;
   }[] = [];
+  let formValues = new Map<string, string>();
+  t.mock.method(globalThis, "FormData", function () {
+    return formValues;
+  });
   t.mock.method(
     globalThis,
     "fetch",
     (url: string, init: RequestInit) =>
-      new Promise<Response>((finish) => {
-        requests.push({ url, init, signal: init.signal as AbortSignal, finish });
+      new Promise<Response>((finish, fail) => {
+        requests.push({ url, init, signal: init.signal as AbortSignal, finish, fail });
       }),
   );
   const { RepairActivityDetail } =
@@ -183,7 +195,7 @@ async function mount(t: TestContext) {
     requests,
     timeoutDelays,
     formResets: () => formResets,
-    requestSignup() {
+    requestSignup(overrides: Record<string, string> = {}) {
       const form = findElement(view(), (element) => element.props["aria-label"] === "报名参加");
       assert.ok(form);
       (form.props.ref as { current: unknown }).current = {
@@ -192,19 +204,32 @@ async function mount(t: TestContext) {
         },
         focus() {},
       };
-      t.mock.method(globalThis, "FormData", function () {
-        return new Map([
-          ["name", "测试客户"],
-          ["phone", "13800000000"],
-          ["issueType", "CLEAN_PASTE"],
-          ["deviceModel", "测试机型"],
-        ]);
-      });
+      formValues = new Map(
+        Object.entries({
+          name: "测试客户",
+          phone: "13800000000",
+          issueType: "CLEAN_PASTE",
+          deviceModel: "测试机型",
+          ...overrides,
+        }),
+      );
       (form.props.onSubmit as (event: unknown) => void)({
         preventDefault() {},
         currentTarget: {},
       });
       return signupDialog(view())!;
+    },
+    requestLookup(phone: string) {
+      const form = findElement(
+        view(),
+        (element) => element.props["aria-label"] === repairActivitiesPage.detail.lookupTitle,
+      );
+      assert.ok(form);
+      formValues = new Map([["phone", phone]]);
+      (form.props.onSubmit as (event: unknown) => void)({
+        preventDefault() {},
+        currentTarget: {},
+      });
     },
     changeId(value: string) {
       id = value;
@@ -333,6 +358,79 @@ test("切换活动会使旧请求失效，旧活动响应不能覆盖新目标",
   assert.equal(text(node).includes("旧目标"), false);
 });
 
+test("切换活动时解除旧的报名在途禁用，迟到响应不能展示成功", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  assert.equal(ui.requests[1].init.method, "POST");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    true,
+    "报名在途时手机号禁用",
+  );
+
+  ui.changeId("b");
+  assert.equal(ui.requests[2].url, "/api/v1/repair-activities/b");
+  await ui.finish(2, { ...activity, id: "b", title: "新活动", status: "OPEN" });
+  assert.ok(text(ui.view()).includes("新活动"));
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "切换活动后旧报名的 busy 不能残留",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+  );
+
+  ui.requests[1].finish(Response.json({ success: true, data: registration }));
+  await setImmediate();
+  assert.equal(
+    text(ui.view()).includes(copy.signupSuccessTitle),
+    false,
+    "旧活动响应不能展示新活动成功",
+  );
+  assert.equal(signupDialog(ui.view()), undefined);
+});
+
+test("切换活动时清空查询状态并中止在途查询", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[1].url, "/api/v1/repair-activities/a/registrations/lookup");
+  const lookupSignal = ui.requests[1].signal;
+  assert.equal(lookupSignal.aborted, false);
+
+  ui.changeId("b");
+  assert.equal(lookupSignal.aborted, true, "切换活动中止旧查询");
+  assert.equal(ui.requests[2].url, "/api/v1/repair-activities/b");
+  await ui.finish(2, { ...activity, id: "b", title: "新活动", status: "OPEN" });
+
+  ui.requests[1].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+  const content = text(ui.view());
+  assert.ok(content.includes("新活动"));
+  assert.equal(content.includes(copy.lookupRegisteredTitle), false, "旧查询结果不能写入新活动");
+  assert.equal(content.includes(registration.name), false);
+  const lookupSection = findElement(
+    ui.view(),
+    (element) => element.props["aria-labelledby"] === "repair-activity-lookup-title",
+  );
+  assert.ok(lookupSection);
+  assert.equal(
+    findElement(
+      lookupSection,
+      (element) => element.type === "select" && element.props.name === "issueType",
+    ),
+    undefined,
+  );
+});
+
 test("完整须知可展开且提交前必须同意，成功只展示到场准备并且不重复提交", async (t) => {
   const ui = await mount(t);
   await ui.finish(0, { ...activity, status: "OPEN" });
@@ -356,9 +454,13 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
   );
 
   const consent = ui.requestSignup();
+  assert.ok(text(consent).includes(activity.title), "确认弹层应展示活动名");
+  assert.ok(text(consent).includes("测试客户"), "确认弹层应展示姓名");
+  assert.ok(text(consent).includes("13800000000"), "确认弹层应展示完整手机号供核对");
   assert.equal(ui.requests.length, 1, "未同意须知时不发送报名请求");
   assert.equal(consent.props.title, repairActivitiesPage.detail.consent.title);
   assert.equal(consent.props.confirmLabel, repairActivitiesPage.detail.consent.agree);
+  assert.equal(consent.props.cancelLabel, repairActivitiesPage.detail.confirmEdit);
   assert.ok(findElement(consent, (element) => element.type === RepairActivityPrecautions));
   (consent.props.onConfirm as () => void)();
   assert.equal(signupDialog(ui.view())?.props.busy, true);
@@ -391,7 +493,67 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
   assert.equal(signupDialog(ui.view()), undefined);
   assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
   assert.ok(text(ui.view()).includes(registration.phoneMasked), "弹层关闭后仍显示已报名记录");
+  assert.ok(
+    text(ui.view()).includes(
+      repairActivitiesPage.detail.registrationNumber.replace("{id}", registration.id),
+    ),
+    "凭条应包含报名编号",
+  );
+  assert.ok(
+    text(ui.view()).includes(
+      repairActivitiesPage.detail.receiptStatus.replace("{status}", "报名成功"),
+    ),
+    "凭条应包含报名状态",
+  );
   assert.equal(ui.requests.filter((request) => request.init.method === "POST").length, 1);
+});
+
+test("非法手机号在打开确认弹层前拦截并可纠正", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.requestSignup({ phone: "1380000" });
+  assert.equal(signupDialog(ui.view()), undefined, "非法手机号不能打开确认弹层");
+  assert.equal(ui.requests.length, 1, "非法手机号不发送报名请求");
+  const phoneInput = findElement(
+    ui.view(),
+    (element) => element.props.id === "repair-activity-signup-phone",
+  );
+  assert.equal(phoneInput?.props["aria-invalid"], true);
+  assert.equal(phoneInput?.props["aria-describedby"], "repair-activity-signup-phone-error");
+  const error = findElement(
+    ui.view(),
+    (element) => element.props.id === "repair-activity-signup-phone-error",
+  );
+  assert.equal(error?.props.role, "alert");
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.phoneFormatHint));
+
+  ui.requestSignup({ phone: "13900000000" });
+  const consent = signupDialog(ui.view());
+  assert.ok(consent);
+  assert.equal(
+    text(ui.view()).includes(repairActivitiesPage.detail.phoneFormatHint),
+    false,
+    "纠正手机号后错误消失",
+  );
+  assert.ok(text(consent).includes("13900000000"));
+  assert.equal(ui.requests.length, 1, "纠正后仍需同意须知才提交");
+});
+
+test("查询手机号非法时就地提示且不发送请求", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.requestLookup("1380000");
+  assert.equal(ui.requests.length, 1, "非法手机号不发送查询请求");
+  const phoneInput = findElement(
+    ui.view(),
+    (element) => element.props.id === "repair-activity-lookup-phone",
+  );
+  assert.equal(phoneInput?.props["aria-invalid"], true);
+  assert.equal(phoneInput?.props["aria-describedby"], "repair-activity-lookup-phone-error");
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.phoneFormatHint));
+
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[1].url, "/api/v1/repair-activities/a/registrations/lookup");
 });
 
 test("报名确认连点只发送一个 POST，成功后保留已报名提示", async (t) => {
@@ -431,6 +593,219 @@ test("重复报名提示引导查询已有记录，不覆盖为普通失败", as
   assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.duplicateHint));
   assert.equal(ui.formResets(), 0, "重复报名时保留已填写的表单以便查询");
   assert.equal(ui.requests.length, 2, "重复报名不刷新活动");
+});
+
+test("报名响应丢失时先查询确认，查到记录按成功处理", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  assert.equal(
+    ui.requests[2].url,
+    "/api/v1/repair-activities/a/registrations/lookup",
+    "网络异常后先查询本人记录",
+  );
+  ui.requests[2].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+  const dialog = signupDialog(ui.view());
+  assert.equal(dialog?.props.title, repairActivitiesPage.detail.signupSuccessTitle);
+  (dialog?.props.onConfirm as () => void)();
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
+  assert.ok(text(ui.view()).includes(registration.phoneMasked));
+});
+
+test("报名响应丢失且查询不到时停在待确认，不直接报失败", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  ui.requests[2].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  assert.equal(signupDialog(ui.view()), undefined);
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.lookupNotFoundRetry));
+  assert.equal(text(ui.view()).includes("网络异常，请稍后重试"), false);
+});
+
+test("待确认查询失败可重试，确认未报名后可重新填写", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  ui.requests[2].fail(new Error("network"));
+  await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(copy.lookupFailedRetry));
+  assert.equal(text(ui.view()).includes(copy.pendingRestart), false, "查询失败不提供重新填写");
+
+  let retry = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.checkResult && typeof element.props.onClick === "function",
+  );
+  assert.ok(retry);
+  (retry.props.onClick as () => void)();
+  await setImmediate();
+  assert.equal(ui.requests[3].url, "/api/v1/repair-activities/a/registrations/lookup");
+  ui.requests[3].fail(new Error("network"));
+  await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.lookupFailedRetry));
+  assert.equal(text(ui.view()).includes(copy.pendingRestart), false);
+
+  retry = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.checkResult && typeof element.props.onClick === "function",
+  );
+  assert.ok(retry);
+  (retry.props.onClick as () => void)();
+  await setImmediate();
+  assert.equal(ui.requests[4].url, "/api/v1/repair-activities/a/registrations/lookup");
+  ui.requests[4].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  let content = text(ui.view());
+  assert.ok(content.includes(copy.lookupNotFoundRetry));
+  assert.equal(content.includes(copy.lookupFailedRetry), false);
+
+  const restart = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.pendingRestart && typeof element.props.onClick === "function",
+  );
+  assert.ok(restart, "确认未报名后提供重新填写");
+  (restart.props.onClick as () => void)();
+
+  content = text(ui.view());
+  assert.equal(content.includes(copy.signupPendingTitle), false, "重新填写后解除待确认");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "重新填写后报名手机号恢复可编辑",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+    "重新填写后可以再次提交",
+  );
+  assert.equal(ui.formResets(), 1, "重新填写清空旧表单");
+  assert.equal(ui.requestSignup().props.title, copy.consent.title);
+});
+
+test("待确认时主查询到本人记录会清除待确认并展示凭条", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  ui.requests[2].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(copy.pendingRestart));
+
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[3].url, "/api/v1/repair-activities/a/registrations/lookup");
+  assert.ok(ui.requests[3].init.signal instanceof AbortSignal, "主查询带超时/中止信号");
+  ui.requests[3].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.equal(content.includes(copy.signupPendingTitle), false, "查到记录后不再显示待确认");
+  assert.ok(content.includes(copy.signupSuccessTitle), "主查询结果转为成功凭条");
+  assert.ok(
+    content.includes(copy.registrationNumber.replace("{id}", registration.id)),
+    "凭条展示报名编号",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
+      .disabled,
+    false,
+    "清除待确认后报名手机号恢复可编辑",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
+      .disabled,
+    false,
+    "清除待确认后可以再次报名",
+  );
+  assert.equal(ui.formResets(), 1, "清除待确认后清空旧报名表单");
+});
+
+test("满额页保留查询本人记录入口", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, {
+    ...activity,
+    status: "FULL",
+    registeredCount: 10,
+    remaining: 0,
+  });
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.fullDisabled));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.fullLookupHint));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.lookupMine));
+});
+
+test("查询到本人有效报名时突出你已报名成功并保留改类型", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "FULL", registeredCount: 10, remaining: 0 });
+  ui.requestLookup("13800000000");
+  assert.equal(ui.requests[1].url, "/api/v1/repair-activities/a/registrations/lookup");
+  assert.equal(JSON.parse(ui.requests[1].init.body as string).phone, "13800000000");
+  assert.ok(ui.requests[1].init.signal instanceof AbortSignal, "手动查询也带超时/中止信号");
+  ui.requests[1].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+  const content = text(ui.view());
+  assert.ok(content.includes(repairActivitiesPage.detail.lookupRegisteredTitle));
+  assert.ok(content.includes(registration.name));
+  assert.ok(content.includes(registration.phoneMasked));
+  assert.ok(content.includes(repairActivityIssueTypeLabels.CLEAN_PASTE));
+  assert.ok(
+    content.includes(
+      repairActivitiesPage.detail.registrationNumber.replace("{id}", registration.id),
+    ),
+  );
+  const lookupSection = findElement(
+    ui.view(),
+    (element) => element.props["aria-labelledby"] === "repair-activity-lookup-title",
+  );
+  assert.ok(lookupSection);
+  const editSelect = findElement(
+    lookupSection,
+    (element) => element.type === "select" && element.props.name === "issueType",
+  );
+  assert.equal(editSelect?.props.disabled, false, "有效报名仍可修改故障类型");
+});
+
+test("查询到已签到记录时状态用中文且不再提供改类型", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "CLOSED", registeredCount: 3, remaining: 7 });
+  ui.requestLookup("13800000000");
+  ui.requests[1].finish(
+    Response.json({ success: true, data: { ...lookupRegistration, status: "CHECKED_IN" } }),
+  );
+  await setImmediate();
+  const content = text(ui.view());
+  assert.ok(
+    content.includes(repairActivitiesPage.detail.lookupStatusLabel.replace("{status}", "已签到")),
+  );
+  assert.ok(content.includes(repairActivitiesPage.detail.notEditable));
+  const lookupSection = findElement(
+    ui.view(),
+    (element) => element.props["aria-labelledby"] === "repair-activity-lookup-title",
+  );
+  assert.ok(lookupSection);
+  assert.equal(
+    findElement(
+      lookupSection,
+      (element) => element.type === "select" && element.props.name === "issueType",
+    ),
+    undefined,
+  );
 });
 
 test("报名失败只显示错误，保留输入以便重试，不显示成功提醒", async (t) => {

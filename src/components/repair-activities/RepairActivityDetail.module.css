@@ -173,12 +173,119 @@
   margin: 0;
 }
 
-.signupInfo {
+.signupCode {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+.signupPending {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--status-warning-line);
+  border-radius: var(--r-mid);
+  background: var(--status-warning-wash);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.signupPending strong {
+  color: var(--status-warning-deep);
+}
+
+.signupPending p {
   margin: 0;
+}
+
+.signupPendingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.signupNotice {
+  display: grid;
+  gap: var(--s-2);
   padding-left: var(--s-3);
   border-left: 2px solid var(--accent);
   color: var(--ink-2);
   font-size: var(--t-sm);
+}
+
+.signupNotice p {
+  margin: 0;
+}
+
+.signupConfirm {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-mid);
+  background: var(--surface-1);
+  font-size: var(--t-sm);
+}
+
+.signupConfirm p {
+  margin: 0;
+}
+
+.signupConfirmList {
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+}
+
+.signupConfirmList > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-3);
+}
+
+.signupConfirmList dt {
+  color: var(--ink-3);
+}
+
+.signupConfirmList dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fullHint {
+  display: grid;
+  gap: var(--s-2);
+  font-size: var(--t-sm);
+}
+
+.fullHint p {
+  margin: 0;
+}
+
+.lookupResult {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-mid);
+  background: var(--surface-1);
+  font-size: var(--t-sm);
+}
+
+.lookupResult p {
+  margin: 0;
+}
+
+.lookupResultSuccess {
+  border-color: var(--status-success-line);
+  background: var(--status-success-wash);
+}
+
+.lookupResultSuccess strong {
+  color: var(--status-success-deep);
 }
 
 .lookup {

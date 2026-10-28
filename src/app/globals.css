@@ -3330,6 +3330,19 @@ html[data-theme="black-yellow"] {
   .admin-table {
     table-layout: auto;
   }
+  .admin-registrations__history {
+    margin-block-start: var(--s-4);
+    padding-block-start: var(--s-3);
+    border-block-start: 1px solid var(--line);
+  }
+  .admin-registrations__history > summary {
+    cursor: pointer;
+    color: var(--ink-2);
+    font-size: var(--t-sm);
+  }
+  .admin-registrations__history > .admin-table-wrap {
+    margin-block-start: var(--s-3);
+  }
   .repair-table th,
   .admin-table th {
     padding: 0.75rem var(--s-3);
