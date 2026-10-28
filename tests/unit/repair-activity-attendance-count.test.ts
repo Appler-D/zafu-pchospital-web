@@ -55,11 +55,21 @@ test("活动管理页表格有「出勤」列并绑定 attendedCount", () => {
 
 test("报名名单默认展示有效报名，删除历史折叠并使用中文状态", () => {
   assert.ok(serviceSource.includes("hasSameNameActive"));
-  assert.ok(panelSource.includes("activeRegistrations"));
-  assert.ok(panelSource.includes("deletedRegistrations"));
+  assert.match(
+    panelSource,
+    /const activeRegistrations = registrations\.filter\(\(registration\) => !registration\.deletedAt\)/,
+  );
+  assert.match(
+    panelSource,
+    /const deletedRegistrations = registrations\.filter\(\(registration\) => registration\.deletedAt\)/,
+  );
+  assert.match(panelSource, /<details className="admin-registrations__history">/);
+  assert.doesNotMatch(panelSource, /<details[^>]*\sopen\b/, "删除历史默认折叠");
   assert.match(panelSource, /repairActivityRegistrationStatusLabels\[registration\.status\]/);
-  assert.match(panelSource, /copy\.registrations\.sameName/);
+  assert.match(panelSource, /copy\.registrations\.deleted/);
+  assert.match(panelSource, /title=\{copy\.registrations\.sameNameHint\}/);
   assert.match(panelSource, /copy\.registrations\.deletedHistory/);
+  assert.match(panelSource, /disabled=\{busy \|\| Boolean\(registration\.deletedAt\)\}/);
 });
 
 test("出勤人数只回计数：管理端列表源码不下发成员身份字段", () => {
