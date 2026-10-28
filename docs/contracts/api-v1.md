@@ -851,16 +851,17 @@ DELETE     /api/v1/admin/comments/:id
 
 ### 报名结果确认与重复提交（issue #262）
 
-- `POST /api/v1/repair-activities/:id/registrations` 的活动结束判定不变；
-  随后**先查同活动同手机号的有效报名**，命中返回 409 `ACTIVITY_REGISTRATION_DUPLICATE`
-  （“你已报名本场活动，无需重复提交”），再判断新报名容量。已报名者在满额后重复提交
-  不再误报 `ACTIVITY_FULL`。
+- `POST /api/v1/repair-activities/:id/registrations` 的活动结束判定不变；报名尚未开始或已截止时
+  返回 409 `ACTIVITY_NOT_OPEN`。报名窗口内**先查同活动同手机号的有效报名**，命中返回
+  409 `ACTIVITY_REGISTRATION_DUPLICATE`（“你已报名本场活动，无需重复提交”），再判断新报名容量。
+  已报名者在满额后重复提交不再误报 `ACTIVITY_FULL`。
 - 公开报名成功凭条由客户端展示活动、姓名、脱敏手机号、报名编号与报名状态，并提供
   「查询本人记录」入口；满额页保留查询入口，查询到 `REGISTERED` 时突出“你已报名成功”，
   状态统一使用中文（`REGISTERED` / `CHECKED_IN` / `SERVED`）。
 - 报名 POST 超时（15 秒）、网络中断、响应非 JSON 或 5xx 时，客户端先用同一手机号查询：
-  查到则按成功展示凭条；查不到或查询也失败则提示“结果待确认”并提供查询入口，
-  不直接断言失败。报名与查询手机号输入补 11 位格式校验，错误在字段旁就地提示并关联输入；
+  查到则按成功展示凭条；查不到则停在待确认，查询本身失败则提示重试，不直接断言失败。
+  待确认状态下查询到本人记录会清除待确认并展示凭条；确认未报名后可重新填写，查询失败可重试。
+  手动查询同样 10 秒超时。报名与查询手机号输入补 11 位格式校验，错误在字段旁就地提示并关联输入；
   确认弹层展示活动、姓名与完整手机号，可「返回修改」再提交。
 - `GET /api/v1/admin/repair-activities/:id/registrations` 的每一项新增
   `hasSameNameActive: boolean`（本场其他有效报名中是否同名，供人工核对，不参与唯一性）。

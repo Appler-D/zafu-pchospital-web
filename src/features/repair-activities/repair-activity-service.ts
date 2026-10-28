@@ -16,7 +16,6 @@ import {
   assertValidIssueType,
   assertValidRegistrantName,
   assertValidTitle,
-  canAcceptNewRegistration,
   canEditIssueType,
   deriveRepairActivityStatus,
   EFFECTIVE_REGISTRATION_STATUSES,
@@ -634,13 +633,6 @@ export const repairActivityService = {
       if (now.getTime() >= activityEndExclusive(activity.activityAt).getTime()) {
         throw new AppError("ACTIVITY_ENDED", "活动已结束");
       }
-      // 先查已有报名：满额后再提交时，已报名者应得到“你已报名”而不是“名额已满”。
-      const duplicate = await tx.repairActivityRegistration.findFirst({
-        where: { activityId, phone, deletedAt: null },
-      });
-      if (duplicate) {
-        throw new AppError("ACTIVITY_REGISTRATION_DUPLICATE", "你已报名本场活动，无需重复提交");
-      }
       const effectiveCount = await tx.repairActivityRegistration.count({
         where: { activityId, ...effectiveStatusFilter },
       });
@@ -653,11 +645,20 @@ export const repairActivityService = {
         capacity: activity.capacity,
       });
       if (status === "ENDED") throw new AppError("ACTIVITY_ENDED", "活动已结束");
-      if (!canAcceptNewRegistration(status)) {
-        if (status === "FULL") throw new AppError("ACTIVITY_FULL", "活动名额已满");
-        if (status === "UPCOMING") throw new AppError("ACTIVITY_NOT_OPEN", "报名尚未开始");
+      // 报名窗口未开始 / 已截止时，先告知窗口状态；窗口内再对已报名者优先返回重复。
+      if (status === "UPCOMING") {
+        throw new AppError("ACTIVITY_NOT_OPEN", "报名尚未开始");
+      }
+      if (status === "CLOSED") {
         throw new AppError("ACTIVITY_NOT_OPEN", "报名已截止");
       }
+      const duplicate = await tx.repairActivityRegistration.findFirst({
+        where: { activityId, phone, deletedAt: null },
+      });
+      if (duplicate) {
+        throw new AppError("ACTIVITY_REGISTRATION_DUPLICATE", "你已报名本场活动，无需重复提交");
+      }
+      if (status === "FULL") throw new AppError("ACTIVITY_FULL", "活动名额已满");
 
       const created = await tx.repairActivityRegistration.create({
         data: {

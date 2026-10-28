@@ -76,6 +76,45 @@ async function createEndedActivity(capacity: number): Promise<string> {
   return id;
 }
 
+async function createWindowActivity(
+  capacity: number,
+  label: string,
+  window: { activityAt: Date; signupOpensAt: Date; signupClosesAt: Date },
+): Promise<string> {
+  const now = new Date();
+  const id = randomUUID();
+  await getDb().repairActivity.create({
+    data: {
+      id,
+      title: `${PREFIX}${label}${capacity} 人场`,
+      capacity,
+      activityAt: window.activityAt,
+      signupOpensAt: window.signupOpensAt,
+      signupClosesAt: window.signupClosesAt,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  return id;
+}
+
+async function seedRegistration(activityId: string, phone: string, name: string): Promise<void> {
+  const now = new Date();
+  await getDb().repairActivityRegistration.create({
+    data: {
+      id: randomUUID(),
+      activityId,
+      name,
+      phone,
+      phoneLast4: phone.slice(-4),
+      issueType: "CLEAN_ONLY",
+      status: "REGISTERED",
+      consentAcceptedAt: now,
+      createdAt: now,
+    },
+  });
+}
+
 function registerInput(phone: string, name: string) {
   return {
     name,
@@ -206,5 +245,35 @@ dbTest("活动已结束时优先返回结束而不是重复", async () => {
   await assert.rejects(
     () => repairActivityService.register(activityId, registerInput(phone, "历史客户"), context),
     (error) => assertCode(error, "ACTIVITY_ENDED"),
+  );
+});
+
+dbTest("报名尚未开始时不因手机号重复而误报重复", async () => {
+  const now = new Date();
+  const activityId = await createWindowActivity(1, "未开始", {
+    activityAt: new Date(now.getTime() + 48 * HOUR),
+    signupOpensAt: new Date(now.getTime() + 2 * HOUR),
+    signupClosesAt: new Date(now.getTime() + 24 * HOUR),
+  });
+  const phone = "13800000006";
+  await seedRegistration(activityId, phone, "未开始客户");
+  await assert.rejects(
+    () => repairActivityService.register(activityId, registerInput(phone, "未开始客户"), context),
+    (error) => assertCode(error, "ACTIVITY_NOT_OPEN"),
+  );
+});
+
+dbTest("报名已截止时不因手机号重复而误报重复", async () => {
+  const now = new Date();
+  const activityId = await createWindowActivity(1, "已截止", {
+    activityAt: new Date(now.getTime() + 24 * HOUR),
+    signupOpensAt: new Date(now.getTime() - 24 * HOUR),
+    signupClosesAt: new Date(now.getTime() - HOUR),
+  });
+  const phone = "13800000007";
+  await seedRegistration(activityId, phone, "已截止客户");
+  await assert.rejects(
+    () => repairActivityService.register(activityId, registerInput(phone, "已截止客户"), context),
+    (error) => assertCode(error, "ACTIVITY_NOT_OPEN"),
   );
 });
