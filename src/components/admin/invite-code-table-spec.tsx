@@ -117,7 +117,7 @@ export function windowText(item: InviteCodeAdminView): string {
     parts.push(copy.window.from.replace("{from}", formatDateTime(item.activeFrom)));
   }
   if (item.expiresAt) {
-    parts.push(copy.window.until.replace("{to}", formatDateTime(item.expiresAt)));
+    parts.push(copy.window.until.replace("{until}", formatDateTime(item.expiresAt)));
   }
   return parts.join(" · ");
 }
