@@ -600,6 +600,12 @@ export const adminCopy = {
       status: "状态",
       createdAt: "报名时间",
       deleted: "已删除",
+      /** 同名有效报名的人工核对提示，不按姓名强制唯一。 */
+      sameName: "同名",
+      sameNameHint: "本场还有其他同名有效报名，请人工核对",
+      activeCount: "有效报名 {count} 条",
+      activeEmpty: "暂无有效报名",
+      deletedHistory: "删除历史（{count}）",
       edit: "编辑报名",
       save: "保存报名",
       delete: "删除报名",

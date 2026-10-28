@@ -155,3 +155,14 @@ dbTest("容量 2 时 5 人并发报名只成功两名", async () => {
     "成功响应必须对应真实落库的记录",
   );
 });
+
+dbTest("满额后同一手机号再次提交返回重复而不是满额", async () => {
+  const activityId = await createActivity(1);
+  const phone = "13800000004";
+  await repairActivityService.register(activityId, registerInput(phone, "已报名客户"), context);
+  await assert.rejects(
+    () => repairActivityService.register(activityId, registerInput(phone, "已报名客户"), context),
+    (error) => assertCode(error, "ACTIVITY_REGISTRATION_DUPLICATE"),
+  );
+  assert.equal((await activeRows(activityId)).length, 1);
+});

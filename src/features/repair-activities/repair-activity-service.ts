@@ -106,6 +106,8 @@ export type RegistrationAdminView = {
   status: string;
   createdAt: string;
   deletedAt: string | null;
+  /** 本场还有其他同名有效报名，供管理员人工核对；不参与唯一性。 */
+  hasSameNameActive: boolean;
 };
 
 export type UpdateRegistrationInput = {
@@ -189,7 +191,7 @@ function toRegistrationAdminView(row: {
   status: string;
   createdAt: Date;
   deletedAt: Date | null;
-}): RegistrationAdminView {
+}): Omit<RegistrationAdminView, "hasSameNameActive"> {
   return {
     id: row.id,
     activityId: row.activityId,
@@ -371,7 +373,15 @@ export const repairActivityService = {
       where: { activityId },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    return rows.map(toRegistrationAdminView);
+    const activeNameCounts = new Map<string, number>();
+    for (const row of rows) {
+      if (row.deletedAt) continue;
+      activeNameCounts.set(row.name, (activeNameCounts.get(row.name) ?? 0) + 1);
+    }
+    return rows.map((row) => ({
+      ...toRegistrationAdminView(row),
+      hasSameNameActive: !row.deletedAt && (activeNameCounts.get(row.name) ?? 0) > 1,
+    }));
   },
 
   async updateRegistration(
@@ -429,7 +439,13 @@ export const repairActivityService = {
         },
         after: { activityId, name, phoneMasked: maskActivityPhone(phone), issueType },
       });
-      return toRegistrationAdminView(updated);
+      const sameNameActiveCount = await tx.repairActivityRegistration.count({
+        where: { activityId, name, deletedAt: null },
+      });
+      return {
+        ...toRegistrationAdminView(updated),
+        hasSameNameActive: sameNameActiveCount > 1,
+      };
     });
   },
 
@@ -615,6 +631,16 @@ export const repairActivityService = {
         throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
       }
       const now = new Date();
+      if (now.getTime() >= activityEndExclusive(activity.activityAt).getTime()) {
+        throw new AppError("ACTIVITY_ENDED", "活动已结束");
+      }
+      // 先查已有报名：满额后再提交时，已报名者应得到“你已报名”而不是“名额已满”。
+      const duplicate = await tx.repairActivityRegistration.findFirst({
+        where: { activityId, phone, deletedAt: null },
+      });
+      if (duplicate) {
+        throw new AppError("ACTIVITY_REGISTRATION_DUPLICATE", "你已报名本场活动，无需重复提交");
+      }
       const effectiveCount = await tx.repairActivityRegistration.count({
         where: { activityId, ...effectiveStatusFilter },
       });
@@ -631,13 +657,6 @@ export const repairActivityService = {
         if (status === "FULL") throw new AppError("ACTIVITY_FULL", "活动名额已满");
         if (status === "UPCOMING") throw new AppError("ACTIVITY_NOT_OPEN", "报名尚未开始");
         throw new AppError("ACTIVITY_NOT_OPEN", "报名已截止");
-      }
-
-      const duplicate = await tx.repairActivityRegistration.findFirst({
-        where: { activityId, phone, deletedAt: null },
-      });
-      if (duplicate) {
-        throw new AppError("ACTIVITY_REGISTRATION_DUPLICATE", "该手机号已报名本场活动");
       }
 
       const created = await tx.repairActivityRegistration.create({

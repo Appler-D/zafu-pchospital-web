@@ -849,6 +849,27 @@ DELETE     /api/v1/admin/comments/:id
 不提供状态筛选，因此没有跨页或分组排序的额外处理。公开活动列表与成员活动列表的
 既有顺序不变；无 Schema / Migration / 新端点 / 权限变化。
 
+### 报名结果确认与重复提交（issue #262）
+
+- `POST /api/v1/repair-activities/:id/registrations` 的活动结束判定不变；
+  随后**先查同活动同手机号的有效报名**，命中返回 409 `ACTIVITY_REGISTRATION_DUPLICATE`
+  （“你已报名本场活动，无需重复提交”），再判断新报名容量。已报名者在满额后重复提交
+  不再误报 `ACTIVITY_FULL`。
+- 公开报名成功凭条由客户端展示活动、姓名、脱敏手机号、报名编号，并提供「查询本人记录」
+  入口；满额页保留查询入口，查询到 `REGISTERED` 时突出“你已报名成功”，状态统一使用
+  中文（`REGISTERED` / `CHECKED_IN` / `SERVED`）。
+- 报名 POST 网络中断、响应非 JSON 或 5xx 时，客户端先用同一手机号查询：
+  查到则按成功展示凭条；查不到或查询也失败则提示“结果待确认”并提供查询入口，
+  不直接断言失败。手机号输入补 11 位格式校验；确认弹层展示姓名与脱敏手机号。
+- `GET /api/v1/admin/repair-activities/:id/registrations` 的每一项新增
+  `hasSameNameActive: boolean`（本场其他有效报名中是否同名，供人工核对，不参与唯一性）。
+  管理端报名弹层默认只列有效报名；已删除记录收进可展开的「删除历史」，状态用中文。
+- 报名与查询 Route 追加结构化结果码日志：`event`、`requestId`、`activityId`、`result`，
+  不记录请求正文、姓名或完整手机号。
+- 不改 Schema / Migration / 新端点 / 权限；`ACTIVITY_REGISTRATION_DUPLICATE` 与
+  `ACTIVITY_FULL` 的 HTTP 状态保持 409。
+
+
 ## 成员工作台出勤成员名单（issue #107）
 
 `GET /api/v1/member/repair-activities/:id/board` 返回结构新增：

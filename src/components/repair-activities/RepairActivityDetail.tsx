@@ -16,10 +16,12 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { repairActivitiesPage } from "@/config/repair-activities";
+import { maskActivityPhone } from "@/features/repair-activities/phone-mask";
 import {
   canAcceptNewRegistration,
   REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH,
   repairActivityIssueTypeLabels,
+  repairActivityRegistrationStatusLabels,
   repairActivityStatusLabels,
   type RepairActivityIssueType,
   type RepairActivityStatus,
@@ -46,7 +48,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [busy, setBusy] = useState(false);
   const [signupSucceeded, setSignupSucceeded] = useState(false);
   const [registrationResult, setRegistrationResult] = useState<RegistrationPublicView | null>(null);
+  const [registeredPhone, setRegisteredPhone] = useState("");
   const [signupInfo, setSignupInfo] = useState("");
+  const [signupPending, setSignupPending] = useState<{ name: string; phone: string } | null>(null);
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
   /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
@@ -57,6 +61,7 @@ export function RepairActivityDetail({ activityId }: Props) {
     deviceModel: string;
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
+  const lookupPhoneInputRef = useRef<HTMLInputElement>(null);
   /** 防止连点在 busy 重新渲染前发出第二个 POST。 */
   const submittingRef = useRef(false);
   /** 换活动后丢弃旧报名的迟到响应。 */
@@ -122,7 +127,9 @@ export function RepairActivityDetail({ activityId }: Props) {
     setActivity(null);
     setSignupSucceeded(false);
     setRegistrationResult(null);
+    setRegisteredPhone("");
     setSignupInfo("");
+    setSignupPending(null);
     setPendingSignup(null);
     void load();
     return () => {
@@ -191,7 +198,7 @@ export function RepairActivityDetail({ activityId }: Props) {
   /** 填好表单 → 先弹免责声明，不直接提交。 */
   function requestSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || submittingRef.current || pendingSignup) return;
+    if (busy || submittingRef.current || pendingSignup || signupPending) return;
     setProblem("");
     setNotice(null);
     setSignupInfo("");
@@ -204,47 +211,108 @@ export function RepairActivityDetail({ activityId }: Props) {
     });
   }
 
+  async function lookupByPhone(phone: string) {
+    try {
+      const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/lookup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      if (response.status === 404) return "not-found" as const;
+      const json = (await response.json()) as {
+        success: boolean;
+        data?: RegistrationLookupView;
+      };
+      return json.success && json.data ? json.data : ("unknown" as const);
+    } catch {
+      return "unknown" as const;
+    }
+  }
+
+  /** POST 可能已落库但响应丢失：先查询确认，无法确认时停在“待确认”。 */
+  async function handleUncertainSignup(
+    pending: NonNullable<typeof pendingSignup>,
+    attempt: number,
+  ) {
+    const found = await lookupByPhone(pending.phone);
+    if (signupAttemptRef.current !== attempt) return;
+    if (found !== "not-found" && found !== "unknown") {
+      setSignupSucceeded(true);
+      setRegistrationResult(found);
+      setRegisteredPhone(pending.phone);
+      setSignupInfo("");
+      setSignupPending(null);
+      setNotice({ text: copy.lookupConfirmed, tone: "success" });
+      void load(true);
+      return;
+    }
+    setPendingSignup(null);
+    setSignupPending({ name: pending.name, phone: pending.phone });
+    setSignupInfo(found === "not-found" ? copy.lookupNotFoundRetry : "");
+  }
+
   /** 弹层里点过「我已阅读并同意」之后才真正提交。 */
   async function confirmSignup() {
     if (!pendingSignup || submittingRef.current) return;
+    const pending = pendingSignup;
     const attempt = ++signupAttemptRef.current;
     submittingRef.current = true;
     setBusy(true);
     setProblem("");
     setNotice(null);
     try {
-      const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...pendingSignup, consentAccepted: true }),
-      });
-      const json = (await response.json()) as {
+      let response: Response;
+      try {
+        response = await fetch(`/api/v1/repair-activities/${activityId}/registrations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...pending, consentAccepted: true }),
+        });
+      } catch {
+        if (signupAttemptRef.current === attempt) {
+          await handleUncertainSignup(pending, attempt);
+        }
+        return;
+      }
+      let json: {
         success: boolean;
         data?: RegistrationPublicView;
         error?: { code?: string; message?: string };
       };
+      try {
+        json = (await response.json()) as typeof json;
+      } catch {
+        if (signupAttemptRef.current === attempt) {
+          await handleUncertainSignup(pending, attempt);
+        }
+        return;
+      }
       if (signupAttemptRef.current !== attempt) return;
+      if (response.status >= 500) {
+        await handleUncertainSignup(pending, attempt);
+        return;
+      }
       if (!json.success) {
         // 失败要让报名者看得见原因，而错误提示在弹层后面 —— 先关弹层再报错。
         setPendingSignup(null);
+        setRegisteredPhone(pending.phone);
         if (json.error?.code === "ACTIVITY_REGISTRATION_DUPLICATE") {
           setSignupInfo(copy.duplicateHint);
+        } else if (json.error?.code === "ACTIVITY_FULL") {
+          setSignupInfo(copy.fullLookupHint);
         } else {
           setProblem(json.error?.message ?? "报名失败");
         }
       } else {
         setSignupSucceeded(true);
         setRegistrationResult(json.data ?? null);
+        setRegisteredPhone(pending.phone);
         setSignupInfo("");
+        setSignupPending(null);
         signupFormRef.current?.reset();
         // 刷新独立收尾，不延长 POST 的忙碌周期，也不解除下一次操作的禁用。
         // 报名已成功：刷新失败时保留当前页面与成功提醒。
         void load(true);
-      }
-    } catch {
-      if (signupAttemptRef.current === attempt) {
-        setPendingSignup(null);
-        setProblem("网络异常，请稍后重试");
       }
     } finally {
       if (signupAttemptRef.current === attempt) {
@@ -252,6 +320,30 @@ export function RepairActivityDetail({ activityId }: Props) {
         setBusy(false);
       }
     }
+  }
+
+  async function checkPendingSignup() {
+    if (!signupPending || busy) return;
+    setBusy(true);
+    const pending = signupPending;
+    const found = await lookupByPhone(pending.phone);
+    if (found !== "not-found" && found !== "unknown") {
+      setSignupPending(null);
+      setRegistrationResult(found);
+      setRegisteredPhone(pending.phone);
+      setSignupInfo("");
+      setNotice({ text: copy.lookupConfirmed, tone: "success" });
+    } else {
+      setSignupInfo(copy.lookupNotFoundRetry);
+    }
+    setBusy(false);
+  }
+
+  function focusLookup(phone?: string) {
+    const input = lookupPhoneInputRef.current;
+    if (phone && input) input.value = phone;
+    input?.scrollIntoView({ block: "center" });
+    input?.focus({ preventScroll: true });
   }
 
   function closeSignupDialog() {
@@ -285,6 +377,7 @@ export function RepairActivityDetail({ activityId }: Props) {
       } else {
         setLookup(json.data);
         setLookupPhone(data.phone ?? "");
+        setRegisteredPhone(data.phone ?? "");
         setNotice({ text: copy.lookupSuccess, tone: "success" });
       }
     } catch {
@@ -460,18 +553,45 @@ export function RepairActivityDetail({ activityId }: Props) {
             {registrationResult ? (
               <div className={styles.signupResult} role="status">
                 <strong>{copy.signupSuccessTitle}</strong>
+                <p>{activity.title}</p>
                 <p>
                   {registrationResult.name} · {registrationResult.phoneMasked}
                 </p>
+                <p className={styles.signupCode}>
+                  {copy.registrationNumber.replace("{id}", registrationResult.id)}
+                </p>
                 <p className="muted">{copy.registeredHint}</p>
+                <Button variant="ghost" onClick={() => focusLookup(registeredPhone)}>
+                  {copy.lookupMine}
+                </Button>
+              </div>
+            ) : null}
+            {signupPending ? (
+              <div className={styles.signupPending} role="status">
+                <strong>{copy.signupPendingTitle}</strong>
+                <p className="muted">{copy.signupPendingHint}</p>
+                <Button variant="ghost" onClick={() => void checkPendingSignup()} disabled={busy}>
+                  {copy.checkResult}
+                </Button>
               </div>
             ) : null}
             {signupInfo ? (
-              <p className={styles.signupInfo} role="status">
-                {signupInfo}
-              </p>
+              <div className={styles.signupNotice}>
+                <p role="status">{signupInfo}</p>
+                <Button variant="ghost" onClick={() => focusLookup(registeredPhone)}>
+                  {copy.lookupMine}
+                </Button>
+              </div>
             ) : null}
             {!open ? <p className="muted">{signupDisabledReason}</p> : null}
+            {activity.status === "FULL" && !registrationResult ? (
+              <div className={styles.fullHint}>
+                <p className="muted">{copy.fullLookupHint}</p>
+                <Button variant="ghost" onClick={() => focusLookup()}>
+                  {copy.lookupMine}
+                </Button>
+              </div>
+            ) : null}
             {/* 开始时间解析不出（契约保证不会）时整块不渲染，避免数字块出现 Infinity。 */}
             {activity.status === "UPCOMING" && Number.isFinite(countdownMs) ? (
               <div className="activity-countdown" role="timer">
@@ -564,7 +684,9 @@ export function RepairActivityDetail({ activityId }: Props) {
                     required
                     inputMode="numeric"
                     maxLength={11}
-                    disabled={!open || busy}
+                    pattern="1[3-9]\d{9}"
+                    title={copy.phoneFormatHint}
+                    disabled={!open || busy || signupPending !== null}
                   />
                 </label>
                 <label className="field">
@@ -602,7 +724,7 @@ export function RepairActivityDetail({ activityId }: Props) {
                   type="submit"
                   variant="solid"
                   trailingIcon="arrowRight"
-                  disabled={!open || busy}
+                  disabled={!open || busy || signupPending !== null}
                 >
                   {busy ? "提交中…" : copy.submitSignup}
                 </Button>
@@ -619,12 +741,15 @@ export function RepairActivityDetail({ activityId }: Props) {
               <label className="field">
                 <span className="field__label">{copy.phone}</span>
                 <input
+                  ref={lookupPhoneInputRef}
                   className="field__input"
                   name="phone"
                   placeholder={copy.lookupPhonePlaceholder}
                   required
                   inputMode="numeric"
                   maxLength={11}
+                  pattern="1[3-9]\d{9}"
+                  title={copy.phoneFormatHint}
                   disabled={busy}
                 />
               </label>
@@ -637,13 +762,29 @@ export function RepairActivityDetail({ activityId }: Props) {
 
             {lookup ? (
               <form className="admin-form mt-s-4" onSubmit={updateType}>
-                <p className="muted">
-                  {lookup.name} · {lookup.phoneMasked} · 当前：
-                  {repairActivityIssueTypeLabels[lookup.issueType as RepairActivityIssueType] ??
-                    lookup.issueType}
-                  {" · "}
-                  {lookup.status}
-                </p>
+                <div
+                  className={`${styles.lookupResult} ${
+                    lookup.status === "REGISTERED" ? styles.lookupResultSuccess : ""
+                  }`}
+                  role="status"
+                >
+                  <strong>
+                    {lookup.status === "REGISTERED"
+                      ? copy.lookupRegisteredTitle
+                      : copy.lookupStatusLabel.replace(
+                          "{status}",
+                          repairActivityRegistrationStatusLabels[lookup.status] ?? lookup.status,
+                        )}
+                  </strong>
+                  <p>
+                    {lookup.name} · {lookup.phoneMasked} ·{" "}
+                    {repairActivityIssueTypeLabels[lookup.issueType as RepairActivityIssueType] ??
+                      lookup.issueType}
+                  </p>
+                  <p className={styles.signupCode}>
+                    {copy.registrationNumber.replace("{id}", lookup.id)}
+                  </p>
+                </div>
                 {lookup.status !== "REGISTERED" ? (
                   <p className="muted">{copy.notEditable}</p>
                 ) : (
@@ -689,6 +830,14 @@ export function RepairActivityDetail({ activityId }: Props) {
           onConfirm={signupSucceeded ? closeSignupDialog : () => void confirmSignup()}
           onClose={closeSignupDialog}
         >
+          {!signupSucceeded && pendingSignup ? (
+            <div className={styles.signupConfirm}>
+              <strong>
+                {pendingSignup.name} · {maskActivityPhone(pendingSignup.phone)}
+              </strong>
+              <p className="muted">{copy.confirmIdentityHint}</p>
+            </div>
+          ) : null}
           <div className="admin-section">
             <p className="muted">{signupSucceeded ? copy.signupSuccess : copy.consent.subtitle}</p>
             {signupSucceeded ? <RepairActivityPreparation /> : <RepairActivityPrecautions />}

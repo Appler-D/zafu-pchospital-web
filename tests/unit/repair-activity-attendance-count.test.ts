@@ -53,6 +53,15 @@ test("活动管理页表格有「出勤」列并绑定 attendedCount", () => {
   assert.match(panelSource, cell);
 });
 
+test("报名名单默认展示有效报名，删除历史折叠并使用中文状态", () => {
+  assert.ok(serviceSource.includes("hasSameNameActive"));
+  assert.ok(panelSource.includes("activeRegistrations"));
+  assert.ok(panelSource.includes("deletedRegistrations"));
+  assert.match(panelSource, /repairActivityRegistrationStatusLabels\[registration\.status\]/);
+  assert.match(panelSource, /copy\.registrations\.sameName/);
+  assert.match(panelSource, /copy\.registrations\.deletedHistory/);
+});
+
 test("出勤人数只回计数：管理端列表源码不下发成员身份字段", () => {
   // 管理端列表永远只回计数。出勤明细已由  后续在成员看板落地
   // （`repair-activity-staff-service.ts` 的管理员名单 + 只读弹层，

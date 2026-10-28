@@ -4,6 +4,7 @@ import { setImmediate } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import type { ReactElement, ReactNode } from "react";
 import type {
+  RegistrationLookupView,
   RegistrationPublicView,
   RepairActivityPublicView,
 } from "../../src/features/repair-activities/repair-activity-service";
@@ -56,6 +57,11 @@ const registration: RegistrationPublicView = {
   deviceModel: "测试机型",
   status: "REGISTERED",
   createdAt: "2026-10-24T04:00:01Z",
+};
+const lookupRegistration: RegistrationLookupView = {
+  ...registration,
+  editToken: "edit-token",
+  editTokenExpiresAt: "2026-10-24T05:00:00Z",
 };
 
 /** 与既有客户端测试相同的 hook 存储方式；只驱动真实 JSX/effect，不启动 Next 或 DB。 */
@@ -135,13 +141,14 @@ async function mount(t: TestContext) {
     init: RequestInit;
     signal: AbortSignal;
     finish(response: Response): void;
+    fail(error: unknown): void;
   }[] = [];
   t.mock.method(
     globalThis,
     "fetch",
     (url: string, init: RequestInit) =>
-      new Promise<Response>((finish) => {
-        requests.push({ url, init, signal: init.signal as AbortSignal, finish });
+      new Promise<Response>((finish, fail) => {
+        requests.push({ url, init, signal: init.signal as AbortSignal, finish, fail });
       }),
   );
   const { RepairActivityDetail } =
@@ -272,6 +279,7 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
   );
 
   const consent = ui.requestSignup();
+  assert.ok(text(consent).includes("138****0000"), "确认弹层应突出本次报名的手机号");
   assert.equal(ui.requests.length, 1, "未同意须知时不发送报名请求");
   assert.equal(consent.props.title, repairActivitiesPage.detail.consent.title);
   assert.equal(consent.props.confirmLabel, repairActivitiesPage.detail.consent.agree);
@@ -307,6 +315,12 @@ test("完整须知可展开且提交前必须同意，成功只展示到场准�
   assert.equal(signupDialog(ui.view()), undefined);
   assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
   assert.ok(text(ui.view()).includes(registration.phoneMasked), "弹层关闭后仍显示已报名记录");
+  assert.ok(
+    text(ui.view()).includes(
+      repairActivitiesPage.detail.registrationNumber.replace("{id}", registration.id),
+    ),
+    "凭条应包含报名编号",
+  );
   assert.equal(ui.requests.filter((request) => request.init.method === "POST").length, 1);
 });
 
@@ -347,6 +361,53 @@ test("重复报名提示引导查询已有记录，不覆盖为普通失败", as
   assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.duplicateHint));
   assert.equal(ui.formResets(), 0, "重复报名时保留已填写的表单以便查询");
   assert.equal(ui.requests.length, 2, "重复报名不刷新活动");
+});
+
+test("报名响应丢失时先查询确认，查到记录按成功处理", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  assert.equal(
+    ui.requests[2].url,
+    "/api/v1/repair-activities/a/registrations/lookup",
+    "网络异常后先查询本人记录",
+  );
+  ui.requests[2].finish(Response.json({ success: true, data: lookupRegistration }));
+  await setImmediate();
+  const dialog = signupDialog(ui.view());
+  assert.equal(dialog?.props.title, repairActivitiesPage.detail.signupSuccessTitle);
+  (dialog?.props.onConfirm as () => void)();
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupSuccessTitle));
+  assert.ok(text(ui.view()).includes(registration.phoneMasked));
+});
+
+test("报名响应丢失且查询不到时停在待确认，不直接报失败", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].fail(new Error("network"));
+  await setImmediate();
+  ui.requests[2].finish(Response.json({ success: false }, { status: 404 }));
+  await setImmediate();
+  assert.equal(signupDialog(ui.view()), undefined);
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.signupPendingTitle));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.lookupNotFoundRetry));
+  assert.equal(text(ui.view()).includes("网络异常，请稍后重试"), false);
+});
+
+test("满额页保留查询本人记录入口", async (t) => {
+  const ui = await mount(t);
+  await ui.finish(0, {
+    ...activity,
+    status: "FULL",
+    registeredCount: 10,
+    remaining: 0,
+  });
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.fullDisabled));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.fullLookupHint));
+  assert.ok(text(ui.view()).includes(repairActivitiesPage.detail.lookupMine));
 });
 
 test("报名失败只显示错误，保留输入以便重试，不显示成功提醒", async (t) => {

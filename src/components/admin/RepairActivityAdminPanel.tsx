@@ -13,6 +13,7 @@ import { adminCopy, adminShared } from "@/config/admin";
 import { adminFetch } from "@/features/admin/admin-client";
 import {
   repairActivityIssueTypeLabels,
+  repairActivityRegistrationStatusLabels,
   repairActivityStatusShortLabels,
   REPAIR_ACTIVITY_CAPACITY_MIN,
   type RepairActivityStatus,
@@ -217,6 +218,78 @@ export function RepairActivityAdminPanel() {
    * 不是另一套业务编号。
    */
   const registrationFirstRowNumber = 1;
+  const activeRegistrations = registrations.filter((registration) => !registration.deletedAt);
+  const deletedRegistrations = registrations.filter((registration) => registration.deletedAt);
+
+  function renderRegistrationTable(rows: RegistrationAdminView[]) {
+    return (
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{copy.registrations.rowNumber}</th>
+              <th>{copy.registrations.name}</th>
+              <th>{copy.registrations.phone}</th>
+              <th>{copy.registrations.issueType}</th>
+              <th>{copy.registrations.deviceModel}</th>
+              <th>{copy.registrations.status}</th>
+              <th>{copy.table.actions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((registration, index) => (
+              <tr key={registration.id}>
+                <td data-label={copy.registrations.rowNumber}>
+                  {registrationFirstRowNumber + index}
+                </td>
+                <td data-label={copy.registrations.name}>
+                  <span className="admin-tags">
+                    <span>{registration.name}</span>
+                    {registration.hasSameNameActive ? (
+                      <span className="admin-tag" title={copy.registrations.sameNameHint}>
+                        {copy.registrations.sameName}
+                      </span>
+                    ) : null}
+                  </span>
+                </td>
+                <td data-label={copy.registrations.phone}>{registration.phone}</td>
+                <td data-label={copy.registrations.issueType}>
+                  {repairActivityIssueTypeLabels[registration.issueType] ?? registration.issueType}
+                </td>
+                <td data-label={copy.registrations.deviceModel}>
+                  {registration.deviceModel ?? "—"}
+                </td>
+                <td data-label={copy.registrations.status}>
+                  {registration.deletedAt
+                    ? copy.registrations.deleted
+                    : (repairActivityRegistrationStatusLabels[registration.status] ??
+                      registration.status)}
+                </td>
+                <td data-label={copy.table.actions}>
+                  <div className="admin-row-actions">
+                    <Button
+                      variant="ghost"
+                      disabled={busy || Boolean(registration.deletedAt)}
+                      onClick={() => setEditingRegistration(registration)}
+                    >
+                      {copy.registrations.edit}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={busy || Boolean(registration.deletedAt)}
+                      onClick={() => setRemovingRegistration(registration)}
+                    >
+                      {copy.registrations.delete}
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <div className="admin-workspace__content">
@@ -454,64 +527,36 @@ export function RepairActivityAdminPanel() {
             </p>
           ) : null}
           {registrationState === "loading" ? <p className="muted">{adminShared.loading}</p> : null}
-          {registrationState === "ready" && registrations.length === 0 ? (
+          {registrationState === "ready" &&
+          activeRegistrations.length === 0 &&
+          deletedRegistrations.length === 0 ? (
             <p className="muted">{copy.registrations.empty}</p>
           ) : null}
-          {registrations.length > 0 ? (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>{copy.registrations.rowNumber}</th>
-                    <th>{copy.registrations.name}</th>
-                    <th>{copy.registrations.phone}</th>
-                    <th>{copy.registrations.issueType}</th>
-                    <th>{copy.registrations.deviceModel}</th>
-                    <th>{copy.registrations.status}</th>
-                    <th>{copy.table.actions}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {registrations.map((registration, index) => (
-                    <tr key={registration.id}>
-                      <td data-label={copy.registrations.rowNumber}>
-                        {registrationFirstRowNumber + index}
-                      </td>
-                      <td data-label={copy.registrations.name}>{registration.name}</td>
-                      <td data-label={copy.registrations.phone}>{registration.phone}</td>
-                      <td data-label={copy.registrations.issueType}>
-                        {repairActivityIssueTypeLabels[registration.issueType] ??
-                          registration.issueType}
-                      </td>
-                      <td data-label={copy.registrations.deviceModel}>
-                        {registration.deviceModel ?? "—"}
-                      </td>
-                      <td data-label={copy.registrations.status}>
-                        {registration.deletedAt ? copy.registrations.deleted : registration.status}
-                      </td>
-                      <td data-label={copy.table.actions}>
-                        <div className="admin-row-actions">
-                          <Button
-                            variant="ghost"
-                            disabled={busy || Boolean(registration.deletedAt)}
-                            onClick={() => setEditingRegistration(registration)}
-                          >
-                            {copy.registrations.edit}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            disabled={busy || Boolean(registration.deletedAt)}
-                            onClick={() => setRemovingRegistration(registration)}
-                          >
-                            {copy.registrations.delete}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {registrationState === "ready" && registrations.length > 0 ? (
+            <>
+              <p className="muted">
+                {copy.registrations.activeCount.replace(
+                  "{count}",
+                  String(activeRegistrations.length),
+                )}
+              </p>
+              {activeRegistrations.length > 0 ? (
+                renderRegistrationTable(activeRegistrations)
+              ) : (
+                <p className="muted">{copy.registrations.activeEmpty}</p>
+              )}
+              {deletedRegistrations.length > 0 ? (
+                <details className="admin-registrations__history">
+                  <summary>
+                    {copy.registrations.deletedHistory.replace(
+                      "{count}",
+                      String(deletedRegistrations.length),
+                    )}
+                  </summary>
+                  {renderRegistrationTable(deletedRegistrations)}
+                </details>
+              ) : null}
+            </>
           ) : null}
         </AdminModal>
       ) : null}
