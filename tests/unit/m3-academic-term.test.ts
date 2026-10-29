@@ -135,19 +135,21 @@ test("上海自然日零点：跨月与跨年正确进位", () => {
   );
 });
 
-test("上海自然日零点：全年无夏令时，相邻日固定相差 24 小时", () => {
-  // 取美东夏令时切换日对照：上海始终 UTC+8，不受影响。
-  const days = [
-    "2026-03-08T00:00:00.000Z",
-    "2026-06-15T00:00:00.000Z",
-    "2026-11-01T00:00:00.000Z",
-    "2026-12-15T00:00:00.000Z",
+test("上海自然日零点：全年固定 UTC+8，无夏令时跳变", () => {
+  // 美东夏令时切换日、闰日对照：上海始终 UTC+8，不受影响。
+  const cases: Array<[instant: string, expected: string]> = [
+    ["2026-03-08T00:00:00.000Z", "2026-03-07T16:00:00.000Z"],
+    ["2026-03-09T00:00:00.000Z", "2026-03-08T16:00:00.000Z"],
+    ["2026-11-01T12:00:00.000Z", "2026-10-31T16:00:00.000Z"],
+    ["2026-11-02T12:00:00.000Z", "2026-11-01T16:00:00.000Z"],
+    ["2028-02-29T12:00:00.000Z", "2028-02-28T16:00:00.000Z"],
   ];
-  for (const iso of days) {
-    const start = startOfShanghaiDay(new Date(iso));
-    const next = startOfShanghaiDay(new Date(start.getTime() + 24 * 60 * 60 * 1000));
-    assert.equal(next.getTime() - start.getTime(), 24 * 60 * 60 * 1000, iso);
+  for (const [instant, expected] of cases) {
+    assert.equal(startOfShanghaiDay(new Date(instant)).toISOString(), expected, instant);
   }
+  const spring = startOfShanghaiDay(new Date("2026-03-08T00:00:00.000Z"));
+  const nextSpringDay = startOfShanghaiDay(new Date("2026-03-09T00:00:00.000Z"));
+  assert.equal(nextSpringDay.getTime() - spring.getTime(), 24 * 60 * 60 * 1000);
 });
 
 // ---------------------------------------------------------------------------
