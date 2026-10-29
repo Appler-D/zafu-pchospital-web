@@ -1,4 +1,4 @@
-import { CHINA_UTC_OFFSET_HOURS } from "@/lib/academic-term";
+import { startOfShanghaiDay } from "@/lib/academic-term";
 import { AppError } from "@/lib/api/errors";
 
 /** 对外五态。优先级：ENDED > CLOSED > FULL/OPEN > UPCOMING。 */
@@ -313,16 +313,15 @@ export function shanghaiCalendarDay(activityAt: Date): string {
   }).format(activityAt);
 }
 
-const SHANGHAI_OFFSET_MS = CHINA_UTC_OFFSET_HOURS * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 「已结束」的排他上界：活动当天（Asia/Shanghai 自然日）结束后的次日 00:00（上海），
  * 返回对应的 UTC 时刻。ENDED 判定即 `now >= activityEndExclusive(activityAt)`。
+ * 上海无夏令时，下一个自然日零点固定相隔 24 小时。
  */
 export function activityEndExclusive(activityAt: Date): Date {
-  const [year, month, day] = shanghaiCalendarDay(activityAt).split("-").map(Number);
-  // Date.UTC 自动处理 day + 1 的跨月 / 跨年进位；再减上海固定偏移得到 UTC 时刻。
-  return new Date(Date.UTC(year, month - 1, day + 1) - SHANGHAI_OFFSET_MS);
+  return new Date(startOfShanghaiDay(activityAt).getTime() + ONE_DAY_MS);
 }
 
 /** 公开排队只在活动开始后、活动上海自然日结束前展示。 */

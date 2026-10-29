@@ -86,6 +86,23 @@ export function shanghaiAcademicYearRange(instant: Date): AcademicYearRange {
 }
 
 /**
+ * 给定一个 UTC 时刻，返回它所在的 `Asia/Shanghai` 自然日 00:00 对应的 UTC 时刻。
+ *
+ * 上海无夏令时，固定 UTC+8：2026-10-01T15:59:59.999Z（上海 23:59）与
+ * 2026-10-01T16:00:00.000Z（上海次日 00:00）分别对应 09-30T16:00Z 与 10-01T16:00Z。
+ * 活动「已结束」的查询边界即 `activity_at < startOfShanghaiDay(now)`；
+ * `activityEndExclusive(x)` 等于本函数结果 + 24 小时。
+ */
+export function startOfShanghaiDay(instant: Date): Date {
+  const shanghai = new Date(instant.getTime() + SHANGHAI_OFFSET_MS);
+  return shanghaiDayStartToUtc(
+    shanghai.getUTCFullYear(),
+    shanghai.getUTCMonth() + 1,
+    shanghai.getUTCDate(),
+  );
+}
+
+/**
  * 给定一个 UTC 时刻，返回它所在的 `Asia/Shanghai` 自然月区间。
  * 例：2026-09-01T00:00:00Z（上海时间 08:00）→ 2026-09 月
  *     2026-08-31T16:00:00Z（上海时间 09-01 00:00）→ 2026-09 月

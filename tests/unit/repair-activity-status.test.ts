@@ -20,6 +20,7 @@ import {
   repairActivitiesPage,
 } from "../../src/config/repair-activities";
 import { memberRepairActivityStatusBadgeClass } from "../../src/components/repair-activities/activity-status-badge";
+import { startOfShanghaiDay } from "../../src/lib/academic-term";
 import { AppError } from "../../src/lib/api/errors";
 
 const base = {
@@ -230,6 +231,47 @@ test("activityAt 恰为上海 00:00：仍取该自然日，次日 00:00（上海
     }),
     "ENDED",
   );
+});
+
+test("activityEndExclusive 与 startOfShanghaiDay 等价：结束上界 = 上海当日零点 + 24h", () => {
+  const instants = [
+    "2026-03-08T00:00:00.000Z", // 美东夏令时切换日，上海仍固定 UTC+8
+    "2026-09-30T15:59:59.999Z", // 上海 09-30 23:59
+    "2026-09-30T16:00:00.000Z", // 上海 10-01 00:00
+    "2026-10-01T06:00:00.000Z", // 上海 10-01 14:00
+    "2026-10-31T16:00:00.000Z", // 上海 11-01 00:00
+    "2026-12-31T16:00:00.000Z", // 上海 2027-01-01 00:00
+  ];
+  for (const iso of instants) {
+    const activityAt = new Date(iso);
+    assert.equal(
+      activityEndExclusive(activityAt).getTime(),
+      startOfShanghaiDay(activityAt).getTime() + 24 * 60 * 60 * 1000,
+      iso,
+    );
+  }
+});
+
+test("已结束查询边界：now >= activityEndExclusive(activityAt) 等价于 activityAt < startOfShanghaiDay(now)", () => {
+  const activities = [
+    "2026-09-30T15:59:59.999Z", // 上海 09-30 23:59
+    "2026-09-30T16:00:00.000Z", // 上海 10-01 00:00
+    "2026-10-01T06:00:00.000Z", // 上海 10-01 14:00
+  ];
+  const nows = [
+    "2026-10-01T15:59:59.999Z", // 上海 10-01 23:59:59.999
+    "2026-10-01T16:00:00.000Z", // 上海 10-02 00:00
+    "2026-10-02T00:00:00.000Z",
+  ];
+  for (const activityIso of activities) {
+    for (const nowIso of nows) {
+      const activityAt = new Date(activityIso);
+      const now = new Date(nowIso);
+      const endedByHelper = now.getTime() >= activityEndExclusive(activityAt).getTime();
+      const endedByQuery = activityAt.getTime() < startOfShanghaiDay(now).getTime();
+      assert.equal(endedByHelper, endedByQuery, `${activityIso} @ ${nowIso}`);
+    }
+  }
 });
 
 test("公开排队：活动开始后、上海次日零点前显示", () => {
