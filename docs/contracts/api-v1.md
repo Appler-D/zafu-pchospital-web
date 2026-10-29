@@ -609,8 +609,9 @@ DELETE     /api/v1/admin/comments/:id
   `activity_at < todayStart` 为已结束。`registeredCount` 只对当前页活动聚合，有效报名口径
   不变（`deleted_at IS NULL` 且 `status ∈ REGISTERED|CHECKED_IN|SERVED`）；状态派生使用
   同一个 `now`。
-- 已知调用方：公开列表页（后续改为按页请求）、首页预览（后续改为独立查询）；在两者完成前，
-  调用默认第一页。无 Schema / Migration / 权限变更。
+- 已知调用方：公开列表页（#287 前仍取默认第一页）；首页预览已改为
+  `listPublicForHomePreview` 独立查询（只取未结束活动，不再走公开列表）。无 Schema /
+  Migration / 权限变更。
 
 ### 活动「已结束」的判定口径（issue #79）
 

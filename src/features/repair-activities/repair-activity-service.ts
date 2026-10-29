@@ -23,6 +23,7 @@ import {
   type RepairActivityIssueType,
   type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
+import { pickNonEndedRepairActivitiesForHomePreview } from "@/features/repair-activities/repair-activity-sort";
 import { startOfShanghaiDay } from "@/lib/academic-term";
 import { AppError } from "@/lib/api/errors";
 import { paginationMeta } from "@/lib/api/pagination";
@@ -144,6 +145,26 @@ const effectiveStatusFilter = {
   status: { in: [...EFFECTIVE_REGISTRATION_STATUSES] },
 };
 
+/** 公开列表两段的 SQL 排序；首页预览复用未结束段，避免两处 tie-break 漂移。 */
+const PUBLIC_ACTIVE_ORDER_BY = [
+  { activityAt: "asc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
+const PUBLIC_ENDED_ORDER_BY = [
+  { activityAt: "desc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
+
+function publicActiveWhere(todayStart: Date): Prisma.RepairActivityWhereInput {
+  return { deletedAt: null, activityAt: { gte: todayStart } };
+}
+
+function publicEndedWhere(todayStart: Date): Prisma.RepairActivityWhereInput {
+  return { deletedAt: null, activityAt: { lt: todayStart } };
+}
+
 async function countEffectiveRegistrations(activityId: string): Promise<number> {
   return getDb().repairActivityRegistration.count({
     where: { activityId, ...effectiveStatusFilter },
@@ -188,6 +209,23 @@ function toAdminView(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     createdBy: row.createdBy,
+  };
+}
+
+/** 首页预览返回公开字段；createdAt 只在排序时使用，不进入 Service 返回值。 */
+function toHomePreviewView(
+  item: RepairActivityPublicView & { createdAt: string },
+): RepairActivityPublicView {
+  return {
+    id: item.id,
+    title: item.title,
+    activityAt: item.activityAt,
+    capacity: item.capacity,
+    signupOpensAt: item.signupOpensAt,
+    signupClosesAt: item.signupClosesAt,
+    status: item.status,
+    registeredCount: item.registeredCount,
+    remaining: item.remaining,
   };
 }
 
@@ -554,24 +592,8 @@ export const repairActivityService = {
   ): Promise<RepairActivityPublicListResult> {
     const db = getDb();
     const todayStart = startOfShanghaiDay(now);
-    const activeWhere = {
-      deletedAt: null,
-      activityAt: { gte: todayStart },
-    } satisfies Prisma.RepairActivityWhereInput;
-    const endedWhere = {
-      deletedAt: null,
-      activityAt: { lt: todayStart },
-    } satisfies Prisma.RepairActivityWhereInput;
-    const activeOrderBy = [
-      { activityAt: "asc" },
-      { createdAt: "asc" },
-      { id: "asc" },
-    ] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
-    const endedOrderBy = [
-      { activityAt: "desc" },
-      { createdAt: "asc" },
-      { id: "asc" },
-    ] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
+    const activeWhere = publicActiveWhere(todayStart);
+    const endedWhere = publicEndedWhere(todayStart);
 
     const [total, activeCount] = await Promise.all([
       db.repairActivity.count({ where: { deletedAt: null } }),
@@ -585,7 +607,7 @@ export const repairActivityService = {
       const activeTake = Math.min(input.pageSize, activeCount - offset);
       rows = await db.repairActivity.findMany({
         where: activeWhere,
-        orderBy: activeOrderBy,
+        orderBy: PUBLIC_ACTIVE_ORDER_BY,
         skip: offset,
         take: activeTake,
       });
@@ -594,7 +616,7 @@ export const repairActivityService = {
         rows.push(
           ...(await db.repairActivity.findMany({
             where: endedWhere,
-            orderBy: endedOrderBy,
+            orderBy: PUBLIC_ENDED_ORDER_BY,
             take: remaining,
           })),
         );
@@ -602,7 +624,7 @@ export const repairActivityService = {
     } else {
       rows = await db.repairActivity.findMany({
         where: endedWhere,
-        orderBy: endedOrderBy,
+        orderBy: PUBLIC_ENDED_ORDER_BY,
         skip: offset - activeCount,
         take: input.pageSize,
       });
@@ -613,6 +635,32 @@ export const repairActivityService = {
       items: rows.map((row) => toPublicView(row, counts.get(row.id) ?? 0, now)),
       pagination: paginationMeta(input, total),
     };
+  },
+
+  /**
+   * 首页近场活动预览（issue #288）：只查未结束活动，避免复用公开列表的分页查询。
+   * 返回顺序仍由 `pickNonEndedRepairActivitiesForHomePreview` 决定（OPEN → UPCOMING →
+   * FULL → CLOSED，同档 activityAt 升序）；未结束活动通常很少，计数按候选集聚合。
+   * 若未来未结束活动长期超过 200 条，再改为单条 SQL 按优先级取前 N，不在此提前加限制。
+   */
+  async listPublicForHomePreview(
+    limit = 3,
+    now: Date = new Date(),
+  ): Promise<RepairActivityPublicView[]> {
+    const db = getDb();
+    const todayStart = startOfShanghaiDay(now);
+    const rows = await db.repairActivity.findMany({
+      where: publicActiveWhere(todayStart),
+      orderBy: PUBLIC_ACTIVE_ORDER_BY,
+    });
+    const counts = await loadCounts(rows.map((row) => row.id));
+    // 同 activityAt / 同状态时，优先级函数按 createdAt 再按 id 排序；toPublicView 不含
+    // createdAt，这里补上后再喂给纯函数，返回前再收窄回公开字段。
+    const sortable = rows.map((row) => ({
+      ...toPublicView(row, counts.get(row.id) ?? 0, now),
+      createdAt: row.createdAt.toISOString(),
+    }));
+    return pickNonEndedRepairActivitiesForHomePreview(sortable, limit).map(toHomePreviewView);
   },
 
   async getPublic(activityId: string): Promise<RepairActivityPublicView> {
