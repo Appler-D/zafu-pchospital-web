@@ -224,7 +224,7 @@ dbTest("create / update 响应同口径带回 attendedCount", async () => {
 });
 
 dbTest("公开列表不包含 attendedCount", async () => {
-  const items = await repairActivityService.listPublic();
+  const { items } = await repairActivityService.listPublic({ page: 1, pageSize: 100 });
   assert.ok(items.length > 0, "公开列表应有活动");
   for (const item of items) {
     assert.equal("attendedCount" in (item as unknown as Record<string, unknown>), false);

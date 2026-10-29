@@ -33,7 +33,7 @@ export async function HomeActivityPreview() {
   noStore();
   let items: RepairActivityPublicView[] = [];
   try {
-    const all = await repairActivityService.listPublic();
+    const { items: all } = await repairActivityService.listPublic({ page: 1, pageSize: 20 });
     items = pickNonEndedRepairActivitiesForHomePreview(all, 3);
   } catch {
     return null;
