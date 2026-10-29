@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { formatShanghaiDateTime } from "@/components/repair-activities/activity-format";
 import { repairActivityStatusBadgeClass } from "@/components/repair-activities/activity-status-badge";
@@ -13,52 +13,124 @@ import {
   type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
 import type { RepairActivityPublicView } from "@/features/repair-activities/repair-activity-service";
+import type { PaginationMeta } from "@/types/contracts";
 
 const PAGE_SIZE = 4;
+
+type PublicActivityListResponse = {
+  success: boolean;
+  data?: RepairActivityPublicView[];
+  meta?: { pagination?: PaginationMeta };
+  error?: { message?: string };
+};
+
+function pageUrl(page: number): string {
+  return `/api/v1/repair-activities?page=${page}&pageSize=${PAGE_SIZE}`;
+}
+
+function formatPageCopy(template: string, page: number): string {
+  return template.replace("{page}", String(page));
+}
 
 export function RepairActivityList() {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [items, setItems] = useState<RepairActivityPublicView[]>([]);
-  const [message, setMessage] = useState("");
   const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [message, setMessage] = useState("");
+  const [loadingPage, setLoadingPage] = useState<number | null>(null);
+  const [pageMessage, setPageMessage] = useState("");
+  const requestSequence = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/v1/repair-activities");
-        const json = (await response.json()) as {
-          success: boolean;
-          data?: RepairActivityPublicView[];
-          error?: { message?: string };
-        };
-        if (cancelled) return;
-        if (!json.success || !json.data) {
-          setState("error");
-          setMessage(json.error?.message ?? repairActivitiesPage.loadFailed);
+  const loadPage = useCallback(async (requestedPage: number, mode: "initial" | "page") => {
+    const requestId = ++requestSequence.current;
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
+    if (mode === "initial") {
+      setState("loading");
+      setMessage("");
+    } else {
+      setLoadingPage(requestedPage);
+      setPageMessage("");
+    }
+
+    let targetPage = Math.max(1, requestedPage);
+    let lastPayload: PublicActivityListResponse | null = null;
+    try {
+      // 翻页途中活动可能减少：若服务端总页数变小，改取最后一页而不是停在越界页。
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await fetch(pageUrl(targetPage), {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as PublicActivityListResponse;
+        if (requestId !== requestSequence.current) return;
+        lastPayload = payload;
+        if (!response.ok || !payload.success || !Array.isArray(payload.data)) break;
+        const nextPagination = payload.meta?.pagination;
+        if (!nextPagination) break;
+        const nextTotalPages = Math.max(1, nextPagination.totalPages);
+        if (targetPage <= nextTotalPages) {
+          setItems(payload.data);
+          setTotalPages(nextTotalPages);
+          setPage(targetPage);
+          setState("ready");
+          setPageMessage("");
+          if (mode === "page" && typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => {
+              listRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+            });
+          }
           return;
         }
-        setItems(json.data);
-        setPage(1);
-        setState("ready");
-      } catch {
-        if (!cancelled) {
-          setState("error");
-          setMessage(repairActivitiesPage.loadFailed);
-        }
+        targetPage = nextTotalPages;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+
+      const fallback =
+        mode === "initial"
+          ? repairActivitiesPage.loadFailed
+          : formatPageCopy(repairActivitiesPage.pageLoadFailed, requestedPage);
+      const nextMessage =
+        lastPayload && !lastPayload.success ? (lastPayload.error?.message ?? fallback) : fallback;
+      if (mode === "initial") {
+        setState("error");
+        setMessage(nextMessage);
+      } else {
+        setPageMessage(nextMessage);
+      }
+    } catch (error) {
+      if (requestId !== requestSequence.current) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      const fallback =
+        mode === "initial"
+          ? repairActivitiesPage.loadFailed
+          : formatPageCopy(repairActivitiesPage.pageLoadFailed, requestedPage);
+      if (mode === "initial") {
+        setState("error");
+        setMessage(fallback);
+      } else {
+        setPageMessage(fallback);
+      }
+    } finally {
+      if (requestId === requestSequence.current) {
+        setLoadingPage(null);
+        requestController.current = null;
+      }
+    }
   }, []);
 
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const pageItems = useMemo(
-    () => items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [items, safePage],
-  );
+  useEffect(() => {
+    void loadPage(1, "initial");
+    return () => {
+      requestSequence.current += 1;
+      requestController.current?.abort();
+    };
+  }, [loadPage]);
+
+  const safePage = Math.min(page, totalPages);
 
   if (state === "loading") {
     return <p className="muted">正在加载活动…</p>;
@@ -74,10 +146,18 @@ export function RepairActivityList() {
     return <p className="muted">{repairActivitiesPage.empty}</p>;
   }
 
+  const busy = loadingPage !== null;
+  const goToPage = (targetPage: number) => {
+    if (busy) return;
+    const nextPage = Math.min(Math.max(1, targetPage), totalPages);
+    if (nextPage === safePage) return;
+    void loadPage(nextPage, "page");
+  };
+
   return (
     <div className="activity-list-block">
-      <ul className="activity-list activity-list--paged">
-        {pageItems.map((item) => {
+      <ul ref={listRef} className="activity-list activity-list--paged" aria-busy={busy}>
+        {items.map((item) => {
           const ended = item.status === "ENDED";
           const body = (
             <Card className={`activity-card repair-panel ${ended ? "activity-card--ended" : ""}`}>
@@ -127,24 +207,34 @@ export function RepairActivityList() {
           );
         })}
       </ul>
+      {busy ? (
+        <p className="muted" role="status" aria-live="polite">
+          {formatPageCopy(repairActivitiesPage.loadingPage, loadingPage ?? safePage)}
+        </p>
+      ) : null}
+      {pageMessage ? (
+        <p className="admin-status admin-status--error" role="alert">
+          {pageMessage}
+        </p>
+      ) : null}
       {totalPages > 1 ? (
         <nav className="repair-pagination" aria-label={repairActivitiesPage.paginationLabel}>
           <Button
             type="button"
             icon="chevronLeft"
-            disabled={safePage <= 1}
-            onClick={() => setPage(safePage - 1)}
+            disabled={busy || safePage <= 1}
+            onClick={() => goToPage(safePage - 1)}
           >
             {repairActivitiesPage.previousPage}
           </Button>
-          <span>
+          <span aria-live="polite">
             {safePage} / {totalPages}
           </span>
           <Button
             type="button"
             trailingIcon="chevronRight"
-            disabled={safePage >= totalPages}
-            onClick={() => setPage(safePage + 1)}
+            disabled={busy || safePage >= totalPages}
+            onClick={() => goToPage(safePage + 1)}
           >
             {repairActivitiesPage.nextPage}
           </Button>
