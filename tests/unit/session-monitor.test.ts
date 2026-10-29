@@ -4,6 +4,12 @@ import { setImmediate } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 
 import type { AccountAccessView } from "../../src/types/contracts";
+import {
+  clientSessionRevision,
+  invalidateClientSession,
+  sessionMutationFetch,
+} from "../../src/lib/auth/client-session";
+import { adminFetch, clearAdminCache } from "../../src/features/admin/admin-client";
 
 /**
  * 真实 `SessionMonitor` 的排期与「允许停留」断言。
@@ -35,13 +41,26 @@ type MeReply =
 /** `/api/v1/me` 的最小载荷：受限会话同样是 200 + `accountAccess`。 */
 const mePayload = (access: AccountAccessView, expiresAt?: string) => ({
   success: true,
-  data: { ...(expiresAt ? { expiresAt } : {}), accountAccess: access },
+  data: {
+    userId: "user-a",
+    sessionId: "session-a",
+    roles: ["ADMIN", "MEMBER"],
+    permissions: ["member:manage"],
+    displayName: "测试账号",
+    memberProfileId: "member-a",
+    memberStatus: "ACTIVE",
+    mustChangePassword: false,
+    expiresAt: expiresAt ?? iso(DAY),
+    accountAccess: access,
+  },
 });
 
 async function monitor(
   t: TestContext,
   options: { pathname: string; href?: string; replies: MeReply[] },
 ) {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ success: true }));
+  await sessionMutationFetch("/reset", { method: "POST" });
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: T0 });
 
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -106,6 +125,7 @@ async function monitor(
     if (unmounted) return;
     unmounted = true;
     for (const run of cleanups) if (run) run();
+    invalidateClientSession();
   };
   t.after(() => {
     unmount();
@@ -319,4 +339,114 @@ test("focus / visibilitychange 触发复查，卸载后定时器与监听都不�
   ui.tick(DAY);
   await ui.settle();
   assert.equal(ui.calls.length, 3, "卸载后不再产生请求（定时器与监听已撤）");
+});
+
+test("前台恢复确认同一会话时，保留在途重置操作返回的临时密码", async (t) => {
+  const initial = mePayload(
+    { state: "READY", destination: "/admin", exemptionExpiresAt: null },
+    iso(2 * HOUR),
+  );
+  const ui = await monitor(t, { pathname: "/admin", replies: [{ payload: initial }] });
+  t.after(clearAdminCache);
+  let finish!: (value: Response) => void;
+  let checks = 0;
+  t.mock.method(globalThis, "fetch", (url: unknown) => {
+    if (String(url).startsWith("/api/v1/me")) {
+      checks++;
+      return Promise.resolve(Response.json(initial));
+    }
+    return new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+  });
+  const revision = clientSessionRevision();
+  const reset = adminFetch<{ temporaryPassword: string }>("/api/v1/admin/accounts/reset", {
+    method: "POST",
+  });
+  await ui.settle();
+  ui.handlers.focus();
+  await ui.settle();
+  ui.handlers["document:visibilitychange"]();
+  await ui.settle();
+  (ui.handlers.pageshow as (event: { persisted: boolean }) => void)({ persisted: true });
+  await ui.settle();
+  assert.equal(checks, 3);
+  assert.equal(clientSessionRevision(), revision);
+  finish(Response.json({ success: true, data: { temporaryPassword: "012345" } }));
+  const result = await reset;
+  assert.ok(result.ok);
+  assert.equal(result.data.temporaryPassword, "012345");
+  assert.deepEqual(ui.redirects, []);
+});
+
+test("另一标签页切换账号后，原后台页整页重判，清除旧组件状态", async (t) => {
+  const initial = mePayload(
+    { state: "READY", destination: "/admin/members", exemptionExpiresAt: null },
+    iso(2 * HOUR),
+  );
+  const next = {
+    ...initial,
+    data: { ...initial.data, userId: "user-b", sessionId: "session-b", roles: ["MEMBER"] },
+  };
+  const ui = await monitor(t, {
+    pathname: "/admin/members",
+    replies: [{ payload: initial }, { payload: next }],
+  });
+  ui.handlers.focus();
+  await ui.settle();
+  assert.deepEqual(ui.redirects, ["http://localhost/admin/members"]);
+  ui.tick(DAY);
+  await ui.settle();
+  assert.equal(ui.calls.length, 2, "重新加载后不再调度旧页面的会话检查");
+});
+
+test("在途复查期间再次失效会立即重查，迟到的旧 /me 不触发跳转", async (t) => {
+  const initial = mePayload(
+    { state: "READY", destination: "/admin", exemptionExpiresAt: null },
+    iso(2 * HOUR),
+  );
+  const ui = await monitor(t, { pathname: "/admin", replies: [{ payload: initial }] });
+  let finish!: (value: Response) => void;
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", () => {
+    requests++;
+    if (requests === 1)
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    return Promise.resolve(Response.json(initial));
+  });
+  ui.handlers.focus();
+  await ui.settle();
+  invalidateClientSession(true);
+  finish(Response.json(initial));
+  await ui.settle();
+  assert.deepEqual(ui.redirects, []);
+  ui.tick(0);
+  await ui.settle();
+  assert.equal(requests, 2, "不能等到失败退避的一分钟后才确认最新会话");
+  assert.deepEqual(ui.redirects, []);
+});
+
+test("从浏览器往返缓存恢复时重新确认身份", async (t) => {
+  const reply = {
+    payload: mePayload(
+      { state: "READY", destination: "/admin", exemptionExpiresAt: null },
+      iso(2 * HOUR),
+    ),
+  };
+  const ui = await monitor(t, { pathname: "/admin", replies: [reply, reply] });
+  (ui.handlers.pageshow as (event: { persisted: boolean }) => void)({ persisted: true });
+  await ui.settle();
+  assert.equal(ui.calls.length, 2);
+});
+
+test("首次检查已是普通成员时，旧后台壳也按服务端落点离开", async (t) => {
+  const reply = mePayload(
+    { state: "READY", destination: "/member", exemptionExpiresAt: null },
+    iso(2 * HOUR),
+  );
+  reply.data.roles = ["MEMBER"];
+  const ui = await monitor(t, { pathname: "/admin/members", replies: [{ payload: reply }] });
+  assert.deepEqual(ui.redirects, ["/member"]);
 });

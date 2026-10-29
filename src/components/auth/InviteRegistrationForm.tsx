@@ -1,4 +1,5 @@
 "use client";
+import { sessionMutationFetch } from "@/lib/auth/client-session";
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -137,7 +138,7 @@ export function InviteRegistrationForm({ returnTo }: { returnTo?: string | null 
         setProblem(registerCopy.passwordMismatch);
         return;
       }
-      const response = await fetch("/api/v1/member-registrations/invite", {
+      const response = await sessionMutationFetch("/api/v1/member-registrations/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

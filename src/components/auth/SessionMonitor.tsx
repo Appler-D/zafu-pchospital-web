@@ -6,16 +6,12 @@ import { usePathname } from "next/navigation";
 import { AdminToast, type AdminToastMessage } from "@/components/admin/AdminToast";
 import { loginCopy } from "@/config/auth";
 import { isAccountStepPage } from "@/lib/auth/account-steps";
-import type { AccountAccessView } from "@/types/contracts";
-
-/** `/api/v1/me` 在受限状态下仍是 **200**：只报告 `accountAccess`，不按会话失效处理。 */
-type MePayload = {
-  success?: boolean;
-  data?: {
-    expiresAt?: string;
-    accountAccess?: AccountAccessView;
-  };
-};
+import {
+  checkClientSession,
+  invalidateClientSession,
+  refreshClientSession,
+  watchClientSession,
+} from "@/lib/auth/client-session";
 
 /** 成功复查之间的等待封顶。它是**上限**，不是下限。 */
 const MAX_WAIT_MS = 86_400_000;
@@ -61,6 +57,7 @@ export function SessionMonitor() {
 
     let cancelled = false;
     let checking = false;
+    let recheck = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sessionExpiresAt: number | undefined;
     /** 豁免到期时间：比会话更早到时，只用来提前复查，不代表会话失效。 */
@@ -79,6 +76,7 @@ export function SessionMonitor() {
       cancelled = true;
       clearTimeout(timer);
       const candidate = returnCandidate();
+      invalidateClientSession();
       window.location.replace(
         candidate
           ? `/login?reason=expired&returnTo=${encodeURIComponent(candidate)}`
@@ -131,54 +129,72 @@ export function SessionMonitor() {
       clearTimeout(timer);
       const candidate = returnCandidate();
       try {
-        const response = await fetch(
-          `/api/v1/me${candidate ? `?returnTo=${encodeURIComponent(candidate)}` : ""}`,
-          { cache: "no-store" },
-        );
+        const result = await checkClientSession(candidate);
         if (cancelled) return;
-        if (response.status === 401) {
+        if (!result.ok && result.status === 401) {
           expired();
           return;
         }
-        if (!response.ok) {
-          retryAfterFailure = true;
-          return;
-        }
-        const payload = (await response.json()) as MePayload;
-        if (!payload.success) {
+        if (!result.ok) {
           retryAfterFailure = true;
           return;
         }
         retryAfterFailure = false;
-        const access = payload.data?.accountAccess;
+        const access = result.data.accountAccess;
         const parsed = (value: string | null | undefined) => {
           const time = value ? Date.parse(value) : Number.NaN;
           return Number.isFinite(time) ? time : undefined;
         };
-        sessionExpiresAt = parsed(payload.data?.expiresAt) ?? sessionExpiresAt;
+        sessionExpiresAt = parsed(result.data.expiresAt) ?? sessionExpiresAt;
         gateDeadline = parsed(access?.exemptionExpiresAt);
         if (!access) return;
-        if (access.state !== "READY" && !isAccountStepPage(access.state, pathname))
+        if (
+          (access.state !== "READY" && !isAccountStepPage(access.state, pathname)) ||
+          (pathname.startsWith("/admin") && !result.data.roles.includes("ADMIN"))
+        )
           gotoStep(access.destination);
       } catch {
         // 网络异常不等于会话失效；按固定退避重试，已过期的到期时间也不参与排期。
         retryAfterFailure = true;
       } finally {
         checking = false;
-        if (!cancelled) timer = setTimeout(() => void check(), nextDelay());
+        if (!cancelled) {
+          const delay = recheck ? 0 : nextDelay();
+          recheck = false;
+          timer = setTimeout(() => void check(), delay);
+        }
       }
     }
 
     function onVisible() {
-      if (document.visibilityState === "visible") void check();
+      if (document.visibilityState === "visible") refreshClientSession();
     }
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) refreshClientSession();
+    }
+    const unwatch = watchClientSession((event) => {
+      if (cancelled) return;
+      if (event.type === "change") {
+        // 整页重判清除旧身份的组件状态、草稿与 Next 客户端路由缓存。
+        gotoStep(window.location.href);
+        return;
+      }
+      sessionExpiresAt = undefined;
+      gateDeadline = undefined;
+      if (!event.recheck) return;
+      if (checking) recheck = true;
+      else void check();
+    });
     void check();
     window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      unwatch();
       window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [pathname]);

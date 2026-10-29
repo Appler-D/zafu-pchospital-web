@@ -1,5 +1,7 @@
 export const authRequestCopy = {
   networkError: "网络异常，请检查连接后重试",
+  sessionChanged: "登录状态已变化，请刷新页面后重试",
+  aborted: "请求已取消",
   invalidResponse: (status: number) => `服务返回了无法解析的响应（HTTP ${status}）`,
 } as const;
 

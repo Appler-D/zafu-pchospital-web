@@ -1,20 +1,16 @@
 import type { FieldErrors } from "@/lib/api/errors";
 import type { PaginationMeta } from "@/types/contracts";
 import type { TableGroupSummary } from "@/types/table";
+import { authRequestCopy } from "@/config/auth";
+import {
+  clientSessionRevision,
+  getClientSession,
+  invalidateClientSession,
+  onClientSessionEvent,
+} from "@/lib/auth/client-session";
+import { AdminGetCache } from "./admin-get-cache";
 
-/**
- * 管理后台的客户端 API 调用封装（M6）。
- *
- * 为什么新增这个：仓库里已有 37 处裸 `fetch` + 手写信封判断，但**没有任何统一封装**
- * 与「错误码 → 界面文案」的映射。后台有 15+ 个调用点，逐处手写会出现各不相同的
- * 会话失效处理与漏判 `success: false`。因此这里只服务 `/api/v1/admin/*`，
- * **不改动任何既有调用点**（避免无谓地重写团队已完成的内容）。
- *
- * 统一处理三件事：
- * 1. 解析 `{ success, data, error, meta }` 信封，非成功一律转成结构化失败；
- * 2. 401/403 的会话与权限语义统一成可展示文案（含 `PASSWORD_CHANGE_REQUIRED`）；
- * 3. 网络异常不再泄漏成 `TypeError: Failed to fetch`。
- */
+/** 后台和账号恢复工具的 API 信封、会话隔离与结构化错误结果。 */
 export type AdminApiResult<T> =
   | { ok: true; data: T; pagination?: PaginationMeta; summary?: TableGroupSummary }
   | {
@@ -26,19 +22,14 @@ export type AdminApiResult<T> =
     };
 
 /**
- * GET 结果的短期缓存。
- *
- * 后台每个页面挂载时都要发一次 GET，来回切页就是「等一次服务端往返」的重复体验。
- * 这里把 GET 结果保留 15 秒：重新进入同一个列表、重开同一个详情窗口时**立刻**出内容。
- *
- * 失效规则只有一条，但足够安全：**任何写请求都会清空整个缓存**。
- * 后台的写操作一定会跟着一次 `load()` 重取，因此不会出现「改完还是旧数据」。
- * 15 秒的上限则覆盖了「另一个管理员同时改了数据」这种跨会话的情况 ——
- * 超过这个时间就重新取，最坏情况下界是 15 秒的陈旧窗口。
+ * 仅在已确认的就绪管理员会话内复用 GET，最多 100 项、15 秒。
+ * 写操作和身份失效都会清空；缓存代次管数据回填，会话代次另外隔离迟到结果。
  */
-const GET_CACHE_TTL_MS = 15_000;
-const getCache = new Map<string, { at: number; value: AdminApiResult<unknown> }>();
+const getCache = new AdminGetCache<AdminApiResult<unknown>>();
 let cacheVersion = 0;
+let activeWrites = 0;
+
+onClientSessionEvent(() => clearAdminCache());
 
 /** 预热：鼠标悬停在「详情」之类按钮上时先把数据取回来，点下去就不用等。 */
 export function prefetchAdmin(path: string): void {
@@ -55,15 +46,60 @@ export async function adminFetch<T>(
   path: string,
   init: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<AdminApiResult<T>> {
-  const method = init.method ?? "GET";
+  const method = (init.method ?? "GET").toUpperCase();
   const isRead = method === "GET";
-  if (isRead) {
-    const hit = getCache.get(path);
-    if (hit && Date.now() - hit.at < GET_CACHE_TTL_MS) {
-      return hit.value as AdminApiResult<T>;
-    }
-  } else {
-    // 写操作可能改变任何列表的内容，整体失效比逐个推断前缀可靠。
+  const sessionRevision = clientSessionRevision();
+  const cancelled = (): AdminApiResult<T> | undefined => {
+    if (init.signal?.aborted)
+      return { ok: false, code: "REQUEST_ABORTED", message: authRequestCopy.aborted, status: 0 };
+    if (clientSessionRevision() !== sessionRevision)
+      return {
+        ok: false,
+        code: "CLIENT_SESSION_CHANGED",
+        message: authRequestCopy.sessionChanged,
+        status: 0,
+      };
+  };
+  const alreadyCancelled = cancelled();
+  if (alreadyCancelled) return alreadyCancelled;
+  const session = await getClientSession(init.signal);
+  const sessionCancelled = cancelled();
+  if (sessionCancelled) return sessionCancelled;
+  if (!session.ok && session.stale)
+    return {
+      ok: false,
+      code: "CLIENT_SESSION_CHANGED",
+      message: authRequestCopy.sessionChanged,
+      status: 0,
+    };
+  if (!session.ok && session.status === 401)
+    return {
+      ok: false,
+      code: "UNAUTHENTICATED",
+      message: sessionMessage("UNAUTHENTICATED"),
+      status: 401,
+    };
+  // 写操作不能在身份未知时沿用旧页面选择；读操作仍可由服务端实时授权返回。
+  if (!session.ok && !isRead)
+    return {
+      ok: false,
+      code: "NETWORK_ERROR",
+      message: authRequestCopy.networkError,
+      status: 0,
+    };
+  // 无法确认身份时走真实业务请求，不复用或写入任何身份的缓存。
+  const cacheKey =
+    session.ok &&
+    session.data.accountAccess.state === "READY" &&
+    session.data.roles.includes("ADMIN")
+      ? `${session.scope}\0${path}`
+      : undefined;
+  if (isRead && cacheKey && activeWrites === 0) {
+    const hit = getCache.get(cacheKey);
+    if (hit) return hit as AdminApiResult<T>;
+  }
+  if (!isRead) {
+    activeWrites++;
     clearAdminCache();
   }
   const requestCacheVersion = cacheVersion;
@@ -72,27 +108,46 @@ export async function adminFetch<T>(
   try {
     response = await fetch(path, {
       method,
+      cache: "no-store",
       signal: init.signal,
       headers: init.body === undefined ? undefined : { "Content-Type": "application/json" },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
   } catch {
-    return { ok: false, code: "NETWORK_ERROR", message: "网络异常，请检查连接后重试", status: 0 };
+    return (
+      cancelled() ?? {
+        ok: false,
+        code: "NETWORK_ERROR",
+        message: authRequestCopy.networkError,
+        status: 0,
+      }
+    );
+  } finally {
+    if (!isRead) {
+      activeWrites--;
+      clearAdminCache();
+    }
   }
 
-  // 写请求期间也可能有后台 GET 完成；响应到达后再清理一次，覆盖这段窗口。
-  if (!isRead) clearAdminCache();
+  const responseCancelled = cancelled();
+  if (responseCancelled) return responseCancelled;
+  if (response.status === 401 || response.status === 403) invalidateClientSession(true);
   let json: unknown;
   try {
     json = await response.json();
   } catch {
-    return {
-      ok: false,
-      code: "INVALID_RESPONSE",
-      message: "服务返回了无法解析的响应",
-      status: response.status,
-    };
+    return (
+      cancelled() ?? {
+        ok: false,
+        code: "INVALID_RESPONSE",
+        message: "服务返回了无法解析的响应",
+        status: response.status,
+      }
+    );
   }
+
+  const bodyCancelled = cancelled();
+  if (bodyCancelled && response.status !== 401 && response.status !== 403) return bodyCancelled;
 
   const envelope = json as {
     success?: boolean;
@@ -101,7 +156,7 @@ export async function adminFetch<T>(
     meta?: { pagination?: PaginationMeta; summary?: TableGroupSummary };
   };
 
-  if (envelope.success === true) {
+  if (response.ok && envelope?.success === true) {
     const ok: AdminApiResult<T> = {
       ok: true,
       data: envelope.data as T,
@@ -109,17 +164,17 @@ export async function adminFetch<T>(
       ...(envelope.meta?.summary ? { summary: envelope.meta.summary } : {}),
     };
     // 删除等写操作之前开始的 GET 可能迟到，不能把已失效的分页重新写回缓存。
-    if (isRead && !init.signal?.aborted && requestCacheVersion === cacheVersion) {
-      getCache.set(path, { at: Date.now(), value: ok });
+    if (isRead && cacheKey && activeWrites === 0 && requestCacheVersion === cacheVersion) {
+      getCache.set(cacheKey, ok);
     }
     return ok;
   }
-  const code = envelope.error?.code ?? "UNKNOWN_ERROR";
+  const code = envelope?.error?.code ?? "UNKNOWN_ERROR";
   return {
     ok: false,
     code,
-    message: sessionMessage(code, envelope.error?.message),
-    fieldErrors: envelope.error?.fieldErrors,
+    message: sessionMessage(code, envelope?.error?.message),
+    fieldErrors: envelope?.error?.fieldErrors,
     status: response.status,
   };
 }

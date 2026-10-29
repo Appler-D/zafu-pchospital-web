@@ -84,7 +84,7 @@
 - `GET /api/v1/me`：返回当前 User、Role、Permission、MemberProfile 状态、首次改密标记与
   `rememberMe`，并新增 `accountAccess`（`state` / 服务端 `destination` / `exemptionExpiresAt`）。
   受限状态仍返回 **200**（会话有效，只是当前档位不让访问业务），只更新最后访问时间，
-  不延长 Session 或 Cookie 到期时间。
+  不延长 Session 或 Cookie 到期时间，也不发送 `Set-Cookie`，避免迟到复查覆盖轮换后的令牌。
 
 管理员初始密码登录后，除 `/me`、改密和登出外均返回 `PASSWORD_CHANGE_REQUIRED`。统一账号门禁
 启用后（见下方「统一账号门禁」），未验证邮箱且无有效豁免的账号在业务接口上返回

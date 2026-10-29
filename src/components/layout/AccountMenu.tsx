@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { accountMenuCopy } from "@/config/auth";
 import { cn } from "@/lib/utils";
 import type { SessionPrincipal } from "@/types/contracts";
+import { getClientSession, sessionMutationFetch } from "@/lib/auth/client-session";
 
 /**
  * AccountMenu —— 登录后账号菜单
@@ -43,11 +44,6 @@ export type AccountMenuProps = {
   className?: string;
 };
 
-type MePayload = {
-  success?: boolean;
-  data?: SessionPrincipal;
-};
-
 function isDualRole(principal: SessionPrincipal): boolean {
   return (
     principal.roles.includes("ADMIN") &&
@@ -70,11 +66,10 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch("/api/v1/me", { cache: "no-store" });
-        const json = (await response.json()) as MePayload;
+        const result = await getClientSession();
         if (cancelled) return;
-        if (json.success && json.data) {
-          setPrincipal(json.data);
+        if (result.ok) {
+          setPrincipal(result.data);
         } else {
           setPrincipal(null);
         }
@@ -112,7 +107,7 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
     setLoggingOut(true);
     setOpen(false);
     try {
-      await fetch("/api/v1/auth/logout", { method: "POST" });
+      await sessionMutationFetch("/api/v1/auth/logout", { method: "POST" });
     } catch {
       // 即便请求失败也离开受保护页；cookie 可能已失效。
     }

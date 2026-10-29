@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { authRequestCopy, loginCopy } from "@/config/auth";
+import { sessionMutationFetch } from "@/lib/auth/client-session";
 
 type LoginPayload = {
   success: boolean;
@@ -27,7 +28,7 @@ export function LoginForm({ returnTo }: { returnTo?: string | null }) {
     setProblem("");
     try {
       const data = new FormData(event.currentTarget);
-      const response = await fetch("/api/v1/auth/login", {
+      const response = await sessionMutationFetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
