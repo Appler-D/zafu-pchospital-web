@@ -7,8 +7,12 @@ const serviceSource = readFileSync(
   "utf8",
 );
 const listPublicSource = serviceSource.slice(
-  serviceSource.indexOf("async listPublic"),
-  serviceSource.indexOf("async getPublic"),
+  serviceSource.indexOf("async listPublic("),
+  serviceSource.indexOf("async listPublicForHomePreview("),
+);
+const homePreviewSource = serviceSource.slice(
+  serviceSource.indexOf("async listPublicForHomePreview("),
+  serviceSource.indexOf("async getPublic("),
 );
 
 test("管理端活动列表按活动时间倒序返回，最新在前", () => {
@@ -18,15 +22,16 @@ test("管理端活动列表按活动时间倒序返回，最新在前", () => {
   );
 });
 
-test("公开列表按未结束升序、已结束降序的 SQL 排序返回", () => {
+test("公开列表与首页预览共用未结束升序、已结束降序的 SQL 排序", () => {
   assert.match(
     serviceSource,
-    /const activeOrderBy = \[\s*\{ activityAt: "asc" \},\s*\{ createdAt: "asc" \},\s*\{ id: "asc" \},\s*\]/,
+    /const PUBLIC_ACTIVE_ORDER_BY = \[\s*\{ activityAt: "asc" \},\s*\{ createdAt: "asc" \},\s*\{ id: "asc" \},\s*\]/,
   );
   assert.match(
     serviceSource,
-    /const endedOrderBy = \[\s*\{ activityAt: "desc" \},\s*\{ createdAt: "asc" \},\s*\{ id: "asc" \},\s*\]/,
+    /const PUBLIC_ENDED_ORDER_BY = \[\s*\{ activityAt: "desc" \},\s*\{ createdAt: "asc" \},\s*\{ id: "asc" \},\s*\]/,
   );
-  assert.match(listPublicSource, /orderBy: activeOrderBy/);
-  assert.match(listPublicSource, /orderBy: endedOrderBy/);
+  assert.match(listPublicSource, /orderBy: PUBLIC_ACTIVE_ORDER_BY/);
+  assert.match(listPublicSource, /orderBy: PUBLIC_ENDED_ORDER_BY/);
+  assert.match(homePreviewSource, /orderBy: PUBLIC_ACTIVE_ORDER_BY/);
 });

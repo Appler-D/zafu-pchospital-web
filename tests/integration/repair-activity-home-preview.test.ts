@@ -21,6 +21,8 @@ const FULL_ID = "b2880000-0000-4000-8000-000000000004";
 const CLOSED_ID = "b2880000-0000-4000-8000-000000000005";
 const ENDED_ID = "b2880000-0000-4000-8000-000000000006";
 const SOFT_DELETED_ID = "b2880000-0000-4000-8000-000000000007";
+const TIE_CREATED_OLD_ID = "b2880000-0000-4000-8000-000000000009";
+const TIE_CREATED_NEW_ID = "b2880000-0000-4000-8000-000000000008";
 const FIXTURE_IDS = [
   OPEN_EARLY_ID,
   OPEN_LATE_ID,
@@ -29,6 +31,8 @@ const FIXTURE_IDS = [
   CLOSED_ID,
   ENDED_ID,
   SOFT_DELETED_ID,
+  TIE_CREATED_OLD_ID,
+  TIE_CREATED_NEW_ID,
 ];
 
 let now = new Date();
@@ -50,9 +54,10 @@ async function createActivity(input: {
   signupOpensAt: Date;
   signupClosesAt: Date;
   capacity?: number;
+  createdAt?: Date;
   deletedAt?: Date | null;
 }): Promise<void> {
-  const createdAt = new Date(now.getTime() - 10 * DAY);
+  const createdAt = input.createdAt ?? new Date(now.getTime() - 10 * DAY);
   await getDb().repairActivity.create({
     data: {
       id: input.id,
@@ -111,6 +116,23 @@ before(async () => {
     signupOpensAt: new Date(now.getTime() - DAY),
     signupClosesAt: new Date(now.getTime() + DAY),
   });
+  // 同 activityAt、同状态，但 createdAt 与 id 的顺序相反：
+  // 旧活动 id 更大（…009）但 createdAt 更早，预览必须按 createdAt 排在前面。
+  const tieActivityAt = new Date(now.getTime() + 6 * DAY);
+  await createActivity({
+    id: TIE_CREATED_OLD_ID,
+    activityAt: tieActivityAt,
+    signupOpensAt: new Date(now.getTime() - DAY),
+    signupClosesAt: new Date(now.getTime() + DAY),
+    createdAt: new Date(now.getTime() - 20 * DAY),
+  });
+  await createActivity({
+    id: TIE_CREATED_NEW_ID,
+    activityAt: tieActivityAt,
+    signupOpensAt: new Date(now.getTime() - DAY),
+    signupClosesAt: new Date(now.getTime() + DAY),
+    createdAt: new Date(now.getTime() - 19 * DAY),
+  });
   await createActivity({
     id: UPCOMING_ID,
     activityAt: new Date(now.getTime() + DAY),
@@ -162,9 +184,22 @@ dbTest("首页预览：只返回未结束活动，按 OPEN → UPCOMING → FULL
   assert.equal(ids.includes(ENDED_ID), false, "已结束活动不应进入首页预览");
   assert.equal(ids.includes(SOFT_DELETED_ID), false, "软删活动不应进入首页预览");
 
-  // OPEN 优先于 activityAt 更早的 UPCOMING；同档（两条 OPEN）按 activityAt 升序。
+  // OPEN 优先于 activityAt 更早的 UPCOMING；同档（四条 OPEN）按 activityAt 升序，
+  // 其中两条同 activityAt 的按 createdAt 升序（而不是 id）。
   const ours = ids.filter((id) => FIXTURE_IDS.includes(id));
-  assert.deepEqual(ours, [OPEN_EARLY_ID, OPEN_LATE_ID, UPCOMING_ID, FULL_ID, CLOSED_ID]);
+  assert.deepEqual(ours, [
+    OPEN_EARLY_ID,
+    OPEN_LATE_ID,
+    TIE_CREATED_OLD_ID,
+    TIE_CREATED_NEW_ID,
+    UPCOMING_ID,
+    FULL_ID,
+    CLOSED_ID,
+  ]);
+  assert.ok(
+    ours.indexOf(TIE_CREATED_OLD_ID) < ours.indexOf(TIE_CREATED_NEW_ID),
+    "同 activityAt 应按 createdAt 排序，而不是 id",
+  );
 
   const byId = new Map(items.map((item) => [item.id, item]));
   assert.equal(byId.get(OPEN_EARLY_ID)?.status, "OPEN");
@@ -175,24 +210,25 @@ dbTest("首页预览：只返回未结束活动，按 OPEN → UPCOMING → FULL
   assert.equal(byId.get(FULL_ID)?.remaining, 0);
 });
 
-dbTest("首页预览：limit 与无未结束活动时的空结果", async () => {
+dbTest("首页预览：limit 与未来时间点不返回夹具", async () => {
   const limited = await repairActivityService.listPublicForHomePreview(3, now);
   assert.ok(limited.length <= 3);
   if (baselineNonEnded === 0) {
     assert.deepEqual(
       limited.map((item) => item.id),
-      [OPEN_EARLY_ID, OPEN_LATE_ID, UPCOMING_ID],
+      [OPEN_EARLY_ID, OPEN_LATE_ID, TIE_CREATED_OLD_ID],
     );
   }
 
   const defaultLimit = await repairActivityService.listPublicForHomePreview(undefined, now);
   assert.ok(defaultLimit.length <= 3);
 
-  // 30 天后：所有夹具活动都已结束，只验证夹具没有被首页查询带出来。
+  // 30 天后：所有夹具活动都已结束，只验证夹具没有被首页查询带出来；
+  // 测试库若还有别的未来活动，这里不强行断言空数组。
   const future = new Date(now.getTime() + 30 * DAY);
-  const empty = await repairActivityService.listPublicForHomePreview(10, future);
+  const noFixtures = await repairActivityService.listPublicForHomePreview(10, future);
   assert.equal(
-    empty.some((item) => FIXTURE_IDS.includes(item.id)),
+    noFixtures.some((item) => FIXTURE_IDS.includes(item.id)),
     false,
   );
 });
