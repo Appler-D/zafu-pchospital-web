@@ -23,6 +23,7 @@ import {
   type RepairActivityIssueType,
   type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
+import { pickNonEndedRepairActivitiesForHomePreview } from "@/features/repair-activities/repair-activity-sort";
 import { startOfShanghaiDay } from "@/lib/academic-term";
 import { AppError } from "@/lib/api/errors";
 import { paginationMeta } from "@/lib/api/pagination";
@@ -613,6 +614,28 @@ export const repairActivityService = {
       items: rows.map((row) => toPublicView(row, counts.get(row.id) ?? 0, now)),
       pagination: paginationMeta(input, total),
     };
+  },
+
+  /**
+   * 首页近场活动预览（issue #288）：只查未结束活动，避免复用公开列表的分页查询。
+   * 返回顺序仍由 `pickNonEndedRepairActivitiesForHomePreview` 决定（OPEN → UPCOMING →
+   * FULL → CLOSED，同档 activityAt 升序）；未结束活动通常很少，计数按候选集聚合。
+   * 若未来未结束活动长期超过 200 条，再改为单条 SQL 按优先级取前 N，不在此提前加限制。
+   */
+  async listPublicForHomePreview(
+    limit = 3,
+    now: Date = new Date(),
+  ): Promise<RepairActivityPublicView[]> {
+    const db = getDb();
+    const todayStart = startOfShanghaiDay(now);
+    const rows = await db.repairActivity.findMany({
+      where: { deletedAt: null, activityAt: { gte: todayStart } },
+      // 与 listPublic 未结束段同一排序；tie-break 保持 createdAt → id。
+      orderBy: [{ activityAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    const counts = await loadCounts(rows.map((row) => row.id));
+    const views = rows.map((row) => toPublicView(row, counts.get(row.id) ?? 0, now));
+    return pickNonEndedRepairActivitiesForHomePreview(views, limit);
   },
 
   async getPublic(activityId: string): Promise<RepairActivityPublicView> {
