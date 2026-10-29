@@ -90,6 +90,7 @@ async function mount(t: TestContext) {
   const slots: unknown[] = [];
   let cursor = 0;
   let effect: (() => void | (() => void)) | null = null;
+  let effectCleanup: (() => void) | null = null;
   let effectHasRun = false;
   t.mock.method(React, "useState", (initial: unknown) => {
     const index = cursor++;
@@ -124,7 +125,8 @@ async function mount(t: TestContext) {
       const run = effect;
       effect = null;
       effectHasRun = true;
-      run();
+      const cleanup = run();
+      if (typeof cleanup === "function") effectCleanup = cleanup;
     }
     return node;
   };
@@ -137,6 +139,10 @@ async function mount(t: TestContext) {
   return {
     view,
     requests,
+    unmount() {
+      effectCleanup?.();
+      effectCleanup = null;
+    },
     async finish(index: number, body: unknown, status = 200) {
       requests[index]!.finish(body, status);
       await setImmediate();
@@ -205,4 +211,68 @@ test("翻页中再次点击不会叠加第二个请求", async (t) => {
   findButton(ui.view(), repairActivitiesPage.nextPage)?.props.onClick?.();
   await setImmediate();
   assert.equal(ui.requests.length, 2);
+});
+
+test("旧请求晚到不会覆盖新页，且旧请求被中止", async (t) => {
+  const ui = await mount(t);
+  ui.view();
+  await ui.finish(0, payload(["a", "b", "c", "d"], 1, 10, 3));
+
+  // 同一渲染帧内点击两次：第一次请求会被第二次 abort；两个请求都指向第 2 页。
+  const nextButton = findButton(ui.view(), repairActivitiesPage.nextPage);
+  assert.ok(nextButton);
+  nextButton.props.onClick?.();
+  nextButton.props.onClick?.();
+  assert.equal(ui.requests.length, 3);
+  assert.equal(ui.requests[1]!.init.signal?.aborted, true);
+  assert.equal(ui.requests[2]!.init.signal?.aborted, false);
+
+  // 后发请求先完成，旧请求随后才返回；旧响应必须被丢弃。
+  await ui.finish(2, payload(["e", "f", "g", "h"], 2, 10, 3));
+  await ui.finish(1, payload(["a", "b", "c", "d"], 2, 10, 3));
+  const page = ui.view();
+  assert.ok(text(page).includes("活动 e"));
+  assert.equal(text(page).includes("活动 a"), false);
+  assert.ok(text(page).includes("2 / 3"));
+});
+
+test("组件卸载会中止在途请求", async (t) => {
+  const ui = await mount(t);
+  ui.view();
+  const signal = ui.requests[0]!.init.signal;
+  assert.ok(signal);
+  assert.equal(signal!.aborted, false);
+
+  ui.unmount();
+  assert.equal(signal!.aborted, true);
+});
+
+test("服务端总页数收缩时改取最后一页", async (t) => {
+  const ui = await mount(t);
+  ui.view();
+  await ui.finish(0, payload(["a", "b", "c", "d"], 1, 10, 3));
+
+  findButton(ui.view(), repairActivitiesPage.nextPage)?.props.onClick?.();
+  await setImmediate();
+  assert.equal(ui.requests.length, 2);
+  assert.match(ui.requests[1]!.url, /page=2&pageSize=4/);
+
+  // 第 2 页返回 totalPages=1：组件应改取第 1 页，而不是停在越界页。
+  await ui.finish(1, payload([], 2, 4, 1));
+  assert.equal(ui.requests.length, 3);
+  assert.match(ui.requests[2]!.url, /page=1&pageSize=4/);
+
+  await ui.finish(2, payload(["a", "b"], 1, 2, 1));
+  const page = ui.view();
+  assert.ok(text(page).includes("活动 a"));
+  assert.equal(findButton(page, repairActivitiesPage.nextPage), undefined);
+});
+
+test("首次加载失败显示错误状态，不渲染分页", async (t) => {
+  const ui = await mount(t);
+  ui.view();
+  await ui.finish(0, { success: false, error: { message: "服务暂时不可用" } }, 500);
+  const page = ui.view();
+  assert.ok(text(page).includes("服务暂时不可用"));
+  assert.equal(findButton(page, repairActivitiesPage.nextPage), undefined);
 });
