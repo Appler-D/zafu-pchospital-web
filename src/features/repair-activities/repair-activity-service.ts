@@ -23,14 +23,20 @@ import {
   type RepairActivityIssueType,
   type RepairActivityStatus,
 } from "@/features/repair-activities/repair-activity-validation";
-import { sortRepairActivitiesForPublicList } from "@/features/repair-activities/repair-activity-sort";
+import { startOfShanghaiDay } from "@/lib/academic-term";
 import { AppError } from "@/lib/api/errors";
+import { paginationMeta } from "@/lib/api/pagination";
 import { appendAuditLog } from "@/lib/audit/audit-service";
 import { requirePermission } from "@/lib/auth/permissions";
 import { getDb } from "@/lib/db/client";
 import { inSerializableTransaction } from "@/lib/db/transaction";
 import { normalizePhone } from "@/lib/security/normalization";
-import type { AuthorizedActor, PublicRequestContext } from "@/types/contracts";
+import type {
+  AuthorizedActor,
+  PaginationInput,
+  PaginationMeta,
+  PublicRequestContext,
+} from "@/types/contracts";
 
 export type RepairActivityPublicView = {
   id: string;
@@ -48,6 +54,11 @@ export type RepairActivityPublicView = {
 export type RepairActivityQueueView = {
   waitingCount: number | null;
   observedAt: string;
+};
+
+export type RepairActivityPublicListResult = {
+  items: RepairActivityPublicView[];
+  pagination: PaginationMeta;
 };
 
 export type RepairActivityAdminView = RepairActivityPublicView & {
@@ -537,29 +548,71 @@ export const repairActivityService = {
   },
 
   // ---------- Public ----------
-  async listPublic(): Promise<RepairActivityPublicView[]> {
-    const now = new Date();
-    const rows = await getDb().repairActivity.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ activityAt: "asc" }, { createdAt: "asc" }],
-    });
-    const counts = await loadCounts(rows.map((r) => r.id));
-    // DB orderBy 仅粗排；方案 B 最终顺序由内存纯函数决定（已结束整段后置且组内降序）。
-    const views = rows.map((row) => ({
-      ...toPublicView(row, counts.get(row.id) ?? 0, now),
-      createdAt: row.createdAt.toISOString(),
-    }));
-    return sortRepairActivitiesForPublicList(views).map((item) => ({
-      id: item.id,
-      title: item.title,
-      activityAt: item.activityAt,
-      capacity: item.capacity,
-      signupOpensAt: item.signupOpensAt,
-      signupClosesAt: item.signupClosesAt,
-      status: item.status,
-      registeredCount: item.registeredCount,
-      remaining: item.remaining,
-    }));
+  async listPublic(
+    input: PaginationInput,
+    now: Date = new Date(),
+  ): Promise<RepairActivityPublicListResult> {
+    const db = getDb();
+    const todayStart = startOfShanghaiDay(now);
+    const activeWhere = {
+      deletedAt: null,
+      activityAt: { gte: todayStart },
+    } satisfies Prisma.RepairActivityWhereInput;
+    const endedWhere = {
+      deletedAt: null,
+      activityAt: { lt: todayStart },
+    } satisfies Prisma.RepairActivityWhereInput;
+    const activeOrderBy = [
+      { activityAt: "asc" },
+      { createdAt: "asc" },
+      { id: "asc" },
+    ] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
+    const endedOrderBy = [
+      { activityAt: "desc" },
+      { createdAt: "asc" },
+      { id: "asc" },
+    ] satisfies Prisma.RepairActivityOrderByWithRelationInput[];
+
+    const [total, activeCount] = await Promise.all([
+      db.repairActivity.count({ where: { deletedAt: null } }),
+      db.repairActivity.count({ where: activeWhere }),
+    ]);
+    const endedCount = total - activeCount;
+    const offset = (input.page - 1) * input.pageSize;
+
+    let rows: ActivityRow[] = [];
+    if (offset < activeCount) {
+      const activeTake = Math.min(input.pageSize, activeCount - offset);
+      rows = await db.repairActivity.findMany({
+        where: activeWhere,
+        orderBy: activeOrderBy,
+        skip: offset,
+        take: activeTake,
+      });
+      const remaining = input.pageSize - activeTake;
+      if (remaining > 0 && endedCount > 0) {
+        rows.push(
+          ...(await db.repairActivity.findMany({
+            where: endedWhere,
+            orderBy: endedOrderBy,
+            take: remaining,
+          })),
+        );
+      }
+    } else {
+      rows = await db.repairActivity.findMany({
+        where: endedWhere,
+        orderBy: endedOrderBy,
+        skip: offset - activeCount,
+        take: input.pageSize,
+      });
+    }
+
+    const counts = await loadCounts(rows.map((row) => row.id));
+    return {
+      items: rows.map((row) => toPublicView(row, counts.get(row.id) ?? 0, now)),
+      pagination: paginationMeta(input, total),
+    };
   },
 
   async getPublic(activityId: string): Promise<RepairActivityPublicView> {

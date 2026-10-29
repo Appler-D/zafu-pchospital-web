@@ -583,15 +583,34 @@ DELETE     /api/v1/admin/comments/:id
 
 准入口径（issue #134）：案例库只收录**被标记**的已通过记录。「全部已标记」档传 `flagged=any` —— 列表新增参数，白名单仅 `any` 一个取值（空值不过滤、非法值 400 `VALIDATION_FAILED`），语义为「`isTypical` 或 `isDifficult` 之一」的**并集**，单条记录维度过滤（双标不重复）。`isTypical` / `isDifficult` 两个既有参数保持平铺 AND 语义不变（都传 = 要求两条都标），「典型案例」「疑难案例」两个单标记档继续沿用。管理端列表与导出不传 `flagged`，行为零变化。
 
-### 只在客户端表达、不改接口的两项
+### 仍由应用层表达的展示顺序
 
 - **报名队列位次**：队列本就按签到时间升序（服务端顺序即口径），位次取渲染顺序（从 1 起），
   没有新增字段或接口。
 - **首页近场活动「报名开放中优先」**：`pickNonEndedRepairActivitiesForHomePreview`
   按 OPEN → UPCOMING → FULL / CLOSED 分档，同档内 `activityAt` 升序，`ENDED` 不进预览；
-  公开列表将未结束活动按 `activityAt` 升序排列，再接已结束活动的 `activityAt` 降序；
-  同时间按 `createdAt` 升序、`id` 升序稳定排序，见
-  `src/features/repair-activities/repair-activity-sort.ts`。
+  公开列表的未结束 / 已结束分段排序已下推到数据库（见下方「公开活动列表分页」），
+  首页预览仍复用 `pickNonEndedRepairActivitiesForHomePreview`；同时间按 `createdAt` 升序、
+  `id` 升序的 tie-break 与 `src/features/repair-activities/repair-activity-sort.ts` 保持一致。
+
+### 公开活动列表分页（issue #286）
+
+`GET /api/v1/repair-activities` 改为服务端 offset 分页。`data` 语义从「全部未删除活动」变为
+「当前页」，属于行为变更；响应形状仍为统一信封，新增 `meta.pagination`，不保留
+「不传参返回全量」的旧路径。
+
+- 查询参数复用通用分页规则：`page` 默认 `1`，`pageSize` 默认 `20`、范围 `1–100`；
+  非法值 400 `VALIDATION_FAILED`；合法但越界页返回 200、空 `data` 与正确的
+  `total/totalPages`。
+- `meta.pagination = { page, pageSize, total, totalPages }`；`total` 只计未软删活动。
+- 排序在数据库完成：未结束段 `activity_at ASC, created_at ASC, id ASC`，已结束段
+  `activity_at DESC, created_at ASC, id ASC`；两段以请求内唯一的
+  `todayStart = startOfShanghaiDay(now)` 分界：`activity_at >= todayStart` 为未结束，
+  `activity_at < todayStart` 为已结束。`registeredCount` 只对当前页活动聚合，有效报名口径
+  不变（`deleted_at IS NULL` 且 `status ∈ REGISTERED|CHECKED_IN|SERVED`）；状态派生使用
+  同一个 `now`。
+- 已知调用方：公开列表页（后续改为按页请求）、首页预览（后续改为独立查询）；在两者完成前，
+  调用默认第一页。无 Schema / Migration / 权限变更。
 
 ### 活动「已结束」的判定口径（issue #79）
 
