@@ -5,6 +5,7 @@ import {
   shanghaiAcademicYearRange,
   shanghaiMonthRange,
   shanghaiDateToUtc,
+  startOfShanghaiDay,
   toDateOnlyBounds,
 } from "../../src/lib/academic-term";
 import { ApiErrorCode } from "../../src/lib/api/errors";
@@ -95,6 +96,58 @@ test("M3 日期工具：非法日期返回 null", () => {
   assert.equal(shanghaiDateToUtc("2026-02-30"), null);
   assert.equal(shanghaiDateToUtc("not-a-date"), null);
   assert.equal(shanghaiDateToUtc("2026-09-01")?.toISOString(), "2026-08-31T16:00:00.000Z");
+});
+
+// ---------------------------------------------------------------------------
+// Asia/Shanghai 自然日零点
+// ---------------------------------------------------------------------------
+
+test("上海自然日零点：当天 00:00 与前一天 23:59:59.999 分属相邻两天", () => {
+  assert.equal(
+    startOfShanghaiDay(new Date("2026-09-30T15:59:59.999Z")).toISOString(),
+    "2026-09-29T16:00:00.000Z",
+  );
+  assert.equal(
+    startOfShanghaiDay(new Date("2026-09-30T16:00:00.000Z")).toISOString(),
+    "2026-09-30T16:00:00.000Z",
+  );
+});
+
+test("上海自然日零点：UTC 跨日 16:00Z 即上海次日 00:00", () => {
+  const dayStart = startOfShanghaiDay(new Date("2026-10-01T16:00:00.000Z"));
+  assert.equal(dayStart.toISOString(), "2026-10-01T16:00:00.000Z");
+  // 同一时刻上海已是 10-02，UTC 仍是 10-01
+  assert.equal(dayStart.getUTCDate(), 1);
+});
+
+test("上海自然日零点：跨月与跨年正确进位", () => {
+  assert.equal(
+    startOfShanghaiDay(new Date("2026-10-31T15:59:59.999Z")).toISOString(),
+    "2026-10-30T16:00:00.000Z",
+  );
+  assert.equal(
+    startOfShanghaiDay(new Date("2026-10-31T16:00:00.000Z")).toISOString(),
+    "2026-10-31T16:00:00.000Z",
+  );
+  assert.equal(
+    startOfShanghaiDay(new Date("2026-12-31T16:00:00.000Z")).toISOString(),
+    "2026-12-31T16:00:00.000Z",
+  );
+});
+
+test("上海自然日零点：全年无夏令时，相邻日固定相差 24 小时", () => {
+  // 取美东夏令时切换日对照：上海始终 UTC+8，不受影响。
+  const days = [
+    "2026-03-08T00:00:00.000Z",
+    "2026-06-15T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-12-15T00:00:00.000Z",
+  ];
+  for (const iso of days) {
+    const start = startOfShanghaiDay(new Date(iso));
+    const next = startOfShanghaiDay(new Date(start.getTime() + 24 * 60 * 60 * 1000));
+    assert.equal(next.getTime() - start.getTime(), 24 * 60 * 60 * 1000, iso);
+  }
 });
 
 // ---------------------------------------------------------------------------
