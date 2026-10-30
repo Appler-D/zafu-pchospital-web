@@ -7875,10 +7875,6 @@ html[data-theme="black-yellow"] {
   .activity-list--paged {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-  /* 4 列时内容区约 178px，票根收窄 10px 给标题让位。 */
-  .activity-list--paged .activity-card--stub {
-    grid-template-columns: 68px minmax(0, 1fr);
-  }
 }
 .activity-list--paged .activity-card {
   overflow-wrap: anywhere;
@@ -7968,6 +7964,12 @@ html[data-theme="black-yellow"] {
   flex-direction: column;
   min-width: 0;
   padding: 14px 16px;
+}
+/* 必须写在基础规则之后：同权重时后写的覆盖 78px。 */
+@media (min-width: 1100px) {
+  .activity-list--paged .activity-card--stub {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
 }
 @media (max-width: 759px) {
   .activity-list--paged .activity-card--stub {
