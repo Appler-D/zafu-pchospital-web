@@ -7893,6 +7893,7 @@ html[data-theme="black-yellow"] {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   gap: 0;
+  min-height: 128px;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -7939,6 +7940,7 @@ html[data-theme="black-yellow"] {
   gap: 2px;
   padding: 14px 4px;
   border-inline-end: 1px dashed var(--line);
+  background: color-mix(in oklab, var(--surface-1) 82%, var(--spine) 18%);
   transition: background-color 200ms ease;
 }
 .activity-list--paged .activity-card__link:hover .activity-card--stub .activity-card__stub {
@@ -7962,13 +7964,46 @@ html[data-theme="black-yellow"] {
 .activity-list--paged .activity-card--stub .activity-card__body {
   display: flex;
   flex-direction: column;
+  gap: 8px;
   min-width: 0;
-  padding: 14px 16px;
+  padding: 12px;
+}
+/* 徽章移出标题行，标题独占整行，四列时不再被挤成 6 个字一行。 */
+.activity-list--paged .activity-card--stub .activity-card__head {
+  margin-bottom: 0;
+}
+/* 四列卡宽约 246px：标题收到 15px 并平衡换行，避免末行只剩一个字。 */
+.activity-list--paged .activity-card--stub .activity-card__title {
+  font-size: 0.9375rem;
+  text-wrap: balance;
+}
+.activity-list--paged .activity-card--stub .activity-card__meta {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.activity-list--paged .activity-card--stub .activity-card__meta p {
+  margin: 0;
+}
+.activity-list--paged .activity-card--stub .activity-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.activity-list--paged .activity-card--stub .activity-card__footer .muted {
+  margin: 0;
+  font-size: 11px;
 }
 /* 必须写在基础规则之后：同权重时后写的覆盖 78px。 */
 @media (min-width: 1100px) {
   .activity-list--paged .activity-card--stub {
-    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-columns: 64px minmax(0, 1fr);
   }
 }
 @media (max-width: 759px) {
