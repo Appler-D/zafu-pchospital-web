@@ -1,0 +1,23 @@
+# 安装为 /etc/zafu-backup.conf，权限 600。
+# 数据库口令不写在这里：脚本从 DB_ENV_FILE（/opt/zafu-pchospital-db/.env）读取。
+
+BACKUP_ROOT=/opt/zafu-pchospital-backups/scheduled
+APP_DIR=/opt/zafu-pchospital-web
+DB_CONTAINER=zafu-pchospital-db-greatsql-1
+DB_NAME=zafu_pchospital
+DB_ENV_FILE=/opt/zafu-pchospital-db/.env
+UPLOADS_DIR=/opt/zafu-pchospital-web/storage/uploads
+STATE_DIR=/var/lib/zafu-backup
+
+RETENTION_DAILY=14
+RETENTION_WEEKLY=8
+RETENTION_MONTHLY=6
+
+MIN_FREE_BYTES=5368709120
+MAX_SCHEDULED_BYTES=1073741824
+DISK_WARN_PCT=85
+MIN_TABLES=27
+
+# QQ bot 告警交接：由 bot 管理 agent 安装 hook 后填写，参数为 success|failure 和简短摘要。
+ALERT_HOOK=
+ALERT_ON_SUCCESS=0

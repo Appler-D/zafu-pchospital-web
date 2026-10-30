@@ -1,0 +1,14 @@
+[Unit]
+Description=ZAFU PC Hospital scheduled backup (GreatSQL + uploads + config)
+Wants=docker.service
+After=docker.service
+# QQ bot 告警接入后可在此添加 OnFailure=，或使用 /etc/zafu-backup.conf 的 ALERT_HOOK。
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/zafu-backup
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+TimeoutStartSec=15min

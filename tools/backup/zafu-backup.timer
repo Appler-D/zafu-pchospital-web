@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily ZAFU PC Hospital backup
+
+[Timer]
+OnCalendar=*-*-* 03:40:00
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1min
+Unit=zafu-backup.service
+
+[Install]
+WantedBy=timers.target
