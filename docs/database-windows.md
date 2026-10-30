@@ -103,10 +103,12 @@ Node.js 需符合 `package.json` 的 `engines`；使用 Corepack 启动当前固
 ```powershell
 node --version
 corepack --version
-Get-Command node, corepack, pnpm -All | Select-Object Name, CommandType, Source
+Get-Command node, corepack, pnpm -All -ErrorAction SilentlyContinue | Select-Object Name, CommandType, Source
 ```
 
-Corepack 已兼容时无需重装。缺失或低于 `0.34.5` 时，可用 Node.js 附带的 npm **仅安装环境工具**：
+Corepack 已兼容时无需重装。缺失或低于 `0.34.5` 时，若旧 Corepack 来自 Node.js Windows MSI，
+先在 Windows 应用设置中选择 Node.js 的“修改”，将安装器里的“corepack manager”设为
+“Entire feature will be unavailable”（整个功能不可用），然后用 Node.js 附带的 npm **仅安装环境工具**：
 
 ```powershell
 npm.cmd install --global corepack@0.34.7 --registry=https://registry.npmmirror.com
@@ -120,9 +122,8 @@ corepack --version
 项目依赖仍只用 pnpm 安装，不执行 `npm install` / `yarn install`，不改 `packageManager` 或锁文件。
 
 如果升级后仍显示旧版，先重开 PowerShell，再用上面的 `Get-Command` 核对路径。
-若 Node.js 的 Windows MSI 安装项挡住 Corepack 替换，按
-[Corepack 官方 Windows 升级说明](https://github.com/nodejs/corepack/blob/v0.34.7/README.md#how-to-install)
-通过 Node.js 安装器的“修改”选项处理 Corepack Manager 功能，不使用 `--force` 覆盖未知入口。
+具体步骤见 [Corepack 官方 Windows 升级说明](https://github.com/nodejs/corepack/blob/v0.34.7/README.md#how-to-install)，
+不使用 `--force` 覆盖未知入口。
 
 ### 3.2 安装项目依赖并启动
 
@@ -134,6 +135,18 @@ $env:COREPACK_NPM_REGISTRY = 'https://registry.npmmirror.com'
 $env:npm_config_registry = 'https://registry.npmmirror.com'
 $env:PRISMA_ENGINES_MIRROR = 'https://registry.npmmirror.com/-/binary/prisma'
 corepack enable pnpm
+```
+
+若 `corepack enable pnpm` 因安装目录不可写而失败，在当前 PowerShell 会话执行下面的函数；
+后续裸 `pnpm` 命令会通过 Corepack 转发，无需修改安装目录或关闭校验：
+
+```powershell
+function pnpm { corepack pnpm @args }
+```
+
+接着检查版本并安装：
+
+```powershell
 corepack pnpm --version   # 当前应为 12.4.1；失败时先按下方 3.3 排错
 pnpm --version           # 应与上一条一致；不一致时先按下方 3.3 排错
 .\tools\setup-greatsql-wsl.ps1
@@ -145,8 +158,7 @@ pnpm dev
 ```
 
 Corepack 仍使用 `package.json` 中固定的 pnpm 版本与完整性校验，锁文件保持不变。
-`COREPACK_NPM_REGISTRY` 不要带末尾 `/`。若 `corepack enable pnpm` 因安装目录不可写而失败，
-可以先用显式的 `corepack pnpm <命令>`，例如 `corepack pnpm install`，无需关闭校验。
+`COREPACK_NPM_REGISTRY` 不要带末尾 `/`。上面的函数只对当前 PowerShell 会话有效。
 
 若本机执行策略阻止脚本，可仅在当前 PowerShell 进程启用
 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned`，再执行。
@@ -193,9 +205,12 @@ shadow database 会被 Prisma 重置，绝不能指向开发库或测试库；�
 **仍提示 `MODULE_NOT_FOUND` / 找不到 `...\pnpm\12.4.1\bin\pnpm.cjs`：**
 
 先按 3.1 升级并确认正在运行的 Corepack 版本。旧版生成的缓存中还可能保留错误入口；
-仅升级 Corepack 后仍报同一个错误时，联网执行：
+仅升级 Corepack 后仍报同一个错误时，在当前 PowerShell 会话重新设置 3.2 的镜像并联网执行：
 
 ```powershell
+$env:COREPACK_NPM_REGISTRY = 'https://registry.npmmirror.com'
+$env:npm_config_registry = 'https://registry.npmmirror.com'
+$env:PRISMA_ENGINES_MIRROR = 'https://registry.npmmirror.com/-/binary/prisma'
 corepack cache clean
 corepack install
 corepack pnpm --version   # 当前应为 12.4.1
