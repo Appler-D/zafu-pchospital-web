@@ -81,6 +81,8 @@ export const repairActivitiesPage = {
     deviceRecheckHint: "管理员删除报名后，可点「重新检查报名状态」恢复填写，无需刷新整页。",
     deviceRecheckCleared: "未查到本设备的报名，可以重新填写",
     deviceRecheckFailed: "状态检查失败，请稍后重试或刷新页面",
+    /** 409 后设备状态也读不到时的兜底提示：不能说成「该手机号已报名」。 */
+    deviceConflictFallback: "本设备已提交过本场报名，请稍后刷新页面或联系管理员",
     /** 回执与已提交面板都带故障类型（issue #304 讨论口径）。 */
     receiptIssueType: "故障类型：{type}",
     /** 同一手机号已报名时不再显示为失败，而是引导查询已有记录。 */

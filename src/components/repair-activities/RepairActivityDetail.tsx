@@ -12,6 +12,7 @@ import { repairActivityStatusBadgeClass } from "@/components/repair-activities/a
 import { RepairActivityPrecautions } from "@/components/repair-activities/RepairActivityPrecautions";
 import { RepairActivityPreparation } from "@/components/repair-activities/RepairActivityPreparation";
 import { RepairActivityQueue } from "@/components/repair-activities/RepairActivityQueue";
+import { fetchRegistrationDeviceStatus } from "@/features/repair-activities/registration-device-client";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -88,9 +89,12 @@ export function RepairActivityDetail({ activityId }: Props) {
     deviceModel: string;
   } | null>(null);
   const signupFormRef = useRef<HTMLFormElement>(null);
+  const signupNameInputRef = useRef<HTMLInputElement>(null);
   const signupPhoneInputRef = useRef<HTMLInputElement>(null);
   const lookupPhoneInputRef = useRef<HTMLInputElement>(null);
   const lookupNameInputRef = useRef<HTMLInputElement>(null);
+  /** 换活动后丢弃旧的设备状态响应（含「重新检查」）。 */
+  const deviceAttemptRef = useRef(0);
   /** 防止连点在 busy 重新渲染前发出第二个 POST。 */
   const submittingRef = useRef(false);
   /** 换活动后丢弃旧报名的迟到响应。 */
@@ -174,6 +178,8 @@ export function RepairActivityDetail({ activityId }: Props) {
     setDeviceRegistration(null);
     setDeviceStatusResolved(false);
     setDeviceRechecking(false);
+    // 让在途的设备状态 / 重查请求作废，迟到响应不能写到新活动上。
+    deviceAttemptRef.current += 1;
     setPendingSignup(null);
     setBusy(false);
     setProblem("");
@@ -188,50 +194,43 @@ export function RepairActivityDetail({ activityId }: Props) {
     };
   }, [load]);
 
-  /** 读取本设备的报名状态；网络 / 服务端异常返回 undefined（调用方保持现状）。 */
-  const loadDeviceRegistration = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/device`);
-      const json = (await response.json()) as {
-        success: boolean;
-        data?: { registration: RegistrationPublicView | null };
-      };
-      if (!json.success) return undefined;
-      return json.data?.registration ?? null;
-    } catch {
-      return undefined;
-    }
-  }, [activityId]);
-
   /**
    * 本设备是否已提交过本场报名（issue #304）。
    * 结论出来之前只显示占位、不渲染报名表单 —— 否则慢网下用户可能已开始填写，
-   * 状态返回后表单被收起、焦点丢失。查询失败时放开表单（真正的拦截在服务端）。
+   * 状态返回后表单被收起、焦点丢失。查询有 8 秒超时，超时 / 失败一律放开表单
+   * （真正的重复拦截在服务端），不能因为设备接口卡住让报名入口永远不出现。
    */
   useEffect(() => {
-    let cancelled = false;
+    const attempt = ++deviceAttemptRef.current;
+    const controller = new AbortController();
     void (async () => {
-      const registration = await loadDeviceRegistration();
-      if (cancelled) return;
+      const registration = await fetchRegistrationDeviceStatus(activityId, {
+        signal: controller.signal,
+      });
+      if (deviceAttemptRef.current !== attempt) return;
       if (registration !== undefined) setDeviceRegistration(registration);
       setDeviceStatusResolved(true);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadDeviceRegistration]);
+    return () => controller.abort();
+  }, [activityId]);
 
-  /** 管理员删除报名后可就地重查，不必刷新整页。 */
+  /** 管理员删除报名后可就地重查，不必刷新整页；切活动时丢弃迟到响应。 */
   async function recheckDeviceStatus() {
     if (deviceRechecking) return;
+    const attempt = deviceAttemptRef.current;
     setDeviceRechecking(true);
-    const registration = await loadDeviceRegistration();
+    const registration = await fetchRegistrationDeviceStatus(activityId);
+    if (deviceAttemptRef.current !== attempt) return;
     setDeviceStatusResolved(true);
     if (registration === undefined) {
       setNotice({ text: copy.deviceRecheckFailed, tone: "neutral" });
     } else {
       setDeviceRegistration(registration);
-      if (registration === null) setNotice({ text: copy.deviceRecheckCleared, tone: "success" });
+      if (registration === null) {
+        setNotice({ text: copy.deviceRecheckCleared, tone: "success" });
+        // 表单刚重新挂载，焦点回到姓名输入框。
+        window.setTimeout(() => signupNameInputRef.current?.focus({ preventScroll: true }), 0);
+      }
     }
     setDeviceRechecking(false);
   }
@@ -456,14 +455,16 @@ export function RepairActivityDetail({ activityId }: Props) {
         setRegisteredPhone(pending.phone);
         if (json.error?.code === "ACTIVITY_DEVICE_ALREADY_REGISTERED") {
           // 另一个 tab 已报过 / 本地状态没跟上：直接切到「已提交」面板，而不是只报一条错误。
-          const registration = await loadDeviceRegistration();
+          const registration = await fetchRegistrationDeviceStatus(activityId);
           if (signupAttemptRef.current !== attempt) return;
           if (registration) {
             setDeviceRegistration(registration);
             setSignupInfo("");
             setNotice({ text: copy.deviceRegisteredTitle, tone: "neutral" });
+            focusLookup(undefined, registration.name);
           } else {
-            setSignupInfo(copy.duplicateHint);
+            // 设备 409 与「当前手机号重复」无关，不能用 duplicateHint 的文案。
+            setSignupInfo(json.error?.message ?? copy.deviceConflictFallback);
           }
         } else if (json.error?.code === "ACTIVITY_REGISTRATION_DUPLICATE") {
           setSignupInfo(copy.duplicateHint);
@@ -949,6 +950,7 @@ export function RepairActivityDetail({ activityId }: Props) {
                       {copy.name} <span className={styles.required}>*</span>
                     </span>
                     <input
+                      ref={signupNameInputRef}
                       className="field__input"
                       name="name"
                       placeholder={copy.namePlaceholder}
