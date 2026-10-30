@@ -51,8 +51,12 @@ export const repairActivitiesPage = {
     category: "校园志愿服务",
     signupTitle: "报名参加",
     lookupTitle: "已经报名？",
-    lookupHint: "使用报名手机号查询或修改故障类型",
+    lookupHint: "使用报名时的姓名与手机号查询或修改故障类型",
     lookupPhonePlaceholder: "报名时使用的手机号",
+    lookupNamePlaceholder: "报名时填写的姓名",
+    lookupNotFound: "未找到报名记录，请核对姓名与电话，或联系管理员",
+    /** 查不到时别再重新报名：引导走查询 / 联系管理员。 */
+    contactAdminHint: "信息填错了？请联系 QQ 群管理员更正，不要重新报名",
     name: "姓名",
     namePlaceholder: "用于现场核对",
     phone: "手机号",
@@ -67,6 +71,10 @@ export const repairActivitiesPage = {
     signupSuccess: "请按时到场，可使用报名手机号查询记录。到场前请做好以下准备",
     /** 报名成功后的常驻提示：弹层关闭后仍能看到。 */
     registeredHint: "如需修改故障类型，可使用下方「已经报名？」查询",
+    /** 本设备已提交过本场报名（issue #304）：服务端按签名 cookie 拦截重复填写。 */
+    deviceRegisteredTitle: "本设备已提交过本场报名",
+    deviceRegisteredHint:
+      "如需修改故障类型，请用下方「已经报名？」查询；姓名或电话填错请联系 QQ 群管理员，不要重复报名。",
     /** 同一手机号已报名时不再显示为失败，而是引导查询已有记录。 */
     duplicateHint: "该手机号已报名本场活动，可使用下方「已经报名？」查询或修改故障类型",
     lookupMine: "查询本人记录",
@@ -78,13 +86,14 @@ export const repairActivitiesPage = {
     confirmIdentityHint: "请确认活动、姓名与手机号无误；报名成功后可凭借手机号查询",
     confirmEdit: "返回修改",
     phoneFormatHint: "请输入 11 位中国大陆手机号",
+    nameFormatHint: "请输入报名时填写的姓名（2–40 个字符）",
     signupPendingTitle: "报名结果待确认",
     signupPendingHint: "网络中断或响应异常，暂无法确认报名结果。请先查询本人记录，不要重复提交",
     checkResult: "查询报名结果",
     /** 查询确认未报名后的出口：解除待确认，允许重新填写。 */
     pendingRestart: "重新填写",
     pendingRestartHint: "确认未报名后可重新填写，重复提交会被服务端拦截",
-    lookupNotFoundRetry: "暂未查到该手机号的报名记录，请稍后再次查询",
+    lookupNotFoundRetry: "暂未查到报名记录，请核对姓名与电话后再查询",
     lookupFailedRetry: "查询失败，请稍后再次查询，不要重复提交",
     lookupConfirmed: "已确认报名成功",
     precautionsTitle: "到场前，记好这四件事",

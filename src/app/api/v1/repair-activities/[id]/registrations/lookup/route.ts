@@ -32,7 +32,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     activityId = (await params).id;
     if (!activityId) throw new AppError("VALIDATION_FAILED", "活动 ID 无效");
-    const result = await repairActivityService.lookup(activityId, phoneRaw, context);
+    const result = await repairActivityService.lookup(
+      activityId,
+      { name: String(body.name ?? ""), phone: phoneRaw },
+      context,
+    );
     logActivityRouteResult("lookup", { requestId, activityId, result: "SUCCESS" });
     return apiSuccess(result, requestId);
   } catch (error) {

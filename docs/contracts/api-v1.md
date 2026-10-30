@@ -1175,3 +1175,28 @@ live 用分组计数与最小字段读取替代历史/名单明细。管理员�
 
 未加载/失败不代表空列表；队列成功不改变明细的成功时间和失败状态。同场刷新保留有效
 选择/草稿/滚动/焦点，切目标清空旧场状态，不让上一场可操作数据留在新目标。
+
+## 报名查询姓名校验与设备锁定（issue #304）
+
+`POST /api/v1/repair-activities/:id/registrations/lookup` 的 body 由 `{ phone }` 改为
+`{ name, phone }`：两项 trim 后精确匹配、**都命中**才返回既有 `RegistrationLookupView`。
+任一项不匹配统一返回 404 `ACTIVITY_REGISTRATION_NOT_FOUND`，文案不区分是姓名还是手机号错
+（避免把「某手机号存在」变成可探测信息）。响应结构、`editToken` 与频控键不变。
+
+`POST /api/v1/repair-activities/:id/registrations` 成功时额外下发签名 cookie
+`ra_reg_<activityId>`（`HttpOnly; SameSite=Lax; Path=/; Secure(生产)`，有效期 30 天，
+值为 `registrationId + exp + HMAC(AUTH_SECRET)`；不含姓名 / 电话）。再次提交时：
+
+- cookie 有效且对应报名仍存在（`deletedAt IS NULL`）→ 409
+  `ACTIVITY_DEVICE_ALREADY_REGISTERED`（“本设备已提交过本场报名，请使用「已经报名？」查询，或联系管理员”）；
+- 报名已被管理员删除 / 不存在 / 签名不符 / 过期 → 视为没有该凭证，继续按原规则（含
+  `ACTIVITY_REGISTRATION_DUPLICATE` 手机号唯一）判断。
+
+新增只读端点 `GET /api/v1/repair-activities/:id/registrations/device`：只读同名 cookie，
+返回 `{ submitted: boolean, registration: RegistrationPublicView | null }`（不含 editToken），
+`Cache-Control: private, no-store`；无 cookie / 凭证失效 / 记录已删除一律 `submitted=false`。
+页面用它决定是否收起报名表单。
+
+边界：清 cookie、无痕窗口、换浏览器/设备仍可绕过，本机制只约束「同一浏览器的重复填写」；
+真正的重复兜底仍是 (活动, 手机号) 唯一与按 IP / 手机号限流。无 Schema / Migration 变更，
+历史报名记录不受影响。

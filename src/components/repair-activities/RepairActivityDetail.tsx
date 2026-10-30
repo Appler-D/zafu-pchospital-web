@@ -74,6 +74,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [lookup, setLookup] = useState<RegistrationLookupView | null>(null);
   const [lookupPhone, setLookupPhone] = useState("");
   const [lookupPhoneError, setLookupPhoneError] = useState("");
+  const [lookupNameError, setLookupNameError] = useState("");
+  /** 本设备已提交的报名（服务端签名 cookie）：有值时收起报名表单，只留查询入口。 */
+  const [deviceRegistration, setDeviceRegistration] = useState<RegistrationPublicView | null>(null);
   /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
   const [pendingSignup, setPendingSignup] = useState<{
     name: string;
@@ -84,6 +87,7 @@ export function RepairActivityDetail({ activityId }: Props) {
   const signupFormRef = useRef<HTMLFormElement>(null);
   const signupPhoneInputRef = useRef<HTMLInputElement>(null);
   const lookupPhoneInputRef = useRef<HTMLInputElement>(null);
+  const lookupNameInputRef = useRef<HTMLInputElement>(null);
   /** 防止连点在 busy 重新渲染前发出第二个 POST。 */
   const submittingRef = useRef(false);
   /** 换活动后丢弃旧报名的迟到响应。 */
@@ -163,6 +167,8 @@ export function RepairActivityDetail({ activityId }: Props) {
     setLookup(null);
     setLookupPhone("");
     setLookupPhoneError("");
+    setLookupNameError("");
+    setDeviceRegistration(null);
     setPendingSignup(null);
     setBusy(false);
     setProblem("");
@@ -176,6 +182,33 @@ export function RepairActivityDetail({ activityId }: Props) {
       active?.controller.abort();
     };
   }, [load]);
+
+  /**
+   * 本设备是否已提交过本场报名（issue #304）。
+   * 查询失败按「未提交」处理：状态未知时保留表单，真正的重复拦截仍在服务端。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/v1/repair-activities/${activityId}/registrations/device`,
+        );
+        const json = (await response.json()) as {
+          success: boolean;
+          data?: { registration: RegistrationPublicView | null };
+        };
+        if (!cancelled && json.success) {
+          setDeviceRegistration(json.data?.registration ?? null);
+        }
+      } catch {
+        // 忽略：网络抖动不应把报名者挡在表单外。
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activityId]);
 
   /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
   useEffect(() => {
@@ -286,7 +319,7 @@ export function RepairActivityDetail({ activityId }: Props) {
     });
   }
 
-  async function lookupByPhone(phone: string): Promise<LookupOutcome> {
+  async function lookupRegistration(name: string, phone: string): Promise<LookupOutcome> {
     lookupAbortRef.current?.abort();
     const controller = new AbortController();
     lookupAbortRef.current = controller;
@@ -294,7 +327,7 @@ export function RepairActivityDetail({ activityId }: Props) {
       const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/lookup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ name, phone }),
         signal: AbortSignal.any([
           controller.signal,
           AbortSignal.timeout(LOOKUP_REQUEST_TIMEOUT_MS),
@@ -329,11 +362,12 @@ export function RepairActivityDetail({ activityId }: Props) {
     pending: NonNullable<typeof pendingSignup>,
     attempt: number,
   ) {
-    const outcome = await lookupByPhone(pending.phone);
+    const outcome = await lookupRegistration(pending.name, pending.phone);
     if (signupAttemptRef.current !== attempt) return;
     if (outcome.kind === "found") {
       setSignupSucceeded(true);
       setRegistrationResult(outcome.data);
+      setDeviceRegistration(outcome.data);
       setRegisteredPhone(pending.phone);
       setSignupInfo("");
       setSignupPending(null);
@@ -404,6 +438,7 @@ export function RepairActivityDetail({ activityId }: Props) {
       } else {
         setSignupSucceeded(true);
         setRegistrationResult(json.data ?? null);
+        setDeviceRegistration(json.data ?? null);
         setRegisteredPhone(pending.phone);
         setSignupInfo("");
         setSignupPending(null);
@@ -425,12 +460,13 @@ export function RepairActivityDetail({ activityId }: Props) {
     const pending = signupPending;
     const attempt = ++lookupAttemptRef.current;
     setBusy(true);
-    const outcome = await lookupByPhone(pending.phone);
+    const outcome = await lookupRegistration(pending.name, pending.phone);
     if (lookupAttemptRef.current !== attempt) return;
     if (outcome.kind === "found") {
       setSignupPending(null);
       setPendingCheckResult(null);
       setRegistrationResult(outcome.data);
+      setDeviceRegistration(outcome.data);
       setRegisteredPhone(pending.phone);
       setSignupInfo("");
       setNotice({ text: copy.lookupConfirmed, tone: "success" });
@@ -454,17 +490,20 @@ export function RepairActivityDetail({ activityId }: Props) {
     signupPhoneInputRef.current?.focus({ preventScroll: true });
   }
 
-  function focusLookup(phone?: string) {
+  function focusLookup(phone?: string, name?: string) {
     const input = lookupPhoneInputRef.current;
     if (phone && input) input.value = phone;
+    const nameInput = lookupNameInputRef.current;
+    if (name && nameInput) nameInput.value = name;
     setLookupPhoneError("");
-    input?.scrollIntoView({ block: "center" });
-    input?.focus({ preventScroll: true });
+    setLookupNameError("");
+    (name ? nameInput : input)?.scrollIntoView({ block: "center" });
+    (name ? nameInput : input)?.focus({ preventScroll: true });
   }
 
   function closeSignupDialog() {
-    // 名额用完后提交按钮会禁用，以表单作为可用的焦点归还位置。
-    signupFormRef.current?.focus({ preventScroll: true });
+    // 报名成功后表单已收起，焦点退到查询区姓名输入框，避免落到 body。
+    (signupFormRef.current ?? lookupNameInputRef.current)?.focus({ preventScroll: true });
     setPendingSignup(null);
     setSignupSucceeded(false);
   }
@@ -472,7 +511,13 @@ export function RepairActivityDetail({ activityId }: Props) {
   async function doLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>;
+    const name = (data.name ?? "").trim();
     const phone = (data.phone ?? "").trim();
+    if (name.length < 2) {
+      setLookupNameError(copy.nameFormatHint);
+      lookupNameInputRef.current?.focus();
+      return;
+    }
     if (!CN_MOBILE_PATTERN.test(phone)) {
       setLookupPhoneError(copy.phoneFormatHint);
       lookupPhoneInputRef.current?.focus();
@@ -485,9 +530,10 @@ export function RepairActivityDetail({ activityId }: Props) {
     setLookup(null);
     setLookupPhone("");
     setLookupPhoneError("");
-    const outcome = await lookupByPhone(phone);
+    setLookupNameError("");
+    const outcome = await lookupRegistration(name, phone);
     if (lookupAttemptRef.current !== attempt) return;
-    const matchesPending = signupPending?.phone === phone;
+    const matchesPending = signupPending?.phone === phone && signupPending.name.trim() === name;
     if (outcome.kind === "found") {
       setLookup(outcome.data);
       setLookupPhone(phone);
@@ -497,6 +543,7 @@ export function RepairActivityDetail({ activityId }: Props) {
         setSignupPending(null);
         setPendingCheckResult(null);
         setRegistrationResult(outcome.data);
+        setDeviceRegistration(outcome.data);
         setSignupInfo("");
         signupFormRef.current?.reset();
         void load(true);
@@ -509,7 +556,7 @@ export function RepairActivityDetail({ activityId }: Props) {
     } else {
       setProblem(
         outcome.kind === "not-found"
-          ? (outcome.message ?? "未找到该手机号的报名记录")
+          ? (outcome.message ?? copy.lookupNotFound)
           : (outcome.message ?? "网络异常，请稍后重试"),
       );
     }
@@ -700,7 +747,27 @@ export function RepairActivityDetail({ activityId }: Props) {
                   {copy.registrationNumber.replace("{id}", registrationResult.id)}
                 </p>
                 <p className="muted">{copy.registeredHint}</p>
-                <Button variant="ghost" onClick={() => focusLookup(registeredPhone)}>
+                <p className="muted">{copy.contactAdminHint}</p>
+                <Button
+                  variant="ghost"
+                  onClick={() => focusLookup(registeredPhone, registrationResult.name)}
+                >
+                  {copy.lookupMine}
+                </Button>
+              </div>
+            ) : null}
+            {/* 本设备已提交：收起表单，只保留查询 / 联系管理员的出口（issue #304）。 */}
+            {!registrationResult && deviceRegistration ? (
+              <div className={styles.signupResult} role="status">
+                <strong>{copy.deviceRegisteredTitle}</strong>
+                <p>
+                  {deviceRegistration.name} · {deviceRegistration.phoneMasked}
+                </p>
+                <p className="muted">{copy.deviceRegisteredHint}</p>
+                <Button
+                  variant="ghost"
+                  onClick={() => focusLookup(undefined, deviceRegistration.name)}
+                >
                   {copy.lookupMine}
                 </Button>
               </div>
@@ -731,7 +798,7 @@ export function RepairActivityDetail({ activityId }: Props) {
                   {copy.lookupMine}
                 </Button>
               </div>
-            ) : null}
+            ) : null}{" "}
             {!open ? <p className="muted">{signupDisabledReason}</p> : null}
             {activity.status === "FULL" && !registrationResult ? (
               <div className={styles.fullHint}>
@@ -800,99 +867,101 @@ export function RepairActivityDetail({ activityId }: Props) {
                 {copy.countdownOpened}
               </p>
             ) : null}
-            <form
-              className="admin-form"
-              ref={signupFormRef}
-              tabIndex={-1}
-              onSubmit={requestSignup}
-              aria-label={copy.signupTitle}
-            >
-              <div className={styles.fields}>
-                <label className="field">
-                  <span className="field__label">
-                    {copy.name} <span className={styles.required}>*</span>
-                  </span>
-                  <input
-                    className="field__input"
-                    name="name"
-                    placeholder={copy.namePlaceholder}
-                    required
-                    minLength={2}
-                    maxLength={40}
-                    disabled={!open || busy}
-                  />
-                </label>
-                <label className="field">
-                  <span className="field__label">
-                    {copy.phone} <span className={styles.required}>*</span>
-                  </span>
-                  <input
-                    ref={signupPhoneInputRef}
-                    className="field__input"
-                    id="repair-activity-signup-phone"
-                    name="phone"
-                    placeholder={copy.phonePlaceholder}
-                    required
-                    inputMode="numeric"
-                    maxLength={11}
-                    aria-invalid={signupPhoneError ? true : undefined}
-                    aria-describedby={
-                      signupPhoneError ? "repair-activity-signup-phone-error" : undefined
-                    }
-                    onInput={() => setSignupPhoneError("")}
-                    disabled={!open || busy || signupPending !== null}
-                  />
-                  {signupPhoneError ? (
-                    <p
-                      className="field__hint text-accent-deep"
-                      id="repair-activity-signup-phone-error"
-                      role="alert"
+            {deviceRegistration || registrationResult ? null : (
+              <form
+                className="admin-form"
+                ref={signupFormRef}
+                tabIndex={-1}
+                onSubmit={requestSignup}
+                aria-label={copy.signupTitle}
+              >
+                <div className={styles.fields}>
+                  <label className="field">
+                    <span className="field__label">
+                      {copy.name} <span className={styles.required}>*</span>
+                    </span>
+                    <input
+                      className="field__input"
+                      name="name"
+                      placeholder={copy.namePlaceholder}
+                      required
+                      minLength={2}
+                      maxLength={40}
+                      disabled={!open || busy}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">
+                      {copy.phone} <span className={styles.required}>*</span>
+                    </span>
+                    <input
+                      ref={signupPhoneInputRef}
+                      className="field__input"
+                      id="repair-activity-signup-phone"
+                      name="phone"
+                      placeholder={copy.phonePlaceholder}
+                      required
+                      inputMode="numeric"
+                      maxLength={11}
+                      aria-invalid={signupPhoneError ? true : undefined}
+                      aria-describedby={
+                        signupPhoneError ? "repair-activity-signup-phone-error" : undefined
+                      }
+                      onInput={() => setSignupPhoneError("")}
+                      disabled={!open || busy || signupPending !== null}
+                    />
+                    {signupPhoneError ? (
+                      <p
+                        className="field__hint text-accent-deep"
+                        id="repair-activity-signup-phone-error"
+                        role="alert"
+                      >
+                        {signupPhoneError}
+                      </p>
+                    ) : null}
+                  </label>
+                  <label className="field">
+                    <span className="field__label">
+                      {copy.issueType} <span className={styles.required}>*</span>
+                    </span>
+                    <select
+                      className="field__input"
+                      name="issueType"
+                      required
+                      disabled={!open || busy}
+                      defaultValue="CLEAN_PASTE"
                     >
-                      {signupPhoneError}
-                    </p>
-                  ) : null}
-                </label>
-                <label className="field">
-                  <span className="field__label">
-                    {copy.issueType} <span className={styles.required}>*</span>
-                  </span>
-                  <select
-                    className="field__input"
-                    name="issueType"
-                    required
-                    disabled={!open || busy}
-                    defaultValue="CLEAN_PASTE"
+                      {repairActivitiesPage.issueTypes.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="field__label">{copy.deviceModel}</span>
+                    <input
+                      className="field__input"
+                      name="deviceModel"
+                      maxLength={REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH}
+                      placeholder={copy.deviceModelPlaceholder}
+                      disabled={!open || busy}
+                    />
+                  </label>
+                </div>
+                <p className="muted">{copy.signupConsentHint}</p>
+                <div className="signup__actions">
+                  <Button
+                    type="submit"
+                    variant="solid"
+                    trailingIcon="arrowRight"
+                    disabled={!open || busy || signupPending !== null}
                   >
-                    {repairActivitiesPage.issueTypes.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="field__label">{copy.deviceModel}</span>
-                  <input
-                    className="field__input"
-                    name="deviceModel"
-                    maxLength={REPAIR_ACTIVITY_DEVICE_MODEL_MAX_LENGTH}
-                    placeholder={copy.deviceModelPlaceholder}
-                    disabled={!open || busy}
-                  />
-                </label>
-              </div>
-              <p className="muted">{copy.signupConsentHint}</p>
-              <div className="signup__actions">
-                <Button
-                  type="submit"
-                  variant="solid"
-                  trailingIcon="arrowRight"
-                  disabled={!open || busy || signupPending !== null}
-                >
-                  {busy ? "提交中…" : copy.submitSignup}
-                </Button>
-              </div>
-            </form>
+                    {busy ? "提交中…" : copy.submitSignup}
+                  </Button>
+                </div>
+              </form>
+            )}
           </section>
 
           <section className={styles.lookup} aria-labelledby="repair-activity-lookup-title">
@@ -901,6 +970,34 @@ export function RepairActivityDetail({ activityId }: Props) {
             </h2>
             <p className="muted">{copy.lookupHint}</p>
             <form className="admin-form" onSubmit={doLookup} aria-label={copy.lookupTitle}>
+              <label className="field">
+                <span className="field__label">{copy.name}</span>
+                <input
+                  ref={lookupNameInputRef}
+                  className="field__input"
+                  id="repair-activity-lookup-name"
+                  name="name"
+                  placeholder={copy.lookupNamePlaceholder}
+                  required
+                  minLength={2}
+                  maxLength={40}
+                  aria-invalid={lookupNameError ? true : undefined}
+                  aria-describedby={
+                    lookupNameError ? "repair-activity-lookup-name-error" : undefined
+                  }
+                  onInput={() => setLookupNameError("")}
+                  disabled={busy}
+                />
+                {lookupNameError ? (
+                  <p
+                    className="field__hint text-accent-deep"
+                    id="repair-activity-lookup-name-error"
+                    role="alert"
+                  >
+                    {lookupNameError}
+                  </p>
+                ) : null}
+              </label>
               <label className="field">
                 <span className="field__label">{copy.phone}</span>
                 <input

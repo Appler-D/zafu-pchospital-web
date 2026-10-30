@@ -2,6 +2,13 @@ import {
   repairActivityIpRateLimitKey,
   repairActivityPhoneRateLimitKey,
 } from "@/features/repair-activities/repair-activity-rate-limit";
+import {
+  issueRegistrationDeviceToken,
+  readRegistrationDeviceCookie,
+  readRegistrationDeviceToken,
+  registrationDeviceCookieName,
+  registrationDeviceCookieOptions,
+} from "@/features/repair-activities/registration-device-token";
 import { repairActivityService } from "@/features/repair-activities/repair-activity-service";
 import { AppError } from "@/lib/api/errors";
 import { enforceRateLimit } from "@/lib/api/rate-limit";
@@ -33,6 +40,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     activityId = (await params).id;
     if (!activityId) throw new AppError("VALIDATION_FAILED", "活动 ID 无效");
+    const cookieToken = readRegistrationDeviceCookie(request.headers.get("cookie"), activityId);
+    const device = cookieToken ? readRegistrationDeviceToken(cookieToken, { activityId }) : null;
     const result = await repairActivityService.register(
       activityId,
       {
@@ -45,9 +54,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         consentAccepted: body.consentAccepted === true,
       },
       context,
+      device,
     );
     logActivityRouteResult("signup", { requestId, activityId, result: "SUCCESS" });
-    return apiSuccess(result, requestId, { status: 201 });
+    const response = apiSuccess(result, requestId, { status: 201 });
+    // 下发设备凭证：服务端据此拒绝同一设备的重复填写，前端据此显示「已提交」面板。
+    response.cookies.set({
+      name: registrationDeviceCookieName(activityId),
+      value: issueRegistrationDeviceToken(activityId, result.id),
+      ...registrationDeviceCookieOptions(),
+    });
+    return response;
   } catch (error) {
     const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";
     logActivityRouteResult("signup", { requestId, activityId, result: code });
