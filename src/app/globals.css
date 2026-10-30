@@ -6081,6 +6081,104 @@ html[data-theme="black-yellow"] {
     overflow-y: auto;
     overscroll-behavior-y: contain;
   }
+  /* 退出失败只承载一项操作，不沿用详情窗口的宽度、整屏高度与紧凑按钮。 */
+  .admin-modal:has(.logout-warning) {
+    padding: var(--s-4);
+  }
+  .admin-modal__window:has(.logout-warning) {
+    inline-size: min(32rem, 100%);
+    block-size: auto;
+    max-block-size: calc(100dvh - var(--s-6));
+  }
+  .admin-modal__window:has(.logout-warning):focus {
+    outline: none;
+  }
+  .admin-modal__window:has(.logout-warning) .admin-modal__head {
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-5);
+  }
+  .admin-modal__window:has(.logout-warning) .admin-modal__title {
+    font-size: var(--t-lg);
+    line-height: 1.4;
+  }
+  .admin-modal__window:has(.logout-warning) .admin-modal__body {
+    gap: var(--s-5);
+    padding: var(--s-5);
+  }
+  .admin-modal__window:has(.logout-warning) .signup__actions {
+    justify-content: flex-end;
+    gap: var(--s-3);
+    padding-block-start: var(--s-4);
+  }
+  .admin-modal__window:has(.logout-warning) .btn {
+    min-block-size: 2.75rem;
+    padding: var(--s-2) var(--s-4);
+    font-size: var(--t-sm);
+    letter-spacing: 0;
+  }
+  .admin-modal__window:has(.logout-warning) .btn--ghost::after {
+    inset-inline: var(--s-4);
+    inset-block-end: var(--s-2);
+  }
+  .logout-warning {
+    display: grid;
+    gap: var(--s-5);
+  }
+  .logout-warning__status {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+  }
+  .logout-warning__icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    inline-size: var(--s-7);
+    block-size: var(--s-7);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--r-mid);
+    background: var(--accent-wash);
+    color: var(--accent-deep);
+  }
+  .logout-warning__lead {
+    margin: 0;
+    color: var(--ink);
+    font-size: var(--t-base);
+    font-weight: 700;
+    line-height: 1.6;
+  }
+  .logout-warning__icon svg {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+  .logout-warning__hint {
+    margin: var(--s-1) 0 0;
+    color: var(--ink-2);
+    font-size: var(--t-sm);
+    line-height: 1.7;
+  }
+  .logout-warning__help {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-4);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-mid);
+    background: var(--bg);
+    font-size: var(--t-sm);
+    line-height: 1.8;
+  }
+  .logout-warning__help h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: inherit;
+    font-weight: 700;
+  }
+  .logout-warning__help p {
+    margin: 0;
+    color: var(--ink-2);
+  }
+
   /* 字段表 + 紧跟其后的说明文字：它们是一组，间距要明显小于段落之间。 */
   .admin-modal__facts {
     display: grid;

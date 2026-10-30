@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Icon } from "@/components/ui/Icon";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { accountMenuCopy } from "@/config/auth";
 import { cn } from "@/lib/utils";
 import type { SessionPrincipal } from "@/types/contracts";
@@ -61,6 +62,7 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
   const [principal, setPrincipal] = useState<SessionPrincipal | null>(null);
   const [resolved, setResolved] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutUnconfirmed, setLogoutUnconfirmed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,18 +109,32 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
     setLoggingOut(true);
     setOpen(false);
     try {
-      await sessionMutationFetch("/api/v1/auth/logout", { method: "POST" });
+      const response = await sessionMutationFetch("/api/v1/auth/logout", { method: "POST" });
+      const payload = (await response.json()) as {
+        success?: unknown;
+        data?: { loggedOut?: unknown };
+      } | null;
+      if (!response.ok || payload?.success !== true || payload.data?.loggedOut !== true) {
+        throw new Error("Logout not confirmed");
+      }
+      setLogoutUnconfirmed(false);
+      router.replace("/login");
+      router.refresh();
     } catch {
-      // 即便请求失败也离开受保护页；cookie 可能已失效。
+      // 失败不代表服务端已撤销会话，保留当前页与重试入口。
+      if (!logoutUnconfirmed) {
+        rootRef.current?.querySelector<HTMLButtonElement>(".account-menu__trigger")?.focus();
+      }
+      setLogoutUnconfirmed(true);
+    } finally {
+      setLoggingOut(false);
     }
-    router.replace("/login");
-    router.refresh();
   }
 
   // 公开页：未解析完不渲染；解析后无会话则静默隐藏。
   // 受保护页可带 initialDisplayName 做乐观展示，但仍等 /me 确认后才保持。
   const optimistic = initialDisplayName !== undefined && !resolved;
-  if (!optimistic && (!resolved || !principal)) return null;
+  if (!optimistic && (!resolved || !principal) && !loggingOut && !logoutUnconfirmed) return null;
 
   const displayName =
     (principal?.displayName ?? initialDisplayName)?.trim() || accountMenuCopy.fallbackName;
@@ -209,6 +225,35 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
             {loggingOut ? accountMenuCopy.loggingOut : accountMenuCopy.logout}
           </button>
         </div>
+      ) : null}
+      {logoutUnconfirmed ? (
+        <ConfirmDialog
+          title={accountMenuCopy.logoutUnconfirmed}
+          confirmLabel={loggingOut ? accountMenuCopy.loggingOut : accountMenuCopy.retryLogout}
+          cancelLabel={accountMenuCopy.closeLogoutWarning}
+          onConfirm={() => void logout()}
+          onClose={() => setLogoutUnconfirmed(false)}
+          busy={loggingOut}
+        >
+          <div className="logout-warning">
+            <div className="logout-warning__status">
+              <span className="logout-warning__icon" aria-hidden="true">
+                <Icon name="shield" />
+              </span>
+              <div>
+                <p className="logout-warning__lead">{accountMenuCopy.logoutSessionWarning}</p>
+                <p className="logout-warning__hint">{accountMenuCopy.logoutRetryHint}</p>
+              </div>
+            </div>
+            <aside
+              className="logout-warning__help"
+              aria-label={accountMenuCopy.logoutSharedDeviceTitle}
+            >
+              <h3>{accountMenuCopy.logoutSharedDeviceTitle}</h3>
+              <p>{accountMenuCopy.logoutSharedDeviceHint}</p>
+            </aside>
+          </div>
+        </ConfirmDialog>
       ) : null}
     </div>
   );
