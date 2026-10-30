@@ -73,7 +73,12 @@ const lookupRegistration: RegistrationLookupView = {
 };
 
 /** 与既有客户端测试相同的 hook 存储方式；只驱动真实 JSX/effect，不启动 Next 或 DB。 */
-async function mount(t: TestContext) {
+async function mount(
+  t: TestContext,
+  options: {
+    device?: { submitted: boolean; registration: unknown } | "pending" | "error";
+  } = {},
+) {
   const originalCss = require.extensions[".css"];
   require.extensions[".css"] = (module) => {
     module.exports = {};
@@ -160,17 +165,29 @@ async function mount(t: TestContext) {
     fail(error: unknown): void;
   }[] = [];
   let formValues = new Map<string, string>();
+  let deviceStatus: { submitted: boolean; registration: unknown } | "pending" | "error" = {
+    submitted: false,
+    registration: null,
+  };
+  const deviceDeferred: ((status: { submitted: boolean; registration: unknown }) => void)[] = [];
   t.mock.method(globalThis, "FormData", function () {
     return formValues;
   });
-  t.mock.method(
-    globalThis,
-    "fetch",
-    (url: string, init: RequestInit) =>
-      new Promise<Response>((finish, fail) => {
-        requests.push({ url, init, signal: init.signal as AbortSignal, finish, fail });
-      }),
-  );
+  t.mock.method(globalThis, "fetch", (url: string, init: RequestInit) => {
+    // 设备状态查询（issue #304）每次挂载都会发一次：直接给出结果，不占用 requests 下标。
+    if (String(url).endsWith("/registrations/device")) {
+      if (deviceStatus === "error") return Promise.reject(new TypeError("network"));
+      if (deviceStatus === "pending") {
+        return new Promise<Response>((resolve) => {
+          deviceDeferred.push((status) => resolve(Response.json({ success: true, data: status })));
+        });
+      }
+      return Promise.resolve(Response.json({ success: true, data: deviceStatus }));
+    }
+    return new Promise<Response>((finish, fail) => {
+      requests.push({ url, init, signal: init.signal as AbortSignal, finish, fail });
+    });
+  });
   const { RepairActivityDetail } =
     await import("../../src/components/repair-activities/RepairActivityDetail");
   const view = () => {
@@ -188,6 +205,7 @@ async function mount(t: TestContext) {
       else Reflect.deleteProperty(globalThis, key);
     }
   });
+  if (options.device) deviceStatus = options.device;
   view();
   let formResets = 0;
   return {
@@ -225,12 +243,24 @@ async function mount(t: TestContext) {
         (element) => element.props["aria-label"] === repairActivitiesPage.detail.lookupTitle,
       );
       assert.ok(form);
-      formValues = new Map([["phone", phone]]);
+      formValues = new Map([
+        ["name", "测试客户"],
+        ["phone", phone],
+      ]);
       (form.props.onSubmit as (event: unknown) => void)({
         preventDefault() {},
         currentTarget: {},
       });
     },
+    setDeviceStatus(status: { submitted: boolean; registration: unknown } | "pending" | "error") {
+      deviceStatus = status;
+    },
+    resolveDevice(index: number, status: { submitted: boolean; registration: unknown }) {
+      const resolve = deviceDeferred[index];
+      if (!resolve) throw new Error(`没有第 ${index} 个待决设备请求`);
+      resolve(status);
+    },
+    devicePendingCount: () => deviceDeferred.length,
     changeId(value: string) {
       id = value;
       view();
@@ -723,18 +753,11 @@ test("待确认时主查询到本人记录会清除待确认并展示凭条", as
     "凭条展示报名编号",
   );
   assert.equal(
-    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone")?.props
-      .disabled,
-    false,
-    "清除待确认后报名手机号恢复可编辑",
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-signup-phone"),
+    undefined,
+    "确认已报名后收起报名表单，避免重复提交",
   );
-  assert.equal(
-    findElement(ui.view(), (element) => element.props.children === copy.submitSignup)?.props
-      .disabled,
-    false,
-    "清除待确认后可以再次报名",
-  );
-  assert.equal(ui.formResets(), 1, "清除待确认后清空旧报名表单");
+  assert.ok(content.includes(registration.phoneMasked), "凭条保留脱敏手机号");
 });
 
 test("满额页保留查询本人记录入口", async (t) => {
@@ -849,4 +872,168 @@ test("上次报名的慢刷新结束时，不解除下一次报名的在途禁�
   );
   assert.equal(signupDialog(ui.view())?.props.busy, false);
   await ui.finish(4, null);
+});
+
+test("本设备已提交时收起报名表单，只保留查询入口", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t, { device: { submitted: true, registration } });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.ok(content.includes(copy.deviceRegisteredTitle), "显示已提交面板");
+  assert.ok(content.includes(registration.phoneMasked), "显示脱敏手机号");
+  assert.ok(
+    content.includes(copy.receiptIssueType.replace("{type}", "清灰换硅脂")),
+    "已提交面板显示故障类型",
+  );
+  assert.equal(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    undefined,
+    "已提交设备不再渲染报名表单",
+  );
+  assert.ok(
+    findElement(ui.view(), (element) => element.props.id === "repair-activity-lookup-name"),
+    "查询表单仍在",
+  );
+});
+
+test("设备状态未返回前只显示占位，不渲染报名表单", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t, { device: "pending" });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  const content = text(ui.view());
+  assert.ok(content.includes(copy.deviceStatusChecking), "显示设备状态占位");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    undefined,
+    "状态未决时不渲染表单，避免填到一半被收起",
+  );
+});
+
+test("提交撞上设备 409 时直接切到已提交面板", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.setDeviceStatus({ submitted: true, registration });
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].finish(
+    Response.json(
+      {
+        success: false,
+        error: { code: "ACTIVITY_DEVICE_ALREADY_REGISTERED", message: "本设备已提交过本场报名" },
+      },
+      { status: 409 },
+    ),
+  );
+  await setImmediate();
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.ok(content.includes(copy.deviceRegisteredTitle), "命中 409 后显示已提交面板");
+  assert.equal(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    undefined,
+    "命中 409 后收起报名表单",
+  );
+});
+
+test("已提交面板可重新检查：报名被删除后恢复表单", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t, { device: { submitted: true, registration } });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  await setImmediate();
+  assert.ok(text(ui.view()).includes(copy.deviceRegisteredTitle));
+
+  ui.setDeviceStatus({ submitted: false, registration: null });
+  const button = findElement(
+    ui.view(),
+    (element) =>
+      element.props.children === copy.deviceRecheck && typeof element.props.onClick === "function",
+  );
+  assert.ok(button, "面板提供重新检查按钮");
+  (button.props.onClick as () => void)();
+  await setImmediate();
+  await setImmediate();
+
+  assert.ok(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    "重新检查后恢复报名表单",
+  );
+});
+
+test("设备状态查询失败时放开报名表单", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t, { device: "error" });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  await setImmediate();
+
+  assert.ok(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    "设备接口失败不能把报名入口挡死",
+  );
+});
+
+test("设备 409 后状态读取失败时用设备提示，不误报手机号重复", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t);
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  ui.setDeviceStatus("error");
+  (ui.requestSignup().props.onConfirm as () => void)();
+  ui.requests[1].finish(
+    Response.json(
+      { success: false, error: { code: "ACTIVITY_DEVICE_ALREADY_REGISTERED" } },
+      { status: 409 },
+    ),
+  );
+  await setImmediate();
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.ok(content.includes(copy.deviceConflictFallback), "回退到设备专用提示");
+  assert.equal(content.includes(copy.duplicateHint), false, "不能说成该手机号已报名");
+});
+
+test("切换活动时丢弃旧的设备状态响应", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const ui = await mount(t, { device: "pending" });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  assert.equal(ui.devicePendingCount(), 1, "旧活动有一个在途设备请求");
+
+  ui.changeId("b");
+  await ui.finish(1, { ...activity, id: "b", title: "新活动", status: "OPEN" });
+  assert.equal(ui.devicePendingCount(), 2, "新活动也发了一次设备请求");
+
+  ui.resolveDevice(0, { submitted: true, registration });
+  await setImmediate();
+  assert.equal(
+    text(ui.view()).includes(copy.deviceRegisteredTitle),
+    false,
+    "旧活动的设备状态不能写到新页面",
+  );
+
+  ui.resolveDevice(1, { submitted: false, registration: null });
+  await setImmediate();
+  assert.ok(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    "新活动按自己的状态放开表单",
+  );
+});
+
+test("AbortSignal.any 缺失时设备状态失败仍放开报名表单", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const original = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+  t.after(() => Object.defineProperty(AbortSignal, "any", { value: original, configurable: true }));
+
+  const ui = await mount(t, { device: "error" });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.equal(content.includes(copy.deviceStatusChecking), false, "占位不能常驻");
+  assert.ok(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    "缺 AbortSignal.any 的浏览器也要能报名",
+  );
 });

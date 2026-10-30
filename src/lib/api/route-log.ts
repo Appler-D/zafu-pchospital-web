@@ -4,7 +4,7 @@
  * 只记录请求编号、活动与结果码；不记录请求正文、姓名或完整手机号。
  */
 export function logActivityRouteResult(
-  action: "signup" | "lookup",
+  action: "signup" | "lookup" | "device",
   input: { requestId: string; activityId: string; result: string },
 ): void {
   console.info(JSON.stringify({ event: `repair_activity.${action}`, ...input }));

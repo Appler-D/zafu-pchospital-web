@@ -711,6 +711,8 @@ export const repairActivityService = {
       consentAccepted?: boolean;
     },
     context: PublicRequestContext,
+    /** 本设备已提交的报名（来自签名 cookie，issue #304）；记录已删除时视为没有。 */
+    device: { registrationId: string } | null = null,
   ): Promise<RegistrationPublicView> {
     const name = assertValidRegistrantName(input.name);
     const phone = normalizePhone(input.phone);
@@ -746,6 +748,19 @@ export const repairActivityService = {
         capacity: activity.capacity,
       });
       if (status === "ENDED") throw new AppError("ACTIVITY_ENDED", "活动已结束");
+      // 本设备已报过本场：先于窗口 / 名额判断返回，否则用户会看到「已截止」「名额已满」
+      // 这种不指向真实原因的提示。记录被管理员删除后，这里查不到 → 自动解锁重新报名。
+      if (device) {
+        const deviceRegistration = await tx.repairActivityRegistration.findFirst({
+          where: { id: device.registrationId, activityId, deletedAt: null },
+        });
+        if (deviceRegistration) {
+          throw new AppError(
+            "ACTIVITY_DEVICE_ALREADY_REGISTERED",
+            "本设备已提交过本场报名，请使用「已经报名？」查询，或联系管理员",
+          );
+        }
+      }
       // 报名窗口未开始 / 已截止时，先告知窗口状态；窗口内再对已报名者优先返回重复。
       if (status === "UPCOMING") {
         throw new AppError("ACTIVITY_NOT_OPEN", "报名尚未开始");
@@ -804,12 +819,28 @@ export const repairActivityService = {
     });
   },
 
+  /**
+   * 活动自然日结束时间（设备凭证的有效期上限）：只读、轻量。
+   * 报名成功后用它收紧 cookie，避免凭证比活动多活很久。
+   */
+  async publicActivityEnd(activityId: string): Promise<Date> {
+    const activity = await getDb().repairActivity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: { activityAt: true },
+    });
+    if (!activity) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+    return activityEndExclusive(activity.activityAt);
+  },
+
   async lookup(
     activityId: string,
-    phoneRaw: string,
+    input: { name: string; phone: string },
     context: PublicRequestContext,
   ): Promise<RegistrationLookupView> {
-    const phone = normalizePhone(phoneRaw);
+    // 姓名 + 手机号都对才返回记录（issue #304）：既避免填错联系方式后误以为没报上，
+    // 也让单凭手机号枚举姓名 / 拿改类型 token 的路径消失。
+    const name = assertValidRegistrantName(input.name);
+    const phone = normalizePhone(input.phone);
     const activity = await getDb().repairActivity.findFirst({
       where: { id: activityId, deletedAt: null },
     });
@@ -819,10 +850,14 @@ export const repairActivityService = {
       throw new AppError("ACTIVITY_ENDED", "活动已结束");
     }
     const reg = await getDb().repairActivityRegistration.findFirst({
-      where: { activityId, phone, deletedAt: null },
+      where: { activityId, phone, name, deletedAt: null },
     });
     if (!reg) {
-      throw new AppError("ACTIVITY_REGISTRATION_NOT_FOUND", "未找到该手机号的报名记录");
+      // 不区分是姓名还是电话不匹配：避免把「某手机号存在」变成可探测信息。
+      throw new AppError(
+        "ACTIVITY_REGISTRATION_NOT_FOUND",
+        "未找到报名记录，请核对姓名与电话，或联系管理员",
+      );
     }
     const token = issueRegistrationEditToken(reg.id, activityId, now);
     await inSerializableTransaction(async (tx) => {
@@ -847,6 +882,34 @@ export const repairActivityService = {
       createdAt: reg.createdAt.toISOString(),
       editToken: token.editToken,
       editTokenExpiresAt: token.expiresAt,
+    };
+  },
+
+  /**
+   * 设备级报名状态（issue #304）：凭签名 cookie 里的 registrationId 取回摘要，
+   * 用于刷新后显示「本设备已提交」面板。记录已删除时返回 null（自动解锁）。
+   */
+  async deviceRegistration(
+    activityId: string,
+    registrationId: string,
+  ): Promise<RegistrationPublicView | null> {
+    const activity = await getDb().repairActivity.findFirst({
+      where: { id: activityId, deletedAt: null },
+    });
+    if (!activity) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+    const reg = await getDb().repairActivityRegistration.findFirst({
+      where: { id: registrationId, activityId, deletedAt: null },
+    });
+    if (!reg) return null;
+    return {
+      id: reg.id,
+      activityId,
+      name: reg.name,
+      phoneMasked: maskActivityPhone(reg.phone),
+      issueType: assertValidIssueType(reg.issueType),
+      deviceModel: reg.deviceModel,
+      status: reg.status,
+      createdAt: reg.createdAt.toISOString(),
     };
   },
 
