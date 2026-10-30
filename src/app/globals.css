@@ -6091,7 +6091,8 @@ html[data-theme="black-yellow"] {
     max-block-size: calc(100dvh - var(--s-6));
   }
   .admin-modal__window:has(.logout-warning):focus {
-    outline: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .admin-modal__window:has(.logout-warning) .admin-modal__head {
     align-items: center;

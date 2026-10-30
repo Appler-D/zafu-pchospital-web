@@ -193,3 +193,37 @@ test("初始会话查询迟到失败不能隐藏退出失败提示和重试入�
   assert.equal(ui.button().disabled, false);
   assert.deepEqual(ui.destinations, []);
 });
+
+test("黑洞请求在十秒超时后恢复操作并提示未确认，可使用新的超时信号重试", async (t) => {
+  const ui = await mount(t);
+  const controllers: AbortController[] = [];
+  t.mock.method(AbortSignal, "timeout", (milliseconds: number) => {
+    assert.equal(milliseconds, 10_000);
+    const controller = new AbortController();
+    controllers.push(controller);
+    return controller.signal;
+  });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (_input: unknown, init: RequestInit) => {
+    assert.equal(init.signal, controllers.at(-1)?.signal);
+    if (++calls > 1) return Response.json({ success: true, data: { loggedOut: true } });
+    return new Promise<Response>((_resolve, reject) => {
+      init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+    });
+  });
+  await ui.logout();
+  assert.equal(ui.button().disabled, true);
+  assert.deepEqual(ui.destinations, []);
+  controllers[0].abort(new DOMException("Timed out", "TimeoutError"));
+  await setImmediate();
+  assert.equal(ui.dialog()?.title, accountMenuCopy.logoutUnconfirmed);
+  assert.equal(ui.dialog()?.busy, false);
+  assert.equal(ui.button().disabled, false);
+  assert.equal(ui.refreshes(), 0);
+  assert.deepEqual(ui.destinations, []);
+  await ui.dialog()!.onConfirm!();
+  await setImmediate();
+  assert.equal(controllers.length, 2);
+  assert.equal(controllers[1].signal.aborted, false);
+  assert.deepEqual(ui.destinations, ["/login"]);
+});

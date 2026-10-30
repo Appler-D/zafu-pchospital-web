@@ -109,7 +109,10 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
     setLoggingOut(true);
     setOpen(false);
     try {
-      const response = await sessionMutationFetch("/api/v1/auth/logout", { method: "POST" });
+      const response = await sessionMutationFetch("/api/v1/auth/logout", {
+        method: "POST",
+        signal: AbortSignal.timeout(10_000),
+      });
       const payload = (await response.json()) as {
         success?: unknown;
         data?: { loggedOut?: unknown };
