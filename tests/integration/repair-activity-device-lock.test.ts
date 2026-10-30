@@ -159,6 +159,13 @@ dbTest("报名成功下发设备凭证：带 cookie 的再次填写被 409 拦�
   const first = await signup(body("REG304 丙", "13900000311"));
   assert.equal(first.status, 201);
   const cookie = deviceCookieOf(first.setCookies);
+  // 有效期收到活动结束：夹具活动在 7 天后，Max-Age 必须明显小于 30 天。
+  const maxAge = Number(
+    /Max-Age=(\d+)/.exec(
+      first.setCookies.find((item) => item.startsWith(`${COOKIE_NAME}=`)) ?? "",
+    )?.[1],
+  );
+  assert.ok(maxAge > 6 * 24 * 3600 && maxAge < 8 * 24 * 3600, `Max-Age 应在 6–8 天内：${maxAge}`);
 
   const blocked = await signup(body("REG304 丁", "13900000312"), cookie);
   assert.equal(blocked.status, 409);

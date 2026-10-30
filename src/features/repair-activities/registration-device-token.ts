@@ -12,6 +12,8 @@ import { getServerEnv } from "@/lib/env";
  */
 
 const DEVICE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** 设备凭证的最长存活时间；实际下发时还会被活动结束时间收紧。 */
+export const REGISTRATION_DEVICE_TTL_MS = DEVICE_TOKEN_TTL_MS;
 const COOKIE_PREFIX = "ra_reg_";
 
 type DeviceTokenPayload = {
@@ -24,15 +26,15 @@ export function registrationDeviceCookieName(activityId: string): string {
   return `${COOKIE_PREFIX}${activityId}`;
 }
 
-export function registrationDeviceCookieOptions(now = new Date()) {
+export function registrationDeviceCookieOptions(expiresAt: Date, now = new Date()) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     // 设备状态接口在 /api/v1 下，cookie 不能只挂 /repair-activities。
     path: "/",
-    maxAge: Math.floor(DEVICE_TOKEN_TTL_MS / 1000),
-    expires: new Date(now.getTime() + DEVICE_TOKEN_TTL_MS),
+    maxAge: Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000)),
+    expires: expiresAt,
   };
 }
 
@@ -49,15 +51,23 @@ export function readRegistrationDeviceCookie(header: string | null, activityId: 
   );
 }
 
+/**
+ * `expiresAt` 是活动自然日结束时间：凭证最晚到活动结束（仍受 30 天上限约束）。
+ * 活动结束后再提交本来也会被 ACTIVITY_ENDED 拦下，收紧只是让 cookie 不白白多活。
+ */
 export function issueRegistrationDeviceToken(
   activityId: string,
   registrationId: string,
   now = new Date(),
+  expiresAt?: Date,
 ): string {
   const payload: DeviceTokenPayload = {
     activityId,
     registrationId,
-    exp: now.getTime() + DEVICE_TOKEN_TTL_MS,
+    exp: Math.min(
+      now.getTime() + DEVICE_TOKEN_TTL_MS,
+      expiresAt?.getTime() ?? Number.POSITIVE_INFINITY,
+    ),
   };
   const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   return `${body}.${sign(body)}`;

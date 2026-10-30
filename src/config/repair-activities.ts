@@ -75,6 +75,14 @@ export const repairActivitiesPage = {
     deviceRegisteredTitle: "本设备已提交过本场报名",
     deviceRegisteredHint:
       "如需修改故障类型，请用下方「已经报名？」查询；姓名或电话填错请联系 QQ 群管理员，不要重复报名。",
+    /** 设备状态结论出来前不渲染表单，避免慢网下「先填后收起」。 */
+    deviceStatusChecking: "正在确认本设备是否已报名…",
+    deviceRecheck: "重新检查报名状态",
+    deviceRecheckHint: "管理员删除报名后，可点「重新检查报名状态」恢复填写，无需刷新整页。",
+    deviceRecheckCleared: "未查到本设备的报名，可以重新填写",
+    deviceRecheckFailed: "状态检查失败，请稍后重试或刷新页面",
+    /** 回执与已提交面板都带故障类型（issue #304 讨论口径）。 */
+    receiptIssueType: "故障类型：{type}",
     /** 同一手机号已报名时不再显示为失败，而是引导查询已有记录。 */
     duplicateHint: "该手机号已报名本场活动，可使用下方「已经报名？」查询或修改故障类型",
     lookupMine: "查询本人记录",

@@ -819,6 +819,19 @@ export const repairActivityService = {
     });
   },
 
+  /**
+   * 活动自然日结束时间（设备凭证的有效期上限）：只读、轻量。
+   * 报名成功后用它收紧 cookie，避免凭证比活动多活很久。
+   */
+  async publicActivityEnd(activityId: string): Promise<Date> {
+    const activity = await getDb().repairActivity.findFirst({
+      where: { id: activityId, deletedAt: null },
+      select: { activityAt: true },
+    });
+    if (!activity) throw new AppError("ACTIVITY_NOT_FOUND", "活动不存在");
+    return activityEndExclusive(activity.activityAt);
+  },
+
   async lookup(
     activityId: string,
     input: { name: string; phone: string },

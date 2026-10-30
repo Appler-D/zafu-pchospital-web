@@ -1184,8 +1184,8 @@ live 用分组计数与最小字段读取替代历史/名单明细。管理员�
 （避免把「某手机号存在」变成可探测信息）。响应结构、`editToken` 与频控键不变。
 
 `POST /api/v1/repair-activities/:id/registrations` 成功时额外下发签名 cookie
-`ra_reg_<activityId>`（`HttpOnly; SameSite=Lax; Path=/; Secure(生产)`，有效期 30 天，
-值为 `registrationId + exp + HMAC(AUTH_SECRET)`；不含姓名 / 电话）。再次提交时：
+`ra_reg_<activityId>`（`HttpOnly; SameSite=Lax; Path=/; Secure(生产)`，**有效期到活动自然日结束、
+上限 30 天**，值为 `registrationId + exp + HMAC(AUTH_SECRET)`；不含姓名 / 电话）。再次提交时：
 
 - cookie 有效且对应报名仍存在（`deletedAt IS NULL`）→ 409
   `ACTIVITY_DEVICE_ALREADY_REGISTERED`（“本设备已提交过本场报名，请使用「已经报名？」查询，或联系管理员”）；
@@ -1195,7 +1195,9 @@ live 用分组计数与最小字段读取替代历史/名单明细。管理员�
 新增只读端点 `GET /api/v1/repair-activities/:id/registrations/device`：只读同名 cookie，
 返回 `{ submitted: boolean, registration: RegistrationPublicView | null }`（不含 editToken），
 `Cache-Control: private, no-store`；无 cookie / 凭证失效 / 记录已删除一律 `submitted=false`。
-页面用它决定是否收起报名表单。
+页面用它决定是否收起报名表单：结论返回前只显示占位、不渲染表单；收到
+`ACTIVITY_DEVICE_ALREADY_REGISTERED` 时会重新读取并直接切到「已提交」面板；
+面板上提供「重新检查报名状态」，管理员删除报名后无需刷新整页即可恢复填写。
 
 边界：清 cookie、无痕窗口、换浏览器/设备仍可绕过，本机制只约束「同一浏览器的重复填写」；
 真正的重复兜底仍是 (活动, 手机号) 唯一与按 IP / 手机号限流。无 Schema / Migration 变更，

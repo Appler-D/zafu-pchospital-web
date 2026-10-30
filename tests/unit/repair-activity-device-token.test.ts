@@ -11,6 +11,7 @@ import {
   readRegistrationDeviceCookie,
   readRegistrationDeviceToken,
   registrationDeviceCookieName,
+  registrationDeviceCookieOptions,
 } from "../../src/features/repair-activities/registration-device-token";
 import { resetServerEnvForTests } from "../../src/lib/env";
 
@@ -43,4 +44,49 @@ test("cookie 名按活动区分，读取只认同名 cookie", () => {
   assert.equal(readRegistrationDeviceCookie(header, "act-1"), "token-1");
   assert.equal(readRegistrationDeviceCookie(header, "act-2"), "");
   assert.equal(readRegistrationDeviceCookie(null, "act-1"), "");
+});
+
+test("凭证有效期到活动结束（仍受 30 天上限约束）", () => {
+  resetServerEnvForTests();
+  const now = new Date("2026-10-30T12:00:00.000Z");
+  const activityEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const token = issueRegistrationDeviceToken("act-1", "reg-1", now, activityEnd);
+  assert.deepEqual(
+    readRegistrationDeviceToken(
+      token,
+      { activityId: "act-1" },
+      new Date(activityEnd.getTime() - 1),
+    ),
+    { registrationId: "reg-1" },
+  );
+  assert.equal(
+    readRegistrationDeviceToken(
+      token,
+      { activityId: "act-1" },
+      new Date(activityEnd.getTime() + 1),
+    ),
+    null,
+    "活动结束后凭证失效",
+  );
+  const farFuture = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const capped = issueRegistrationDeviceToken("act-1", "reg-1", now, farFuture);
+  assert.equal(
+    readRegistrationDeviceToken(
+      capped,
+      { activityId: "act-1" },
+      new Date(now.getTime() + 31 * 24 * 60 * 60 * 1000),
+    ),
+    null,
+    "仍受 30 天上限约束",
+  );
+});
+
+test("cookie 选项按传入到期时间计算 maxAge", () => {
+  const now = new Date("2026-10-30T12:00:00.000Z");
+  const expiresAt = new Date(now.getTime() + 3_600_000);
+  const options = registrationDeviceCookieOptions(expiresAt, now);
+  assert.equal(options.maxAge, 3600);
+  assert.equal(options.expires.toISOString(), expiresAt.toISOString());
+  assert.equal(options.httpOnly, true);
+  assert.equal(options.sameSite, "lax");
 });

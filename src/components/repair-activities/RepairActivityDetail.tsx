@@ -77,6 +77,9 @@ export function RepairActivityDetail({ activityId }: Props) {
   const [lookupNameError, setLookupNameError] = useState("");
   /** 本设备已提交的报名（服务端签名 cookie）：有值时收起报名表单，只留查询入口。 */
   const [deviceRegistration, setDeviceRegistration] = useState<RegistrationPublicView | null>(null);
+  /** 设备状态是否已有结论：未 resolve 前不渲染报名表单，避免「先在表单里输入、随后被收起」。 */
+  const [deviceStatusResolved, setDeviceStatusResolved] = useState(false);
+  const [deviceRechecking, setDeviceRechecking] = useState(false);
   /** 待确认的表单内容；成功后保留弹层，关闭注意事项提醒时一并清除。 */
   const [pendingSignup, setPendingSignup] = useState<{
     name: string;
@@ -169,6 +172,8 @@ export function RepairActivityDetail({ activityId }: Props) {
     setLookupPhoneError("");
     setLookupNameError("");
     setDeviceRegistration(null);
+    setDeviceStatusResolved(false);
+    setDeviceRechecking(false);
     setPendingSignup(null);
     setBusy(false);
     setProblem("");
@@ -183,32 +188,53 @@ export function RepairActivityDetail({ activityId }: Props) {
     };
   }, [load]);
 
+  /** 读取本设备的报名状态；网络 / 服务端异常返回 undefined（调用方保持现状）。 */
+  const loadDeviceRegistration = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/v1/repair-activities/${activityId}/registrations/device`);
+      const json = (await response.json()) as {
+        success: boolean;
+        data?: { registration: RegistrationPublicView | null };
+      };
+      if (!json.success) return undefined;
+      return json.data?.registration ?? null;
+    } catch {
+      return undefined;
+    }
+  }, [activityId]);
+
   /**
    * 本设备是否已提交过本场报名（issue #304）。
-   * 查询失败按「未提交」处理：状态未知时保留表单，真正的重复拦截仍在服务端。
+   * 结论出来之前只显示占位、不渲染报名表单 —— 否则慢网下用户可能已开始填写，
+   * 状态返回后表单被收起、焦点丢失。查询失败时放开表单（真正的拦截在服务端）。
    */
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const response = await fetch(
-          `/api/v1/repair-activities/${activityId}/registrations/device`,
-        );
-        const json = (await response.json()) as {
-          success: boolean;
-          data?: { registration: RegistrationPublicView | null };
-        };
-        if (!cancelled && json.success) {
-          setDeviceRegistration(json.data?.registration ?? null);
-        }
-      } catch {
-        // 忽略：网络抖动不应把报名者挡在表单外。
-      }
+      const registration = await loadDeviceRegistration();
+      if (cancelled) return;
+      if (registration !== undefined) setDeviceRegistration(registration);
+      setDeviceStatusResolved(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [activityId]);
+  }, [loadDeviceRegistration]);
+
+  /** 管理员删除报名后可就地重查，不必刷新整页。 */
+  async function recheckDeviceStatus() {
+    if (deviceRechecking) return;
+    setDeviceRechecking(true);
+    const registration = await loadDeviceRegistration();
+    setDeviceStatusResolved(true);
+    if (registration === undefined) {
+      setNotice({ text: copy.deviceRecheckFailed, tone: "neutral" });
+    } else {
+      setDeviceRegistration(registration);
+      if (registration === null) setNotice({ text: copy.deviceRecheckCleared, tone: "success" });
+    }
+    setDeviceRechecking(false);
+  }
 
   /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
   useEffect(() => {
@@ -428,7 +454,18 @@ export function RepairActivityDetail({ activityId }: Props) {
         // 失败要让报名者看得见原因，而错误提示在弹层后面 —— 先关弹层再报错。
         setPendingSignup(null);
         setRegisteredPhone(pending.phone);
-        if (json.error?.code === "ACTIVITY_REGISTRATION_DUPLICATE") {
+        if (json.error?.code === "ACTIVITY_DEVICE_ALREADY_REGISTERED") {
+          // 另一个 tab 已报过 / 本地状态没跟上：直接切到「已提交」面板，而不是只报一条错误。
+          const registration = await loadDeviceRegistration();
+          if (signupAttemptRef.current !== attempt) return;
+          if (registration) {
+            setDeviceRegistration(registration);
+            setSignupInfo("");
+            setNotice({ text: copy.deviceRegisteredTitle, tone: "neutral" });
+          } else {
+            setSignupInfo(copy.duplicateHint);
+          }
+        } else if (json.error?.code === "ACTIVITY_REGISTRATION_DUPLICATE") {
           setSignupInfo(copy.duplicateHint);
         } else if (json.error?.code === "ACTIVITY_FULL") {
           setSignupInfo(copy.fullLookupHint);
@@ -737,6 +774,14 @@ export function RepairActivityDetail({ activityId }: Props) {
                   {registrationResult.name} · {registrationResult.phoneMasked}
                 </p>
                 <p>
+                  {copy.receiptIssueType.replace(
+                    "{type}",
+                    repairActivityIssueTypeLabels[
+                      registrationResult.issueType as RepairActivityIssueType
+                    ] ?? registrationResult.issueType,
+                  )}
+                </p>
+                <p>
                   {copy.receiptStatus.replace(
                     "{status}",
                     repairActivityRegistrationStatusLabels[registrationResult.status] ??
@@ -763,13 +808,31 @@ export function RepairActivityDetail({ activityId }: Props) {
                 <p>
                   {deviceRegistration.name} · {deviceRegistration.phoneMasked}
                 </p>
+                <p>
+                  {copy.receiptIssueType.replace(
+                    "{type}",
+                    repairActivityIssueTypeLabels[
+                      deviceRegistration.issueType as RepairActivityIssueType
+                    ] ?? deviceRegistration.issueType,
+                  )}
+                </p>
                 <p className="muted">{copy.deviceRegisteredHint}</p>
-                <Button
-                  variant="ghost"
-                  onClick={() => focusLookup(undefined, deviceRegistration.name)}
-                >
-                  {copy.lookupMine}
-                </Button>
+                <div className={styles.signupPendingActions}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => focusLookup(undefined, deviceRegistration.name)}
+                  >
+                    {copy.lookupMine}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => void recheckDeviceStatus()}
+                    disabled={deviceRechecking}
+                  >
+                    {copy.deviceRecheck}
+                  </Button>
+                </div>
+                <p className="muted">{copy.deviceRecheckHint}</p>
               </div>
             ) : null}
             {signupPending ? (
@@ -867,7 +930,12 @@ export function RepairActivityDetail({ activityId }: Props) {
                 {copy.countdownOpened}
               </p>
             ) : null}
-            {deviceRegistration || registrationResult ? null : (
+            {!deviceStatusResolved && !registrationResult ? (
+              <p className="muted" role="status">
+                {copy.deviceStatusChecking}
+              </p>
+            ) : null}
+            {!deviceStatusResolved || deviceRegistration || registrationResult ? null : (
               <form
                 className="admin-form"
                 ref={signupFormRef}
