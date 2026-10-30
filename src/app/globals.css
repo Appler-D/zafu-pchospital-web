@@ -3111,7 +3111,11 @@ html[data-theme="black-yellow"] {
     padding-block: clamp(1.5rem, 3vw, 2.5rem) var(--s-5);
   }
   .repair-page .page-head .sec-title {
-    font-size: clamp(2rem, 3vw, 3rem);
+    font-size: clamp(1.75rem, 3vw, 3rem);
+  }
+  /* 维修页 H1 使用紧凑档位；辅助区标题保持在其下，避免区块标题压过页面标题。 */
+  .repair-page .repair-preparation .sec-title {
+    font-size: clamp(1.5rem, 2.4vw, 2rem);
   }
   .repair-page .band {
     padding-block: var(--s-6) var(--s-8);
@@ -7992,7 +7996,7 @@ html[data-theme="black-yellow"] {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
   gap: 0;
-  min-height: 128px;
+  min-height: 176px;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -8063,24 +8067,24 @@ html[data-theme="black-yellow"] {
 .activity-list--paged .activity-card--stub .activity-card__body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding: 12px;
+  padding: 16px;
 }
 /* 徽章移出标题行，标题独占整行，四列时不再被挤成 6 个字一行。 */
 .activity-list--paged .activity-card--stub .activity-card__head {
   margin-bottom: 0;
 }
-/* 四列卡宽约 246px：标题收到 15px 并平衡换行，避免末行只剩一个字。 */
+/* 四列卡宽约 246px：标题 1rem 配合平衡换行，加高的卡身容纳两行标题。 */
 .activity-list--paged .activity-card--stub .activity-card__title {
-  font-size: 0.9375rem;
+  font-size: 1rem;
   text-wrap: balance;
 }
 .activity-list--paged .activity-card--stub .activity-card__meta {
   display: grid;
   gap: 2px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--t-sm);
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
