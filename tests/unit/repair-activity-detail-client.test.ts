@@ -1019,3 +1019,21 @@ test("切换活动时丢弃旧的设备状态响应", async (t) => {
     "新活动按自己的状态放开表单",
   );
 });
+
+test("AbortSignal.any 缺失时设备状态失败仍放开报名表单", async (t) => {
+  const copy = repairActivitiesPage.detail;
+  const original = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+  t.after(() => Object.defineProperty(AbortSignal, "any", { value: original, configurable: true }));
+
+  const ui = await mount(t, { device: "error" });
+  await ui.finish(0, { ...activity, status: "OPEN" });
+  await setImmediate();
+
+  const content = text(ui.view());
+  assert.equal(content.includes(copy.deviceStatusChecking), false, "占位不能常驻");
+  assert.ok(
+    findElement(ui.view(), (element) => element.props["aria-label"] === copy.signupTitle),
+    "缺 AbortSignal.any 的浏览器也要能报名",
+  );
+});

@@ -204,12 +204,20 @@ export function RepairActivityDetail({ activityId }: Props) {
     const attempt = ++deviceAttemptRef.current;
     const controller = new AbortController();
     void (async () => {
-      const registration = await fetchRegistrationDeviceStatus(activityId, {
-        signal: controller.signal,
-      });
-      if (deviceAttemptRef.current !== attempt) return;
-      if (registration !== undefined) setDeviceRegistration(registration);
-      setDeviceStatusResolved(true);
+      let registration: RegistrationPublicView | null | undefined;
+      try {
+        registration = await fetchRegistrationDeviceStatus(activityId, {
+          signal: controller.signal,
+        });
+      } catch {
+        // helper 已内部兜底；这里再兜一层，任何意外都不能让「正在确认…」常驻。
+        registration = undefined;
+      } finally {
+        if (deviceAttemptRef.current === attempt) {
+          if (registration !== undefined) setDeviceRegistration(registration);
+          setDeviceStatusResolved(true);
+        }
+      }
     })();
     return () => controller.abort();
   }, [activityId]);
@@ -219,20 +227,28 @@ export function RepairActivityDetail({ activityId }: Props) {
     if (deviceRechecking) return;
     const attempt = deviceAttemptRef.current;
     setDeviceRechecking(true);
-    const registration = await fetchRegistrationDeviceStatus(activityId);
-    if (deviceAttemptRef.current !== attempt) return;
-    setDeviceStatusResolved(true);
-    if (registration === undefined) {
-      setNotice({ text: copy.deviceRecheckFailed, tone: "neutral" });
-    } else {
-      setDeviceRegistration(registration);
-      if (registration === null) {
-        setNotice({ text: copy.deviceRecheckCleared, tone: "success" });
-        // 表单刚重新挂载，焦点回到姓名输入框。
-        window.setTimeout(() => signupNameInputRef.current?.focus({ preventScroll: true }), 0);
+    try {
+      const registration = await fetchRegistrationDeviceStatus(activityId);
+      if (deviceAttemptRef.current !== attempt) return;
+      setDeviceStatusResolved(true);
+      if (registration === undefined) {
+        setNotice({ text: copy.deviceRecheckFailed, tone: "neutral" });
+      } else {
+        setDeviceRegistration(registration);
+        if (registration === null) {
+          setNotice({ text: copy.deviceRecheckCleared, tone: "success" });
+          // 表单刚重新挂载，焦点回到姓名输入框。
+          window.setTimeout(() => signupNameInputRef.current?.focus({ preventScroll: true }), 0);
+        }
       }
+    } catch {
+      if (deviceAttemptRef.current === attempt) {
+        setNotice({ text: copy.deviceRecheckFailed, tone: "neutral" });
+      }
+    } finally {
+      // 无论成功、失败还是切活动，按钮都不能永久停在禁用态。
+      if (deviceAttemptRef.current === attempt) setDeviceRechecking(false);
     }
-    setDeviceRechecking(false);
   }
 
   /** 报名未开始时每秒走一格倒计时；状态一旦离开 UPCOMING 就停表。 */
@@ -455,7 +471,12 @@ export function RepairActivityDetail({ activityId }: Props) {
         setRegisteredPhone(pending.phone);
         if (json.error?.code === "ACTIVITY_DEVICE_ALREADY_REGISTERED") {
           // 另一个 tab 已报过 / 本地状态没跟上：直接切到「已提交」面板，而不是只报一条错误。
-          const registration = await fetchRegistrationDeviceStatus(activityId);
+          let registration: RegistrationPublicView | null | undefined;
+          try {
+            registration = await fetchRegistrationDeviceStatus(activityId);
+          } catch {
+            registration = undefined;
+          }
           if (signupAttemptRef.current !== attempt) return;
           if (registration) {
             setDeviceRegistration(registration);

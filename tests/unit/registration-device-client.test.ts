@@ -49,3 +49,49 @@ test("设备状态查询超时按未知处理，不会一直挂着", async (t) =
   assert.equal(result, undefined);
   assert.ok(Date.now() - started < 1500, "应在超时后立即返回，而不是等待网络");
 });
+
+test("AbortSignal.any 缺失（Safari 16 等）时手动合并，超时仍返回 undefined", async (t) => {
+  const original = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true });
+  t.after(() => Object.defineProperty(AbortSignal, "any", { value: original, configurable: true }));
+  t.mock.method(
+    globalThis,
+    "fetch",
+    (_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      }),
+  );
+
+  const started = Date.now();
+  const result = await fetchRegistrationDeviceStatus("act-1", {
+    signal: new AbortController().signal,
+    timeoutMs: 30,
+  });
+  assert.equal(result, undefined);
+  assert.ok(Date.now() - started < 1500);
+});
+
+test("AbortSignal.any 抛错时按未知处理，不会 reject 出去", async (t) => {
+  const original = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", {
+    value: () => {
+      throw new TypeError("any unsupported");
+    },
+    configurable: true,
+  });
+  t.after(() => Object.defineProperty(AbortSignal, "any", { value: original, configurable: true }));
+  let fetched = 0;
+  t.mock.method(globalThis, "fetch", () => {
+    fetched += 1;
+    return Promise.resolve(Response.json({ success: true, data: { registration: null } }));
+  });
+
+  assert.equal(
+    await fetchRegistrationDeviceStatus("act-1", { signal: new AbortController().signal }),
+    undefined,
+  );
+  assert.equal(fetched, 0, "构造 signal 失败时不应发起请求");
+});
