@@ -130,59 +130,59 @@
 
 每个状态一套五元组；组件只认令牌名，不认具体色值：
 
-| 后缀 | 用途 |
-| ---- | ---- |
-| （无后缀） | 实心色：图标、实心底标签、强调描边 |
-| `-deep` | **淡底上的文字色**（徽章 / chip 主用） |
-| `-on` | **实心底上的文字色**（filled badge） |
-| `-wash` | 淡底（列表徽章默认底） |
-| `-line` | 淡底徽章描边 |
+| 后缀       | 用途                                   |
+| ---------- | -------------------------------------- |
+| （无后缀） | 实心色：图标、实心底标签、强调描边     |
+| `-deep`    | **淡底上的文字色**（徽章 / chip 主用） |
+| `-on`      | **实心底上的文字色**（filled badge）   |
+| `-wash`    | 淡底（列表徽章默认底）                 |
+| `-line`    | 淡底徽章描边                           |
 
-| 令牌 | Tailwind（落地后） | 语义 |
-| ---- | ------------------ | ---- |
-| `--status-success` / `-deep` / `-on` / `-wash` / `-line` | `text-status-success` 等 | 成功 / 已通过 |
-| `--status-warning` / `-deep` / `-on` / `-wash` / `-line` | `text-status-warning` 等 | 等待处理 / 待审核 |
-| `--status-danger` / `-deep` / `-on` / `-wash` / `-line` | `text-status-danger` 等 | 失败 / 已退回 / 需修正 |
-| `--status-neutral` / `-deep` / `-on` / `-wash` / `-line` | `text-status-neutral` 等 | 中性过程态 / 草稿 |
+| 令牌                                                     | Tailwind（落地后）       | 语义                   |
+| -------------------------------------------------------- | ------------------------ | ---------------------- |
+| `--status-success` / `-deep` / `-on` / `-wash` / `-line` | `text-status-success` 等 | 成功 / 已通过          |
+| `--status-warning` / `-deep` / `-on` / `-wash` / `-line` | `text-status-warning` 等 | 等待处理 / 待审核      |
+| `--status-danger` / `-deep` / `-on` / `-wash` / `-line`  | `text-status-danger` 等  | 失败 / 已退回 / 需修正 |
+| `--status-neutral` / `-deep` / `-on` / `-wash` / `-line` | `text-status-neutral` 等 | 中性过程态 / 草稿      |
 
 #### 双主题取值
 
 写法与 §9.4 一致：`swiss-cobalt` 用十六进制 / `rgb(... / α)`；`black-yellow` 用 `oklch`。
 Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免「待审」与「可操作」撞色。
 
-| 令牌 | normal / `swiss-cobalt` | dark / `black-yellow` |
-| ---- | ----------------------- | --------------------- |
-| `--status-success` | `#0f7a45` | `oklch(78% 0.13 155)` |
-| `--status-success-deep` | `#0a5c34` | `oklch(72% 0.12 155)` |
-| `--status-success-on` | `#ffffff` | `oklch(18% 0.03 155)` |
-| `--status-success-wash` | `rgb(15 122 69 / 0.10)` | `oklch(78% 0.13 155 / 0.1)` |
-| `--status-success-line` | `rgb(15 122 69 / 0.32)` | `oklch(78% 0.13 155 / 0.34)` |
-| `--status-warning` | `#8a4b00` | `oklch(82% 0.14 75)` |
-| `--status-warning-deep` | `#6b3a00` | `oklch(76% 0.13 75)` |
-| `--status-warning-on` | `#ffffff` | `oklch(18% 0.03 75)` |
-| `--status-warning-wash` | `rgb(138 75 0 / 0.10)` | `oklch(82% 0.14 75 / 0.1)` |
-| `--status-warning-line` | `rgb(138 75 0 / 0.32)` | `oklch(82% 0.14 75 / 0.34)` |
-| `--status-danger` | `#c62828` | `oklch(76% 0.16 28)` |
-| `--status-danger-deep` | `#8e1818` | `oklch(70% 0.15 28)` |
-| `--status-danger-on` | `#ffffff` | `oklch(18% 0.04 28)` |
-| `--status-danger-wash` | `rgb(198 40 40 / 0.10)` | `oklch(76% 0.16 28 / 0.1)` |
-| `--status-danger-line` | `rgb(198 40 40 / 0.32)` | `oklch(76% 0.16 28 / 0.34)` |
-| `--status-neutral` | `#5f5f5d`（对齐 `--ink-3`） | `oklch(72% 0.01 95)` |
-| `--status-neutral-deep` | `#3d3d3b`（对齐 `--ink-2`） | `oklch(68% 0.009 95)` |
-| `--status-neutral-on` | `#ffffff` | `oklch(18% 0.006 95)` |
-| `--status-neutral-wash` | `rgb(95 95 93 / 0.10)` | `oklch(72% 0.01 95 / 0.1)` |
-| `--status-neutral-line` | `rgb(95 95 93 / 0.32)` | `oklch(72% 0.01 95 / 0.34)` |
+| 令牌                    | normal / `swiss-cobalt`     | dark / `black-yellow`        |
+| ----------------------- | --------------------------- | ---------------------------- |
+| `--status-success`      | `#0f7a45`                   | `oklch(78% 0.13 155)`        |
+| `--status-success-deep` | `#0a5c34`                   | `oklch(72% 0.12 155)`        |
+| `--status-success-on`   | `#ffffff`                   | `oklch(18% 0.03 155)`        |
+| `--status-success-wash` | `rgb(15 122 69 / 0.10)`     | `oklch(78% 0.13 155 / 0.1)`  |
+| `--status-success-line` | `rgb(15 122 69 / 0.32)`     | `oklch(78% 0.13 155 / 0.34)` |
+| `--status-warning`      | `#8a4b00`                   | `oklch(82% 0.14 75)`         |
+| `--status-warning-deep` | `#6b3a00`                   | `oklch(76% 0.13 75)`         |
+| `--status-warning-on`   | `#ffffff`                   | `oklch(18% 0.03 75)`         |
+| `--status-warning-wash` | `rgb(138 75 0 / 0.10)`      | `oklch(82% 0.14 75 / 0.1)`   |
+| `--status-warning-line` | `rgb(138 75 0 / 0.32)`      | `oklch(82% 0.14 75 / 0.34)`  |
+| `--status-danger`       | `#c62828`                   | `oklch(76% 0.16 28)`         |
+| `--status-danger-deep`  | `#8e1818`                   | `oklch(70% 0.15 28)`         |
+| `--status-danger-on`    | `#ffffff`                   | `oklch(18% 0.04 28)`         |
+| `--status-danger-wash`  | `rgb(198 40 40 / 0.10)`     | `oklch(76% 0.16 28 / 0.1)`   |
+| `--status-danger-line`  | `rgb(198 40 40 / 0.32)`     | `oklch(76% 0.16 28 / 0.34)`  |
+| `--status-neutral`      | `#5f5f5d`（对齐 `--ink-3`） | `oklch(72% 0.01 95)`         |
+| `--status-neutral-deep` | `#3d3d3b`（对齐 `--ink-2`） | `oklch(68% 0.009 95)`        |
+| `--status-neutral-on`   | `#ffffff`                   | `oklch(18% 0.006 95)`        |
+| `--status-neutral-wash` | `rgb(95 95 93 / 0.10)`      | `oklch(72% 0.01 95 / 0.1)`   |
+| `--status-neutral-line` | `rgb(95 95 93 / 0.32)`      | `oklch(72% 0.01 95 / 0.34)`  |
 
 #### 维修审核态映射（列表徽章 / 工作台队列）
 
 与 `repairStatusLabels`（`src/config/repairs.ts`）及 `RepairStatus` 对齐：
 
-| `RepairStatus` | 文案 | 令牌族 | 推荐徽章样式 |
-| -------------- | ---- | ------ | ------------ |
-| `DRAFT` | 草稿 | `neutral` | wash + deep + line |
-| `PENDING` | 待审核 | `warning` | wash + deep + line |
-| `APPROVED` | 已通过 | `success` | wash + deep + line；需要强对比时可用 solid + on |
-| `REJECTED` | 已退回 | `danger` | wash + deep + line |
+| `RepairStatus` | 文案   | 令牌族    | 推荐徽章样式                                    |
+| -------------- | ------ | --------- | ----------------------------------------------- |
+| `DRAFT`        | 草稿   | `neutral` | wash + deep + line                              |
+| `PENDING`      | 待审核 | `warning` | wash + deep + line                              |
+| `APPROVED`     | 已通过 | `success` | wash + deep + line；需要强对比时可用 solid + on |
+| `REJECTED`     | 已退回 | `danger`  | wash + deep + line                              |
 
 相关列表态（工作台队列「草稿 / 待审核 / 已退回」、后台审核表状态列）使用同一映射。
 结果类标签（如维修结果 `FIXED` 等）若只需弱提示，可继续用 `neutral`，不要另发明颜色。
@@ -191,13 +191,13 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 
 `.repair-tag--approved/pending/rejected` 同时被后台其他表格复用，落地后这些位置同步变色，语义按下表理解（已与技术主线确认保留）：
 
-| 位置 | 取值 | 类名 | 令牌族 |
-| ---- | ---- | ---- | ------ |
-| 社员申请（`join-application-table-spec`） | 面试通过 / 待面试等进行中（未通过、已撤回用 `admin-tag--muted`） | `--approved` / `--pending` | `success` / `warning` |
-| 技能（`skill-table-spec`） | 启用（停用用 `admin-tag--muted`） | `--approved` | `success` |
-| 分类（`category-table-spec`） | 启用（停用用 `admin-tag--muted`） | `--approved` | `success` |
-| 邀请码（`invite-code-table-spec`） | 可用（未生效、已撤销、已过期、已用尽用 `admin-tag--muted`，表示当前不可用） | `--approved` | `success` |
-| 审计（`audit-table-spec`） | 成功 / 失败 | `--approved` / `--rejected` | `success` / `danger` |
+| 位置                                      | 取值                                                                        | 类名                        | 令牌族                |
+| ----------------------------------------- | --------------------------------------------------------------------------- | --------------------------- | --------------------- |
+| 社员申请（`join-application-table-spec`） | 面试通过 / 待面试等进行中（未通过、已撤回用 `admin-tag--muted`）            | `--approved` / `--pending`  | `success` / `warning` |
+| 技能（`skill-table-spec`）                | 启用（停用用 `admin-tag--muted`）                                           | `--approved`                | `success`             |
+| 分类（`category-table-spec`）             | 启用（停用用 `admin-tag--muted`）                                           | `--approved`                | `success`             |
+| 邀请码（`invite-code-table-spec`）        | 可用（未生效、已撤销、已过期、已用尽用 `admin-tag--muted`，表示当前不可用） | `--approved`                | `success`             |
+| 审计（`audit-table-spec`）                | 成功 / 失败                                                                 | `--approved` / `--rejected` | `success` / `danger`  |
 
 琥珀色（`--pending`）只用于真正等人处理的状态（维修待审、社员待面试）。新增表格要复用这些类时，先确认取值语义与上表的「通过 / 处理中 / 失败」一致；不一致就用 `neutral`（`--draft` / `--result`）或 `admin-tag--muted`，不要为此另发明颜色。
 
@@ -206,20 +206,20 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 按相对亮度公式实测；`*-wash` 按叠在 `--bg` 上合成后再算（与 §9.6 口径一致）。
 改取值后必须重测，并把数字写回本表。
 
-| 组合 | normal | dark |
-| ---- | ------ | ---- |
-| `--status-success-deep` on `--status-success-wash`（叠 `--bg`） | 6.48:1 ✅ | 7.26:1 ✅ |
-| `--status-success-on` on `--status-success` | 5.40:1 ✅ | 9.84:1 ✅ |
-| `--status-success-deep` on `--bg`（纯文字态） | 7.41:1 ✅ | 8.39:1 ✅ |
-| `--status-warning-deep` on `--status-warning-wash`（叠 `--bg`） | 7.45:1 ✅ | 7.77:1 ✅ |
-| `--status-warning-on` on `--status-warning` | 6.80:1 ✅ | 10.60:1 ✅ |
-| `--status-warning-deep` on `--bg` | 8.62:1 ✅ | 9.05:1 ✅ |
-| `--status-danger-deep` on `--status-danger-wash`（叠 `--bg`） | 7.19:1 ✅ | 6.15:1 ✅ |
-| `--status-danger-on` on `--status-danger` | 5.62:1 ✅ | 8.00:1 ✅ |
-| `--status-danger-deep` on `--bg` | 8.38:1 ✅ | 6.94:1 ✅ |
-| `--status-neutral-deep` on `--status-neutral-wash`（叠 `--bg`） | 8.71:1 ✅ | 6.08:1 ✅ |
-| `--status-neutral-on` on `--status-neutral` | 6.40:1 ✅ | 7.59:1 ✅ |
-| `--status-neutral-deep` on `--bg` | 9.97:1 ✅ | 6.87:1 ✅ |
+| 组合                                                            | normal    | dark       |
+| --------------------------------------------------------------- | --------- | ---------- |
+| `--status-success-deep` on `--status-success-wash`（叠 `--bg`） | 6.48:1 ✅ | 7.26:1 ✅  |
+| `--status-success-on` on `--status-success`                     | 5.40:1 ✅ | 9.84:1 ✅  |
+| `--status-success-deep` on `--bg`（纯文字态）                   | 7.41:1 ✅ | 8.39:1 ✅  |
+| `--status-warning-deep` on `--status-warning-wash`（叠 `--bg`） | 7.45:1 ✅ | 7.77:1 ✅  |
+| `--status-warning-on` on `--status-warning`                     | 6.80:1 ✅ | 10.60:1 ✅ |
+| `--status-warning-deep` on `--bg`                               | 8.62:1 ✅ | 9.05:1 ✅  |
+| `--status-danger-deep` on `--status-danger-wash`（叠 `--bg`）   | 7.19:1 ✅ | 6.15:1 ✅  |
+| `--status-danger-on` on `--status-danger`                       | 5.62:1 ✅ | 8.00:1 ✅  |
+| `--status-danger-deep` on `--bg`                                | 8.38:1 ✅ | 6.94:1 ✅  |
+| `--status-neutral-deep` on `--status-neutral-wash`（叠 `--bg`） | 8.71:1 ✅ | 6.08:1 ✅  |
+| `--status-neutral-on` on `--status-neutral`                     | 6.40:1 ✅ | 7.59:1 ✅  |
+| `--status-neutral-deep` on `--bg`                               | 9.97:1 ✅ | 6.87:1 ✅  |
 
 **徽章默认组合**：`color: var(--status-*-deep)` + `background: var(--status-*-wash)` +
 `border-color: var(--status-*-line)`。实心徽章才用 `*-on` on 无后缀实心色。
@@ -328,17 +328,17 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 
 以 8px 为基本单位，段落级使用流体值。
 
-| 令牌      | 值                           | Tailwind | 典型用途                     |
-| --------- | ---------------------------- | -------- | ---------------------------- |
-| `--s-1`   | `0.25rem`                    | `s-1`    | 图标与文字间隙               |
-| `--s-2`   | `0.5rem`                     | `s-2`    | 紧凑间隙                     |
-| `--s-3`   | `0.75rem`                    | `s-3`    | 按钮内间距                   |
-| `--s-4`   | `1rem`                       | `s-4`    | 常规间隙                     |
-| `--s-5`   | `1.5rem`                     | `s-5`    | 段落间距                     |
-| `--s-6`   | `2rem`                       | `s-6`    | 标题下间距                   |
-| `--s-7`   | `3rem`                       | `s-7`    | 大段落间距                   |
-| `--s-8`   | `4rem`                       | `s-8`    | 区块内大间距                 |
-| `--s-9`   | `6rem`                       | `s-9`    | 页面底部收尾                 |
+| 令牌      | 值                           | Tailwind | 典型用途                       |
+| --------- | ---------------------------- | -------- | ------------------------------ |
+| `--s-1`   | `0.25rem`                    | `s-1`    | 图标与文字间隙                 |
+| `--s-2`   | `0.5rem`                     | `s-2`    | 紧凑间隙                       |
+| `--s-3`   | `0.75rem`                    | `s-3`    | 按钮内间距                     |
+| `--s-4`   | `1rem`                       | `s-4`    | 常规间隙                       |
+| `--s-5`   | `1.5rem`                     | `s-5`    | 段落间距                       |
+| `--s-6`   | `2rem`                       | `s-6`    | 标题下间距                     |
+| `--s-7`   | `3rem`                       | `s-7`    | 大段落间距                     |
+| `--s-8`   | `4rem`                       | `s-8`    | 区块内大间距                   |
+| `--s-9`   | `6rem`                       | `s-9`    | 页面底部收尾                   |
 | `--s-sec` | `clamp(5.5rem, 13vh, 11rem)` | `s-sec`  | 展示区块上下留白，功能页可收紧 |
 
 ### 3.3 区块与页面头
@@ -466,15 +466,15 @@ Warning 色相刻意偏琥珀（远离 accent 的信号黄 / 钴蓝），避免�
 
 M4 稳定视觉模式（均在 `globals.css` `@layer components`，无 `box-shadow`，圆角只用 `--r-base` / `--r-mid` / `999px`）：
 
-| 类                                                                   | 用途                                       |
-| -------------------------------------------------------------------- | ------------------------------------------ |
-| `.community-block` / `__head` / `__meta`                             | 评论区标题与计数                           |
-| `.community-thread` / `--replies`                                    | 根评论列表；回复以左侧描边缩进             |
-| `.community-list` / `--compact` / `__item` / `__body` / `.is-unread` | 通知与收藏列表；未读用左侧强调线，不用红点 |
-| `.community-summary` / `__panel`                                     | 工作台底部两栏摘要（≥760px）               |
-| `.community-composer` / `.community-flags` / `.community-actions`    | 发表框、案例标记、收藏动作                 |
+| 类                                                                   | 用途                                                                    |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `.community-block` / `__head` / `__meta`                             | 评论区标题与计数                                                        |
+| `.community-thread` / `--replies`                                    | 根评论列表；回复以左侧描边缩进                                          |
+| `.community-list` / `--compact` / `__item` / `__body` / `.is-unread` | 通知与收藏列表；未读用左侧强调线，不用红点                              |
+| `.community-summary` / `__panel`                                     | 工作台底部两栏摘要（≥760px）                                            |
+| `.community-composer` / `.community-flags` / `.community-actions`    | 发表框、案例标记、收藏动作                                              |
 | `.community-composer__field` / `.mention-menu*`                      | 发表框内定位容器 + `@提及`候选下拉（issue #68）：绝对定位浮层，不占布局 |
-| `.community-mention`                                                 | 正文里的已提及成员（`--accent-deep` 文字 + 淡底），不是链接               |
+| `.community-mention`                                                 | 正文里的已提及成员（`--accent-deep` 文字 + 淡底），不是链接             |
 
 M6 管理后台（`/admin/**`）稳定视觉模式。后台是**密集型数据界面**，因此它复用 M2 的表格基座而不是
 另造一套：`.admin-table` / `.admin-table-wrap` / `.admin-table__empty` 与 `.repair-table*`
@@ -486,18 +486,18 @@ M6 管理后台（`/admin/**`）稳定视觉模式。后台是**密集型数据�
 手机端逐条记录通过 `data-label` 显示「机型」标签，未填写时显示「—」。后台桌面端机型内容
 由可调列宽决定可见范围，单行省略并通过 `title` 与详情保留完整名称，避免挤压其余列。
 
-| 类                                                                     | 用途                                                                                                    |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `.admin-workspace` / `__content` / `__header` / `__title` / `__lead`   | 后台页头与内容栅格（与 `.repair-workspace` / `.member-workspace` 同一形态）                             |
-| `.admin-nav` / `__link`                                                | 后台内部导航；当前项由 `aria-current="page"` 高亮（与 Header 公开索引栏同一约定）。**不并入 `mainNav`** |
+| 类                                                                     | 用途                                                                                                                                   |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `.admin-workspace` / `__content` / `__header` / `__title` / `__lead`   | 后台页头与内容栅格（与 `.repair-workspace` / `.member-workspace` 同一形态）                                                            |
+| `.admin-nav` / `__link`                                                | 后台内部导航；当前项由 `aria-current="page"` 高亮（与 Header 公开索引栏同一约定）。**不并入 `mainNav`**                                |
 | `.nav-settings__item`                                                  | 侧栏足部「设置」菜单的条目（复用 `.account-menu` 那组类）：编号 + 名称同一行。成员端与后台共用同一个组件，低频入口收在这里，不占分组位 |
-| `.admin-filters` / `__row`                                             | 筛选面板；行内用 `.field` + `.field__input`，≥1100px 单行多列                                           |
-| `.admin-batchbar`                                                      | 批量操作条（选中计数 + 动作），用 `--accent-wash` 表明处于批量态                                        |
-| `.admin-actions`                                                       | 行内动作组                                                                                              |
-| `.admin-tags` / `.admin-tag` / `--accent` / `--muted`                  | 角色等**短标签**；文字 + 描边双通道，不只用颜色区分                                                     |
-| `.admin-check`                                                         | 原生复选框（`accent-color: var(--accent-deep)`）；仓库没有额外的复选框样式体系                          |
-| `.admin-form` / `__grid` / `.admin-status` / `--error` / `.admin-note` | 后台表单栅格、状态行与说明文字                                                                          |
-| `.admin-stats`                                                         | 统计区块纵向栅格（内部复用 `MemberMetrics` / `MemberCategoryDistribution`，后台不重新解释口径）         |
+| `.admin-filters` / `__row`                                             | 筛选面板；行内用 `.field` + `.field__input`，≥1100px 单行多列                                                                          |
+| `.admin-batchbar`                                                      | 批量操作条（选中计数 + 动作），用 `--accent-wash` 表明处于批量态                                                                       |
+| `.admin-actions`                                                       | 行内动作组                                                                                                                             |
+| `.admin-tags` / `.admin-tag` / `--accent` / `--muted`                  | 角色等**短标签**；文字 + 描边双通道，不只用颜色区分                                                                                    |
+| `.admin-check`                                                         | 原生复选框（`accent-color: var(--accent-deep)`）；仓库没有额外的复选框样式体系                                                         |
+| `.admin-form` / `__grid` / `.admin-status` / `--error` / `.admin-note` | 后台表单栅格、状态行与说明文字                                                                                                         |
+| `.admin-stats`                                                         | 统计区块纵向栅格（内部复用 `MemberMetrics` / `MemberCategoryDistribution`，后台不重新解释口径）                                        |
 
 成员与管理侧栏中间的导航滚动区（`.member-nav__groups` / `.admin-nav__groups`）共用公开索引栏的
 滚动条样式：透明轨道、中性圆角细滑块、悬停仅变色，支持 WebKit 选择器时隐藏箭头；底部官网入口与账号菜单保持可见。
@@ -525,10 +525,10 @@ round 端点）。后台需要新图标时按同样规则补 `Icon.tsx` 的 `sha
 | 类                                         | 用途                                                                    |
 | ------------------------------------------ | ----------------------------------------------------------------------- |
 | `.signup` / `.signup__form`                | 登记区栅格（≥760px 两栏：表单 / 说明）与表单的纵向节奏                  |
-| `.field` / `.field__label` / `.field__num` | 字段基础；编号适用于登记场景，账号表单无需强加                                    |
+| `.field` / `.field__label` / `.field__num` | 字段基础；编号适用于登记场景，账号表单无需强加                          |
 | `.field__input`                            | 输入框：`--line-strong` 描边、`--r-base` 圆角、最小高度 46px、字号 16px |
 | `.field__hint`                             | 字段下方的格式说明（原生校验提示很简略，格式必须在这里讲清楚）          |
-| `.signup__actions` / `.signup__status`     | 登记表既有提交行与状态行；其他表单可用就地错误 / 步骤结果   |
+| `.signup__actions` / `.signup__status`     | 登记表既有提交行与状态行；其他表单可用就地错误 / 步骤结果               |
 | `.signup__done`                            | 提交完成后的确认面板（`--surface-1` 面板，**不是** `.notice`）          |
 
 规则：
@@ -803,13 +803,13 @@ round 端点）。后台需要新图标时按同样规则补 `Icon.tsx` 的 `sha
 
 公开列表、成员活动页与接待台牌面共用同一张卡与同一套列表规则，没有新形态：
 
-| 类                                                       | 用途                                                                    |
-| -------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `.activity-list` / `--paged` / `--home-preview`          | 卡片列表：成员列表 ≥760px 是横滑带；公开列表 ≤4 列分页、首页预览 ≤3 列等宽 |
-| `.activity-card` / `__link` / `__head` / `__title` / `__meta` / `--ended` | 活动卡：标题钳制 2 行保证等高；已结束整卡降透明度，不加新色 |
-| `.activity-board__row--queue` / `__queue-main` / `__queue-rank` | 接待台队列行：位次与正文同格（窄屏不单独成列），位次列定宽让姓名左边缘对齐（issue #68） |
-| `.activity-board__check` / `__actions` / `__row-actions`  | 勾选行、底部动作条与行内动作组                                          |
-| `.activity-board__switcher` / `__seg` / `__seg-thumb` / `__seg-btn` / `__seg-count` | 手机端分区切换行（<1100px 居中分段滑块、一次一个分区；≥1100px 隐藏）            |
+| 类                                                                                  | 用途                                                                                    |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `.activity-list` / `--paged` / `--home-preview`                                     | 卡片列表：成员列表 ≥760px 是横滑带；公开列表 ≤4 列分页、首页预览 ≤3 列等宽              |
+| `.activity-card` / `__link` / `__head` / `__title` / `__meta` / `--ended`           | 活动卡：标题钳制 2 行保证等高；已结束整卡降透明度，不加新色                             |
+| `.activity-board__row--queue` / `__queue-main` / `__queue-rank`                     | 接待台队列行：位次与正文同格（窄屏不单独成列），位次列定宽让姓名左边缘对齐（issue #68） |
+| `.activity-board__check` / `__actions` / `__row-actions`                            | 勾选行、底部动作条与行内动作组                                                          |
+| `.activity-board__switcher` / `__seg` / `__seg-thumb` / `__seg-btn` / `__seg-count` | 手机端分区切换行（<1100px 居中分段滑块、一次一个分区；≥1100px 隐藏）                    |
 
 规则：
 
@@ -1074,25 +1074,25 @@ return <DarkAboutPage />;
 
 组件只使用语义令牌，不要判断当前是什么模式。
 
-| 语义           | 令牌                                       | Tailwind                                                  |
-| -------------- | ------------------------------------------ | --------------------------------------------------------- |
-| 页面底色       | `--bg`                                     | `bg-bg`                                                   |
-| 更深一层底     | `--bg-deep`                                | `bg-bg-deep`                                              |
-| 面板 / 表面    | `--surface-1` … `--surface-3`              | `bg-surface-1` …                                          |
-| 正文 / 标题    | `--ink`                                    | `text-ink`                                                |
-| 次级正文       | `--ink-2`                                  | `text-ink-2`                                              |
-| 说明文字       | `--ink-3`                                  | `text-ink-3`                                              |
-| 元信息 / 标签  | `--ink-4`                                  | `text-ink-4`                                              |
-| 强调（主色）   | `--accent`                                 | `text-accent` / `bg-accent`                               |
-| 主色深色变体   | `--accent-deep`                            | `text-accent-deep`                                        |
-| 主色底上的文字 | `--accent-on`                              | `text-accent-on`                                          |
-| 主色淡底       | `--accent-wash`                            | `bg-accent-wash`                                          |
-| 主色描边       | `--accent-line`                            | `border-accent-line`                                      |
-| 状态·成功      | `--status-success` / `-deep` / `-on` / `-wash` / `-line` | `text-status-success` / `bg-status-success-wash` 等 |
-| 状态·待审      | `--status-warning` / `-deep` / `-on` / `-wash` / `-line` | `text-status-warning` / `bg-status-warning-wash` 等 |
-| 状态·退回      | `--status-danger` / `-deep` / `-on` / `-wash` / `-line`  | `text-status-danger` / `bg-status-danger-wash` 等 |
-| 状态·草稿/中性 | `--status-neutral` / `-deep` / `-on` / `-wash` / `-line` | `text-status-neutral` / `bg-status-neutral-wash` 等 |
-| 描边           | `--line` / `--line-soft` / `--line-strong` | `border-line` / `border-line-soft` / `border-line-strong` |
+| 语义           | 令牌                                                     | Tailwind                                                  |
+| -------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| 页面底色       | `--bg`                                                   | `bg-bg`                                                   |
+| 更深一层底     | `--bg-deep`                                              | `bg-bg-deep`                                              |
+| 面板 / 表面    | `--surface-1` … `--surface-3`                            | `bg-surface-1` …                                          |
+| 正文 / 标题    | `--ink`                                                  | `text-ink`                                                |
+| 次级正文       | `--ink-2`                                                | `text-ink-2`                                              |
+| 说明文字       | `--ink-3`                                                | `text-ink-3`                                              |
+| 元信息 / 标签  | `--ink-4`                                                | `text-ink-4`                                              |
+| 强调（主色）   | `--accent`                                               | `text-accent` / `bg-accent`                               |
+| 主色深色变体   | `--accent-deep`                                          | `text-accent-deep`                                        |
+| 主色底上的文字 | `--accent-on`                                            | `text-accent-on`                                          |
+| 主色淡底       | `--accent-wash`                                          | `bg-accent-wash`                                          |
+| 主色描边       | `--accent-line`                                          | `border-accent-line`                                      |
+| 状态·成功      | `--status-success` / `-deep` / `-on` / `-wash` / `-line` | `text-status-success` / `bg-status-success-wash` 等       |
+| 状态·待审      | `--status-warning` / `-deep` / `-on` / `-wash` / `-line` | `text-status-warning` / `bg-status-warning-wash` 等       |
+| 状态·退回      | `--status-danger` / `-deep` / `-on` / `-wash` / `-line`  | `text-status-danger` / `bg-status-danger-wash` 等         |
+| 状态·草稿/中性 | `--status-neutral` / `-deep` / `-on` / `-wash` / `-line` | `text-status-neutral` / `bg-status-neutral-wash` 等       |
+| 描边           | `--line` / `--line-soft` / `--line-strong`               | `border-line` / `border-line-soft` / `border-line-strong` |
 
 **禁止**：
 
