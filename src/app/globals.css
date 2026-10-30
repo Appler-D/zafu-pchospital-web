@@ -7875,6 +7875,10 @@ html[data-theme="black-yellow"] {
   .activity-list--paged {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+  /* 4 列时内容区约 178px，票根收窄 10px 给标题让位。 */
+  .activity-list--paged .activity-card--stub {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
 }
 .activity-list--paged .activity-card {
   overflow-wrap: anywhere;
@@ -7910,7 +7914,6 @@ html[data-theme="black-yellow"] {
 }
 .activity-list--paged .activity-card--stub.activity-card--ended {
   --spine: var(--ink-4);
-  opacity: 0.72;
 }
 .activity-list--paged .activity-card__link:hover .activity-card--stub {
   border-color: var(--accent-line);
@@ -7925,14 +7928,14 @@ html[data-theme="black-yellow"] {
   border-color: var(--line);
   transform: none;
 }
-.activity-card__spine {
+.activity-list--paged .activity-card--stub .activity-card__spine {
   position: absolute;
   inset-block-start: 0;
   inset-inline: 0;
   block-size: 2px;
   background: var(--spine);
 }
-.activity-card__stub {
+.activity-list--paged .activity-card--stub .activity-card__stub {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -7942,25 +7945,25 @@ html[data-theme="black-yellow"] {
   border-inline-end: 1px dashed var(--line);
   transition: background-color 200ms ease;
 }
-.activity-list--paged .activity-card__link:hover .activity-card__stub {
+.activity-list--paged .activity-card__link:hover .activity-card--stub .activity-card__stub {
   background: color-mix(in oklab, var(--surface-1) 62%, var(--spine) 38%);
 }
-.activity-card__stub-month {
+.activity-list--paged .activity-card--stub .activity-card__stub-month {
   font-size: 11px;
   color: var(--ink-3);
 }
-.activity-card__stub-day {
+.activity-list--paged .activity-card--stub .activity-card__stub-day {
   font-size: 24px;
   font-weight: 500;
   line-height: 1;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.activity-card__stub-weekday {
+.activity-list--paged .activity-card--stub .activity-card__stub-weekday {
   font-size: 11px;
   color: var(--ink-4);
 }
-.activity-card__body {
+.activity-list--paged .activity-card--stub .activity-card__body {
   display: flex;
   flex-direction: column;
   min-width: 0;
