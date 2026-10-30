@@ -63,6 +63,7 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
   const [resolved, setResolved] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutUnconfirmed, setLogoutUnconfirmed] = useState(false);
+  const [keepMenuAfterLogoutFailure, setKeepMenuAfterLogoutFailure] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +73,7 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
         if (cancelled) return;
         if (result.ok) {
           setPrincipal(result.data);
-        } else {
+        } else if (!result.stale) {
           setPrincipal(null);
         }
       } catch {
@@ -134,10 +135,33 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
     }
   }
 
+  function closeLogoutWarning() {
+    setLogoutUnconfirmed(false);
+    if (principal) return;
+    // 网络不通时保留重试入口；只有 /me 明确返回 401 才隐藏。
+    setKeepMenuAfterLogoutFailure(true);
+    void getClientSession().then((result) => {
+      if (result.ok) {
+        setPrincipal(result.data);
+        setKeepMenuAfterLogoutFailure(false);
+      } else if (!result.stale && result.status === 401) {
+        setPrincipal(null);
+        setKeepMenuAfterLogoutFailure(false);
+      }
+    });
+  }
+
   // 公开页：未解析完不渲染；解析后无会话则静默隐藏。
   // 受保护页可带 initialDisplayName 做乐观展示，但仍等 /me 确认后才保持。
   const optimistic = initialDisplayName !== undefined && !resolved;
-  if (!optimistic && (!resolved || !principal) && !loggingOut && !logoutUnconfirmed) return null;
+  if (
+    !optimistic &&
+    (!resolved || !principal) &&
+    !loggingOut &&
+    !logoutUnconfirmed &&
+    !keepMenuAfterLogoutFailure
+  )
+    return null;
 
   const displayName =
     (principal?.displayName ?? initialDisplayName)?.trim() || accountMenuCopy.fallbackName;
@@ -235,7 +259,7 @@ export function AccountMenu({ variant = "hero", initialDisplayName, className }:
           confirmLabel={loggingOut ? accountMenuCopy.loggingOut : accountMenuCopy.retryLogout}
           cancelLabel={accountMenuCopy.closeLogoutWarning}
           onConfirm={() => void logout()}
-          onClose={() => setLogoutUnconfirmed(false)}
+          onClose={closeLogoutWarning}
           busy={loggingOut}
         >
           <div className="logout-warning">

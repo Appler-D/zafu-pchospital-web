@@ -5,7 +5,7 @@ import test, { type TestContext } from "node:test";
 import type { ReactElement, ReactNode } from "react";
 
 import { accountMenuCopy } from "../../src/config/auth";
-import { clientSessionRevision } from "../../src/lib/auth/client-session";
+import { clientSessionRevision, invalidateClientSession } from "../../src/lib/auth/client-session";
 
 const require = createRequire(import.meta.url);
 const React = require("react") as typeof import("react");
@@ -34,6 +34,7 @@ function find(node: ReactNode, match: (props: Props) => boolean): ReactElement<P
 }
 
 async function mount(t: TestContext) {
+  invalidateClientSession();
   const state: unknown[] = [];
   const effects: (() => void | (() => void))[] = [];
   let cursor = 0;
@@ -99,6 +100,7 @@ async function mount(t: TestContext) {
       await setImmediate();
     },
     dialog: () => find(render(), (props) => typeof props.onConfirm === "function")?.props,
+    trigger: () => find(render(), (props) => props["aria-label"] === accountMenuCopy.menuLabel),
     resolveInitialSession: async () => {
       render();
       effects[0]();
@@ -180,6 +182,82 @@ test("退出请求在途时禁用操作并阻止重复发送", async (t) => {
   await setImmediate();
   assert.deepEqual(ui.destinations, ["/login"]);
 });
+
+test("初始会话迟到时关闭退出提示后重新确认会话，账号菜单仍可重试", async (t) => {
+  const ui = await mount(t);
+  let finishInitial!: (response: Response) => void;
+  let meCalls = 0;
+  const principal = {
+    userId: "test-user",
+    sessionId: "test-session",
+    displayName: "测试成员",
+    roles: ["MEMBER"],
+    permissions: [],
+    memberProfileId: null,
+    memberStatus: null,
+    mustChangePassword: false,
+    rememberMe: false,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    accountAccess: { state: "READY", destination: "/member", exemptionExpiresAt: null },
+  };
+  t.mock.method(globalThis, "fetch", async (input: unknown) => {
+    if (String(input).startsWith("/api/v1/me")) {
+      if (++meCalls === 1)
+        return new Promise<Response>((resolve) => {
+          finishInitial = resolve;
+        });
+      return Response.json({ success: true, data: principal });
+    }
+    throw new TypeError("logout network failure");
+  });
+  const initial = ui.resolveInitialSession();
+  await setImmediate();
+  await ui.logout();
+  finishInitial(Response.json({ success: true, data: principal }));
+  await initial;
+  await setImmediate();
+  assert.ok(ui.dialog());
+  ui.dialog()!.onClose!();
+  await setImmediate();
+  assert.equal(meCalls, 2);
+  assert.ok(ui.trigger());
+  assert.equal(ui.button().disabled, false);
+  assert.deepEqual(ui.destinations, []);
+});
+
+for (const outcome of ["offline", "unauthenticated"] as const) {
+  test(`关闭提示后会话复查 ${outcome} 时保持正确的菜单状态`, async (t) => {
+    const ui = await mount(t);
+    let finishInitial!: (response: Response) => void;
+    let meCalls = 0;
+    t.mock.method(globalThis, "fetch", async (input: unknown) => {
+      if (String(input).startsWith("/api/v1/me")) {
+        if (++meCalls === 1)
+          return new Promise<Response>((resolve) => {
+            finishInitial = resolve;
+          });
+        if (outcome === "unauthenticated") return new Response(null, { status: 401 });
+      }
+      throw new TypeError("offline");
+    });
+    const initial = ui.resolveInitialSession();
+    await setImmediate();
+    await ui.logout();
+    finishInitial(new Response(null, { status: 401 }));
+    await initial;
+    await setImmediate();
+    ui.dialog()!.onClose!();
+    await setImmediate();
+    assert.equal(meCalls, 2);
+    if (outcome === "offline") {
+      assert.ok(ui.trigger());
+      assert.equal(ui.button().disabled, false);
+    } else {
+      assert.equal(ui.trigger(), undefined);
+    }
+    assert.deepEqual(ui.destinations, []);
+  });
+}
 
 test("初始会话查询迟到失败不能隐藏退出失败提示和重试入口", async (t) => {
   const ui = await mount(t);

@@ -90,6 +90,44 @@ dbTest("退出撤销 Session、清 Cookie 并写两条审计；重复退出不�
   assert.deepEqual(await auditActions(id), ["auth.logout", "auth.session.revoked"]);
 });
 
+dbTest("并发退出同一 Session 只撤销一次并写一组审计", async () => {
+  const { token, id } = await session();
+  const db = getDb();
+  let reads = 0;
+  let release!: () => void;
+  const bothRead = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const concurrentDb = db.$extends({
+    query: {
+      authSession: {
+        async findUnique({ args, query }) {
+          const result = await query(args);
+          if (result?.id === id && ++reads <= 2) {
+            if (reads === 2) release();
+            await bothRead;
+          }
+          return result;
+        },
+      },
+    },
+  });
+  const dbGlobal = globalThis as typeof globalThis & { __pcHospitalDb?: typeof db };
+  dbGlobal.__pcHospitalDb = concurrentDb as unknown as typeof db;
+  try {
+    const responses = await Promise.all([POST(request(token)), POST(request(token))]);
+    assert.equal(reads, 2);
+    assert.deepEqual(
+      responses.map((response) => response.status),
+      [200, 200],
+    );
+    assert.ok((await db.authSession.findUniqueOrThrow({ where: { id } })).revokedAt);
+    assert.deepEqual(await auditActions(id), ["auth.logout", "auth.session.revoked"]);
+  } finally {
+    dbGlobal.__pcHospitalDb = db;
+  }
+});
+
 dbTest("无 Cookie 或未知 Session 幂等成功并清 Cookie", async () => {
   for (const token of ["", randomUUID()]) {
     const response = await POST(request(token));

@@ -79,7 +79,7 @@
 - `POST /api/v1/auth/logout`：同源校验后撤销当前 Session；撤销与 `auth.logout` /
   `auth.session.revoked` 审计在同一事务内提交，成功返回 **200**、
   `{ success: true, data: { loggedOut: true }, meta: { requestId } }` 并清除 Session Cookie。
-  无 Cookie、Session 不存在或已撤销时同样返回成功并清 Cookie，不重复写撤销审计。
+  无 Cookie、Session 不存在或已撤销时同样返回成功并清 Cookie；顺序或并发重复退出均不重复写撤销审计。
   受限 Session（待改密 / 待验证邮箱）也可退出，不经过业务门禁。
   来源校验或服务端处理失败返回失败信封，**保留 Cookie**；事务失败回滚撤销和审计，
   允许使用原 Cookie 重试。客户端只有同时确认 HTTP 成功、`success === true` 与
